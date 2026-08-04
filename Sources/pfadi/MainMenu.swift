@@ -9,6 +9,7 @@ enum MainMenu {
     static func build() -> NSMenu {
         let main = NSMenu()
         main.addItem(appMenu())
+        main.addItem(fileMenu())
         main.addItem(goMenu())
         main.addItem(viewMenu())
         main.addItem(actionsMenu())
@@ -25,6 +26,18 @@ enum MainMenu {
         )
         menu.addItem(.separator())
         menu.addItem(
+            withTitle: "Undo",
+            action: Selector(("undo:")),
+            keyEquivalent: "z"
+        )
+        let redo = menu.addItem(
+            withTitle: "Redo",
+            action: Selector(("redo:")),
+            keyEquivalent: "z"
+        )
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(.separator())
+        menu.addItem(
             withTitle: "Hide pfadi",
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h"
@@ -34,6 +47,39 @@ enum MainMenu {
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
+        item.submenu = menu
+        return item
+    }
+
+    private static func fileMenu() -> NSMenuItem {
+        let item = NSMenuItem()
+        let menu = NSMenu(title: "File")
+
+        let folder = menu.addItem(
+            withTitle: "New Folder",
+            action: #selector(BrowserViewController.newFolder(_:)),
+            keyEquivalent: "n"
+        )
+        folder.keyEquivalentModifierMask = [.command, .shift]
+
+        // F2 rather than return, which this application already spends on
+        // opening things. Windows has taught most people F2 anyway.
+        let rename = menu.addItem(
+            withTitle: "Rename",
+            action: #selector(BrowserViewController.renameSelection(_:)),
+            keyEquivalent: String(utf16CodeUnits: [unichar(NSF2FunctionKey)], count: 1)
+        )
+        rename.keyEquivalentModifierMask = []
+
+        menu.addItem(.separator())
+
+        let trash = menu.addItem(
+            withTitle: "Move to Trash",
+            action: #selector(BrowserViewController.moveToTrash(_:)),
+            keyEquivalent: String(utf16CodeUnits: [unichar(NSBackspaceCharacter)], count: 1)
+        )
+        trash.keyEquivalentModifierMask = [.command]
+
         item.submenu = menu
         return item
     }
