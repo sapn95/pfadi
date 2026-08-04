@@ -51,6 +51,18 @@ enum InfoSuites {
             // folder of that name is left alone.
             let decoy = URL(fileURLWithPath: "/Users/someone/git/CloudStorage/OneDrive-SBB/x.txt")
             Harness.expect(CloudFiles.provider(for: decoy) == nil, "not treated as OneDrive")
+
+            // Same anchoring for iCloud, which was missing it: a folder
+            // somebody called "Mobile Documents" is not Apple's.
+            let icloudDecoy = URL(fileURLWithPath: "/Users/someone/Mobile Documents/notes.txt")
+            Harness.expect(CloudFiles.provider(for: icloudDecoy) == nil, "not treated as iCloud")
+
+            // A path where the name is the very first component used to reach
+            // back past the start of the array, which is a crash rather than a
+            // nil.
+            Harness.expect(
+                CloudFiles.provider(for: URL(fileURLWithPath: "/CloudStorage")) == nil,
+                "and nothing explodes at the root")
         }
 
         Harness.suite("cloud: what it says out loud") {
