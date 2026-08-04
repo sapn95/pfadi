@@ -11,6 +11,9 @@ final class BrowserViewController: NSViewController {
     /// and the menu item that puts it in the sidebar.
     var currentDirectory: URL { directory }
 
+    /// Told when moving somewhere changes what the arrows can do.
+    var onHistoryChanged: ((_ canGoBack: Bool, _ canGoForward: Bool) -> Void)?
+
     /// Told when the favourites change, so the sidebar can redraw.
     var onFavouritesChanged: (() -> Void)?
 
@@ -27,6 +30,10 @@ final class BrowserViewController: NSViewController {
     /// Counts reload requests so a slow listing for a folder we have since
     /// left can be recognised and dropped.
     private var generation = 0
+
+    private var history = NavigationHistory()
+    private let infoPanel = InfoPanel()
+    private let openWithMenu = NSMenu(title: "Open With")
 
     /// The row being renamed, and a folder that was just created and should be
     /// renamed as soon as the watcher shows it.
@@ -136,6 +143,8 @@ final class BrowserViewController: NSViewController {
         tableView.onTypeAhead = { [weak self] prefix in self?.typeAhead(prefix) }
         tableView.onSpace = { [weak self] in self?.toggleQuickLook() }
 
+        tableView.menu = makeContextMenu()
+
         addColumn(id: "name", title: "Name", width: 420)
         addColumn(id: "size", title: "Size", width: 90)
         addColumn(id: "modified", title: "Modified", width: 160)
@@ -153,6 +162,31 @@ final class BrowserViewController: NSViewController {
         tableView.sortDescriptors = [
             NSSortDescriptor(key: order.key.rawValue, ascending: order.ascending)
         ]
+    }
+
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
+
+        let openWith = menu.addItem(withTitle: "Open With", action: nil, keyEquivalent: "")
+        openWith.submenu = openWithMenu
+
+        menu.addItem(.separator())
+        for (title, action) in [
+            ("Get Info", #selector(showInfo(_:))),
+            ("Copy Path", #selector(copyPath(_:))),
+            ("Reveal in Finder", #selector(revealInFinder(_:))),
+        ] {
+            menu.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Rename", action: #selector(renameSelection(_:)), keyEquivalent: "")
+            .target = self
+        menu.addItem(
+            withTitle: "Move to Trash", action: #selector(moveToTrash(_:)), keyEquivalent: ""
+        ).target = self
+        return menu
     }
 
     private func addColumn(id: String, title: String, width: CGFloat) {
@@ -179,7 +213,10 @@ final class BrowserViewController: NSViewController {
     }
 
     /// Moves to a folder: list it, watch it, remember it, select the top row.
-    private func enter(_ url: URL) {
+    private func enter(_ url: URL, recordingHistory: Bool = true) {
+        if recordingHistory {
+            history.visit(url)
+        }
         directory = url
         reload(keepingSelection: false)
         preferences.lastDirectory = url.path
@@ -204,6 +241,7 @@ final class BrowserViewController: NSViewController {
 
         // The path field and the title describe where we are going, so they
         // update immediately rather than when the listing arrives.
+        onHistoryChanged?(history.canGoBack, history.canGoForward)
         pathField.stringValue = directory.path
         pathField.showHidden = showHidden
         pathField.currentDirectory = directory
@@ -343,6 +381,26 @@ final class BrowserViewController: NSViewController {
         pathField.currentEditor()?.selectAll(nil)
     }
 
+    @objc func goBack(_ sender: Any?) {
+        guard let url = history.back() else {
+            NSSound.beep()
+            return
+        }
+        // recordingHistory: false, or stepping back would itself be a visit
+        // and you could never leave the last two folders.
+        enter(url, recordingHistory: false)
+        view.window?.makeFirstResponder(tableView)
+    }
+
+    @objc func goForward(_ sender: Any?) {
+        guard let url = history.forward() else {
+            NSSound.beep()
+            return
+        }
+        enter(url, recordingHistory: false)
+        view.window?.makeFirstResponder(tableView)
+    }
+
     @objc func goToParent(_ sender: Any?) {
         let parent = PathCompletion.directoryURL(directory.deletingLastPathComponent())
         guard parent != directory else { return }
@@ -376,6 +434,68 @@ final class BrowserViewController: NSViewController {
             : "removed \(target.lastPathComponent) from favourites"
     }
 
+    @objc func showInfo(_ sender: Any?) {
+        infoPanel.show(actionTarget(), relativeTo: view.window)
+    }
+
+    @objc private func openWithApplication(_ sender: NSMenuItem) {
+        guard let application = sender.representedObject as? URL, let entry = selectedEntry()
+        else { return }
+        OpenWith.open(entry.url, with: application)
+    }
+
+    @objc private func setDefaultApplication(_ sender: NSMenuItem) {
+        guard let application = sender.representedObject as? URL, let entry = selectedEntry()
+        else { return }
+        OpenWith.setDefault(application, forKindOf: entry.url) { [weak self] message in
+            self?.statusLabel.stringValue = message
+        }
+    }
+
+    @objc private func openWithOther(_ sender: Any?) {
+        guard let entry = selectedEntry() else { return }
+        OpenWith.chooseApplication(for: entry.url, in: view.window) { application in
+            OpenWith.open(entry.url, with: application)
+        }
+    }
+
+    /// Built fresh every time it opens: which applications can open a file
+    /// depends on the file, and on what has been installed since last time.
+    private func rebuildOpenWithMenu(_ menu: NSMenu, for entry: Entry) {
+        menu.removeAllItems()
+
+        for candidate in OpenWith.candidates(for: entry.url) {
+            let item = menu.addItem(
+                withTitle: candidate.isDefault ? "\(candidate.name) (default)" : candidate.name,
+                action: #selector(openWithApplication(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = candidate.url
+            item.image = NSWorkspace.shared.icon(forFile: candidate.url.path)
+            item.image?.size = NSSize(width: 16, height: 16)
+
+            // Holding option turns the list into "and from now on". The system
+            // sets a default per kind, never per file, so the title says kind.
+            let always = menu.addItem(
+                withTitle: "Always open every file of this kind with \(candidate.name)",
+                action: #selector(setDefaultApplication(_:)),
+                keyEquivalent: ""
+            )
+            always.target = self
+            always.representedObject = candidate.url
+            always.isAlternate = true
+            always.keyEquivalentModifierMask = [.option]
+        }
+
+        if !menu.items.isEmpty {
+            menu.addItem(.separator())
+        }
+        let other = menu.addItem(
+            withTitle: "Other…", action: #selector(openWithOther(_:)), keyEquivalent: "")
+        other.target = self
+    }
+
     // MARK: - Writing to disk
 
     @objc func newFolder(_ sender: Any?) {
@@ -383,7 +503,7 @@ final class BrowserViewController: NSViewController {
         do {
             let created = try FileOperations.createFolder(named: name, in: directory)
             registerUndo("New Folder") { controller in
-                try? FileOperations.trash(created)
+                _ = try? FileOperations.trash(created)
                 controller.reload(keepingSelection: true)
             }
             statusLabel.stringValue = "created \(name)"
@@ -460,6 +580,8 @@ extension BrowserViewController: NSMenuItemValidation {
         if menuItem.action == #selector(toggleHidden(_:)) {
             menuItem.state = showHidden ? .on : .off
         }
+        if menuItem.action == #selector(goBack(_:)) { return history.canGoBack }
+        if menuItem.action == #selector(goForward(_:)) { return history.canGoForward }
         if menuItem.action == #selector(toggleFavourite(_:)) {
             menuItem.title =
                 favourites.contains(directory)
@@ -480,6 +602,8 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
     /// A header was clicked. AppKit has already flipped the arrow, so all that
     /// is left is to agree with it and re-read the folder.
     func tableViewSelectionDidChange(_ notification: Notification) {
+        infoPanel.update(selectedEntry()?.url ?? directory)
+
         guard QLPreviewPanel.sharedPreviewPanelExists(),
             let panel = QLPreviewPanel.shared(), panel.isVisible
         else { return }
@@ -508,7 +632,12 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         case "name":
             return nameCell(for: entry, in: tableView)
         case "size":
-            let text = entry.isDirectory ? "--" : entry.size.map(Self.sizeFormatter.string) ?? ""
+            var text = entry.isDirectory ? "--" : entry.size.map(Self.sizeFormatter.string) ?? ""
+            // A placeholder has a size and no bytes. Saying so here is the
+            // difference between copying a folder and downloading it.
+            if entry.cloud.isCloud, !entry.cloud.isDownloaded {
+                text = "\u{2601} \(text)"
+            }
             return textCell(text, in: tableView, aligned: .right)
         case "modified":
             let text = entry.modified.map(Self.dateFormatter.string) ?? ""
@@ -675,7 +804,7 @@ extension BrowserViewController: NSTextFieldDelegate {
         do {
             let renamed = try FileOperations.rename(original, to: name)
             registerUndo("Rename") { controller in
-                try? FileOperations.rename(renamed, to: original.lastPathComponent)
+                _ = try? FileOperations.rename(renamed, to: original.lastPathComponent)
                 controller.reload(keepingSelection: true)
             }
             statusLabel.stringValue = "renamed to \(name)"
@@ -691,4 +820,20 @@ extension BrowserViewController: NSTextFieldDelegate {
 private struct RenameRefused: LocalizedError {
     let problem: FileOperations.NameProblem
     var errorDescription: String? { problem.message }
+}
+
+// MARK: - Context menu
+
+extension BrowserViewController: NSMenuDelegate {
+    /// A right-click does not move the selection, so the menu has to act on the
+    /// row that was clicked. Selecting it first is the least surprising way to
+    /// make every item in the menu agree about which file it means.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let clicked = tableView.clickedRow
+        if entries.indices.contains(clicked), clicked != tableView.selectedRow {
+            select(row: clicked)
+        }
+        guard let entry = selectedEntry() else { return }
+        rebuildOpenWithMenu(openWithMenu, for: entry)
+    }
 }

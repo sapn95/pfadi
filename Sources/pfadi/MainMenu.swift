@@ -71,6 +71,13 @@ enum MainMenu {
         )
         rename.keyEquivalentModifierMask = []
 
+        let info = menu.addItem(
+            withTitle: "Get Info",
+            action: #selector(BrowserViewController.showInfo(_:)),
+            keyEquivalent: "i"
+        )
+        info.keyEquivalentModifierMask = [.command]
+
         menu.addItem(.separator())
 
         let trash = menu.addItem(
@@ -94,6 +101,20 @@ enum MainMenu {
             keyEquivalent: "g"
         )
         focus.keyEquivalentModifierMask = [.command, .shift]
+
+        let back = menu.addItem(
+            withTitle: "Back",
+            action: #selector(BrowserViewController.goBack(_:)),
+            keyEquivalent: "["
+        )
+        back.keyEquivalentModifierMask = [.command]
+
+        let forward = menu.addItem(
+            withTitle: "Forward",
+            action: #selector(BrowserViewController.goForward(_:)),
+            keyEquivalent: "]"
+        )
+        forward.keyEquivalentModifierMask = [.command]
 
         menu.addItem(.separator())
 

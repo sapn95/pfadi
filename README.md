@@ -36,6 +36,7 @@ tab     walk to the next match, ⇧tab back, escape to undo
 return  accept the match, then return again to go there
 a-z     type-ahead: jump to the row whose name starts like that
 space   Quick Look, and again to close it
+⌘[ ⌘]   back and forward, with arrows in the toolbar to match
 ⌘↑      enclosing folder
 ⇧⌘H     home
 ⇧⌘.     show hidden files
@@ -44,6 +45,7 @@ space   Quick Look, and again to close it
 ⇧⌘N     new folder, with the cursor already in its name
 F2      rename the selection
 ⌘⌫      move the selection to the trash
+⌘I      what is this thing: kind, size, dates, access, cloud status
 ⌘Z      undo any of those three
 ⇧⌘C     copy the path of the selection
 ⌃⌘T     open a terminal in this folder
@@ -86,6 +88,20 @@ no size to sort by and having them scatter through the list helps nobody.
 
 Space opens Quick Look and space closes it. It stays open while you walk the
 list with the arrow keys, which is the point of having it.
+
+Right-click a row for **Open With**, which lists every application registered
+for that file with the current default first. Hold option and the same list
+becomes "always open every file of this kind with this", which is what the
+system actually offers: defaults are per kind, never per file, so the menu
+says so rather than hiding it behind the word "always".
+
+**Cloud files are marked and never downloaded by being looked at.** OneDrive,
+Dropbox, Google Drive and iCloud all leave placeholder files that have a name,
+a size and no bytes. They look completely ordinary to a directory listing,
+which is how copying "everything" quietly pulls a hundred gigabytes down a
+metered connection. A placeholder shows a cloud in the size column, and ⌘I says
+which provider and which account. The check is `lstat` against the dataless
+flag plus the path, so describing a file never asks its provider anything.
 
 The three operations that change anything are all reversible, which is why they
 are the ones that exist. ⌘Z puts back a trashed file, undoes a rename, and
@@ -228,9 +244,6 @@ on Linux because they do not need to.
 Roughly in the order it hurts.
 
 - [ ] Copy and move, with progress and a conflict story.
-- [ ] Back and forward.
-- [ ] An info panel.
-- [ ] Cloud files marked as such, and not downloaded by being looked at.
 - [ ] SMB and NFS shares, mounted by typing one in the path field.
 - [ ] Drag and drop.
 - [ ] Tabs.

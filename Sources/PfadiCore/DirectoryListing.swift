@@ -32,6 +32,11 @@ public enum DirectoryListing {
             options: options
         )
 
+        // Worked out once for the folder rather than once per file. When the
+        // folder is not in anybody's cloud, no entry can be a placeholder and
+        // the per-file check is skipped entirely.
+        let provider = CloudFiles.provider(for: directory)
+
         let entries = urls.map { url -> Entry in
             // A single unreadable entry must not lose the whole listing, so a
             // failed resource lookup degrades to a plain name instead of throwing.
@@ -41,7 +46,14 @@ public enum DirectoryListing {
                 name: url.lastPathComponent,
                 isDirectory: values?.isDirectory ?? false,
                 size: values?.fileSize.map(Int64.init),
-                modified: values?.contentModificationDate
+                modified: values?.contentModificationDate,
+                cloud: provider.map { found in
+                    CloudFiles.Status(
+                        provider: found.provider,
+                        account: found.account,
+                        isDownloaded: !CloudFiles.isDataless(url)
+                    )
+                } ?? .local
             )
         }
 
