@@ -35,22 +35,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// `open -a Pfadi <path>`, and dropping a folder on the Dock icon.
-    /// A file is shown in the folder that holds it, which is the only sensible
-    /// reading of "open this" for something that is not a directory.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
+        show(Self.folder(for: url))
+    }
 
+    /// A path given on the command line, before the application starts.
+    func openOnLaunch(_ url: URL) {
+        pending = Self.folder(for: url)
+    }
+
+    private func show(_ directory: URL) {
+        guard let browser else {
+            pending = directory
+            return
+        }
+        browser.navigate(to: directory)
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// A file is shown in the folder that holds it, which is the only sensible
+    /// reading of "open this" for something that is not a directory.
+    private static func folder(for url: URL) -> URL {
         var isDirectory: ObjCBool = false
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-        let target = isDirectory.boolValue ? url : url.deletingLastPathComponent()
-
-        if let browser {
-            browser.navigate(to: target)
-            window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else {
-            pending = target
-        }
+        return isDirectory.boolValue ? url : url.deletingLastPathComponent()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

@@ -73,6 +73,31 @@ open -a build/Pfadi.app ~/git    # opens that folder
 open -a build/Pfadi.app file.txt # opens the folder holding it
 ```
 
+## Install
+
+```bash
+brew install sapn95/tap/pfadi
+```
+
+The formula compiles from source rather than downloading a bundle. pfadi has no
+Developer ID signature and is not notarised, so a prebuilt `.app` fetched from a
+release would be quarantined and refuse to open. A binary built on the machine
+it runs on has no such problem, and it takes under a minute.
+
+From a terminal that is all you need:
+
+```bash
+pfadi           # the current directory
+pfadi ~/git     # somewhere else
+```
+
+To have it appear in Spotlight, Launchpad and `open -a`, link the bundle into
+your applications folder:
+
+```bash
+ln -sfn "$(brew --prefix pfadi)/Pfadi.app" ~/Applications/Pfadi.app
+```
+
 ## Build
 
 Needs Swift 6 and macOS 14. The Command Line Tools are enough. Xcode is not
@@ -84,9 +109,13 @@ swift run pfadi-selftest     # the tests
 ./scripts/make-app.sh        # build/Pfadi.app
 ```
 
-There is no release build, no Developer ID signature and no notarisation. A
-copy downloaded from anyone else will refuse to open, and that stays true until
-this is worth shipping.
+There is no Developer ID signature and no notarisation, which is why the
+Homebrew formula compiles instead of downloading. A prebuilt copy handed to
+someone else will refuse to open, and that stays true until this is worth
+shipping.
+
+Releases are cut by tagging. `VERSION` is the single source of truth and the
+release workflow refuses to run when the tag disagrees with it.
 
 ## How it is put together
 
@@ -96,6 +125,7 @@ this is worth shipping.
 | `Sources/pfadi` | The window, the table, the path field, the menu bar. AppKit, built in code, no nib files. |
 | `Tests/PfadiSelfTest` | The tests, as a plain executable. |
 | `scripts/make-app.sh` | Wraps the SwiftPM binary in a `.app` bundle. |
+| `Formula/pfadi.rb` | The Homebrew formula, copied into the tap on release. |
 
 Two decisions worth knowing about before reading the code.
 
