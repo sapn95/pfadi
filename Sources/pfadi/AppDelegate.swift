@@ -4,6 +4,7 @@ import PfadiCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var browser: BrowserViewController?
+    private let toolbar = NavigationToolbar()
 
     /// A folder handed over before the window existed. `open -a Pfadi ~/git`
     /// can deliver its URL either side of applicationDidFinishLaunching, so
@@ -44,7 +45,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
+        toolbar.onBack = { [weak browser] in browser?.goBack(nil) }
+        toolbar.onForward = { [weak browser] in browser?.goForward(nil) }
+        browser.onHistoryChanged = { [weak self] back, forward in
+            self?.toolbar.update(canGoBack: back, canGoForward: forward)
+        }
+
         window.contentViewController = split
+        window.toolbar = toolbar.makeToolbar()
+        window.toolbarStyle = .unified
         window.titlebarAppearsTransparent = true
         window.title = "pfadi"
         window.setFrameAutosaveName("io.github.sapn95.pfadi.main")

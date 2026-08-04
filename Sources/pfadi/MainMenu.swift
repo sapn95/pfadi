@@ -95,6 +95,20 @@ enum MainMenu {
         )
         focus.keyEquivalentModifierMask = [.command, .shift]
 
+        let back = menu.addItem(
+            withTitle: "Back",
+            action: #selector(BrowserViewController.goBack(_:)),
+            keyEquivalent: "["
+        )
+        back.keyEquivalentModifierMask = [.command]
+
+        let forward = menu.addItem(
+            withTitle: "Forward",
+            action: #selector(BrowserViewController.goForward(_:)),
+            keyEquivalent: "]"
+        )
+        forward.keyEquivalentModifierMask = [.command]
+
         menu.addItem(.separator())
 
         let up = menu.addItem(

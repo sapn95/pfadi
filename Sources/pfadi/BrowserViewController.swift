@@ -11,6 +11,9 @@ final class BrowserViewController: NSViewController {
     /// and the menu item that puts it in the sidebar.
     var currentDirectory: URL { directory }
 
+    /// Told when moving somewhere changes what the arrows can do.
+    var onHistoryChanged: ((_ canGoBack: Bool, _ canGoForward: Bool) -> Void)?
+
     /// Told when the favourites change, so the sidebar can redraw.
     var onFavouritesChanged: (() -> Void)?
 
@@ -27,6 +30,8 @@ final class BrowserViewController: NSViewController {
     /// Counts reload requests so a slow listing for a folder we have since
     /// left can be recognised and dropped.
     private var generation = 0
+
+    private var history = NavigationHistory()
 
     /// The row being renamed, and a folder that was just created and should be
     /// renamed as soon as the watcher shows it.
@@ -179,7 +184,10 @@ final class BrowserViewController: NSViewController {
     }
 
     /// Moves to a folder: list it, watch it, remember it, select the top row.
-    private func enter(_ url: URL) {
+    private func enter(_ url: URL, recordingHistory: Bool = true) {
+        if recordingHistory {
+            history.visit(url)
+        }
         directory = url
         reload(keepingSelection: false)
         preferences.lastDirectory = url.path
@@ -204,6 +212,7 @@ final class BrowserViewController: NSViewController {
 
         // The path field and the title describe where we are going, so they
         // update immediately rather than when the listing arrives.
+        onHistoryChanged?(history.canGoBack, history.canGoForward)
         pathField.stringValue = directory.path
         pathField.showHidden = showHidden
         pathField.currentDirectory = directory
@@ -343,6 +352,26 @@ final class BrowserViewController: NSViewController {
         pathField.currentEditor()?.selectAll(nil)
     }
 
+    @objc func goBack(_ sender: Any?) {
+        guard let url = history.back() else {
+            NSSound.beep()
+            return
+        }
+        // recordingHistory: false, or stepping back would itself be a visit
+        // and you could never leave the last two folders.
+        enter(url, recordingHistory: false)
+        view.window?.makeFirstResponder(tableView)
+    }
+
+    @objc func goForward(_ sender: Any?) {
+        guard let url = history.forward() else {
+            NSSound.beep()
+            return
+        }
+        enter(url, recordingHistory: false)
+        view.window?.makeFirstResponder(tableView)
+    }
+
     @objc func goToParent(_ sender: Any?) {
         let parent = PathCompletion.directoryURL(directory.deletingLastPathComponent())
         guard parent != directory else { return }
@@ -460,6 +489,8 @@ extension BrowserViewController: NSMenuItemValidation {
         if menuItem.action == #selector(toggleHidden(_:)) {
             menuItem.state = showHidden ? .on : .off
         }
+        if menuItem.action == #selector(goBack(_:)) { return history.canGoBack }
+        if menuItem.action == #selector(goForward(_:)) { return history.canGoForward }
         if menuItem.action == #selector(toggleFavourite(_:)) {
             menuItem.title =
                 favourites.contains(directory)

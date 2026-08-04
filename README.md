@@ -36,6 +36,7 @@ tab     walk to the next match, ⇧tab back, escape to undo
 return  accept the match, then return again to go there
 a-z     type-ahead: jump to the row whose name starts like that
 space   Quick Look, and again to close it
+⌘[ ⌘]   back and forward, with arrows in the toolbar to match
 ⌘↑      enclosing folder
 ⇧⌘H     home
 ⇧⌘.     show hidden files
@@ -228,7 +229,6 @@ on Linux because they do not need to.
 Roughly in the order it hurts.
 
 - [ ] Copy and move, with progress and a conflict story.
-- [ ] Back and forward.
 - [ ] An info panel.
 - [ ] Cloud files marked as such, and not downloaded by being looked at.
 - [ ] SMB and NFS shares, mounted by typing one in the path field.

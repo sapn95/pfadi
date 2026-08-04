@@ -111,5 +111,6 @@ PreferenceSuites.run()
 SortingSuites.run()
 FavouriteSuites.run()
 WriteSuites.run()
+HistorySuites.run()
 
 Harness.finish()
