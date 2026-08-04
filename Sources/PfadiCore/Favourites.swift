@@ -69,6 +69,53 @@ public final class Favourites {
         paths.contains(url.standardizedFileURL.path)
     }
 
+    /// Cloud folders, discovered rather than configured.
+    ///
+    /// OneDrive, Dropbox and the rest all live in `~/Library/CloudStorage`,
+    /// which is inside a folder macOS hides. Finder puts them in its sidebar
+    /// for exactly this reason: without that they are unreachable unless you
+    /// already know the path and type it out.
+    public func cloudLocations() -> [URL] {
+        let root = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/CloudStorage")
+        let contents =
+            (try? fileManager.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                options: .skipsHiddenFiles)) ?? []
+        return
+            contents
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .sorted {
+                $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent)
+                    == .orderedAscending
+            }
+    }
+
+    /// Mounted volumes, including whatever was mounted by typing an smb:// at
+    /// the path field.
+    public func volumes() -> [URL] {
+        let keys: [URLResourceKey] = [.volumeIsBrowsableKey, .volumeIsInternalKey]
+        let mounted =
+            fileManager.mountedVolumeURLs(
+                includingResourceValuesForKeys: keys,
+                options: [
+                    .skipHiddenVolumes
+                ]) ?? []
+        return mounted.filter { url in
+            // The boot volume is already reachable as / and as home, and the
+            // local Time Machine snapshots are not somewhere anyone browses.
+            url.path != "/" && !url.path.contains("com.apple.TimeMachine")
+        }
+    }
+
+    /// `OneDrive-SBB` reads as `OneDrive — SBB`, because the folder name is a
+    /// filesystem detail and the sidebar is not.
+    public static func cloudTitle(for url: URL) -> String {
+        let name = url.lastPathComponent
+        guard let separator = name.firstIndex(of: "-") else { return name }
+        return "\(name[name.startIndex..<separator]) — \(name[name.index(after: separator)...])"
+    }
+
     /// The label for a row. Home gets a name rather than the account's short
     /// username, which is what the last path component would give.
     public static func title(for url: URL, home: URL) -> String {

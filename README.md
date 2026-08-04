@@ -146,11 +146,20 @@ inside a black box. Conflicts are all asked about up front: being interrupted
 halfway through a long copy, with no idea what has already happened, is what
 makes people stop trusting a file manager.
 
-The sidebar holds the folders you keep going back to. ⌘D puts the one you are
-in there and ⌘D takes it out again, right-click removes a row, and a favourite
-whose folder has been deleted or unmounted is skipped rather than drawn as a
-row that beeps when clicked. It stays in the list, in case the volume comes
-back.
+The sidebar has three sections. **Favourites** are yours: ⌘D puts the folder
+you are in there and ⌘D takes it out again, and right-click removes a row. A
+favourite whose folder has been deleted or unmounted is skipped rather than
+drawn as a row that beeps when clicked, and it stays in the list in case the
+volume comes back.
+
+**Cloud** and **Locations** are not yours and cannot be edited, because they
+are facts about the machine rather than a list somebody curates. Cloud is
+whatever is in `~/Library/CloudStorage`: your OneDrive, Dropbox or Google
+Drive accounts, which otherwise live inside a folder macOS hides and are
+unreachable unless you already know the path. Locations is the mounted
+volumes, including anything mounted by typing an `smb://` into the path field.
+Both are rebuilt on every refresh, because a share can be mounted and an
+account can be signed out of while the window is open.
 
 What you set stays set. The favourites, the sort order, showing hidden files,
 the column widths, the window size and the folder you were last in all come

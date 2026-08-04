@@ -68,6 +68,49 @@ enum FavouriteSuites {
             }
         }
 
+        Harness.suite("favourites: cloud folders are discovered, not configured") {
+            let favourites = Favourites(preferences: Preferences(store: MemoryFavouriteStore()))
+            let found = favourites.cloudLocations()
+            let root = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/CloudStorage")
+
+            // This machine may or may not have any, so the assertion is about
+            // the shape of the answer rather than its contents.
+            Harness.expect(
+                found.allSatisfy { $0.deletingLastPathComponent().path == root.path },
+                "everything found is inside Library/CloudStorage")
+            Harness.expect(
+                found.allSatisfy { url in
+                    var isDirectory: ObjCBool = false
+                    FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                    return isDirectory.boolValue
+                },
+                "and every one of them is a folder")
+        }
+
+        Harness.suite("favourites: a cloud folder gets a readable name") {
+            Harness.expectEqual(
+                Favourites.cloudTitle(
+                    for: URL(fileURLWithPath: "/x/Library/CloudStorage/OneDrive-SBB")),
+                "OneDrive — SBB",
+                "the hyphen in the folder name is a filesystem detail")
+            Harness.expectEqual(
+                Favourites.cloudTitle(for: URL(fileURLWithPath: "/x/Library/CloudStorage/Dropbox")),
+                "Dropbox",
+                "and one without an account is left alone")
+        }
+
+        Harness.suite("favourites: volumes leave out what nobody browses") {
+            let volumes = Favourites(preferences: Preferences(store: MemoryFavouriteStore()))
+                .volumes()
+            Harness.expect(
+                !volumes.contains { $0.path == "/" },
+                "the boot volume is already home and /, so not listed twice")
+            Harness.expect(
+                !volumes.contains { $0.path.contains("com.apple.TimeMachine") },
+                "and local snapshots are not a place")
+        }
+
         Harness.suite("favourites: home is called Home") {
             let home = URL(fileURLWithPath: "/Users/someone", isDirectory: true)
             Harness.expectEqual(
