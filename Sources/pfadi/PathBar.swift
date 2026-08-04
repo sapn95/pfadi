@@ -14,15 +14,21 @@ final class PathBar: NSPathControl {
     /// Whether hidden folders appear in the menus. Follows the list.
     var showHidden = false
 
-    /// Asked for by a double click: somebody who wants to type.
-    var onEdit: (() -> Void)?
+    /// The folder being shown.
+    ///
+    /// NSPathControlItem carries a read-only URL, so items cannot be built by
+    /// hand and still be navigable. The control keeps making its own from this,
+    /// and the arrow that goes deeper is a button beside it instead.
+    var directory: URL? {
+        didSet { url = directory }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         pathStyle = .standard
         focusRingType = .none
-        doubleAction = #selector(editRequested)
-        toolTip = "Click a component to see what is beside it. Double-click to type a path."
+        doubleAction = #selector(componentOpened)
+        toolTip = "Click a folder to see what is beside it. Double-click to go there."
         target = self
         action = #selector(componentClicked)
         // Nothing is dropped on the bar itself; the list and the sidebar take
@@ -35,26 +41,35 @@ final class PathBar: NSPathControl {
         fatalError("pfadi builds its views in code")
     }
 
-    /// Double click, which is deliberate in a way a stray single click is not.
-    @objc private func editRequested() {
-        onEdit?()
+    /// Double click on a component goes there. Typing is the button at the end
+    /// of the row and ⇧⌘G, which are both deliberate acts rather than the
+    /// second half of a click somebody was already making.
+    @objc private func componentOpened() {
+        guard let url = clickedPathItem?.url else { return }
+        onChoose?(url)
     }
 
     @objc private func componentClicked() {
         // A click that landed on the control but not on a component does
         // nothing. It used to swap in the text field, which is a one-way door
-        // if the field never takes focus: only editing ending puts the bar
-        // back, and editing that never started never ends. ⇧⌘G is the way in
-        // to typing, and it is a deliberate act.
+        // if the field never takes focus.
         guard let item = clickedPathItem, let url = item.url else { return }
         presentSiblings(of: url)
     }
 
+    /// What is inside the folder on screen, rather than what is beside it.
+    /// Shown from the arrow that sits after the last component.
+    func presentContents(from view: NSView) {
+        guard let directory else { return }
+        present(folders(in: directory), ticking: nil, below: view)
+    }
+
     /// The menu behind one component: everything beside it, and itself.
     private func presentSiblings(of url: URL) {
-        let parent = url.deletingLastPathComponent()
-        let siblings = folders(in: parent)
+        present(folders(in: url.deletingLastPathComponent()), ticking: url, below: self)
+    }
 
+    private func present(_ siblings: [URL], ticking: URL?, below anchor: NSView) {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -84,7 +99,9 @@ final class PathBar: NSPathControl {
                 }
 
             guard !matching.isEmpty else {
-                let empty = menu.addItem(withTitle: "no match", action: nil, keyEquivalent: "")
+                let empty = menu.addItem(
+                    withTitle: siblings.isEmpty ? "no folders in here" : "no match",
+                    action: nil, keyEquivalent: "")
                 empty.isEnabled = false
                 return
             }
@@ -99,16 +116,17 @@ final class PathBar: NSPathControl {
                 item.image = NSWorkspace.shared.icon(forFile: sibling.path)
                 item.image?.size = NSSize(width: 16, height: 16)
                 // The one that was clicked is ticked, so the menu says where
-                // you are as well as where you could go.
-                item.state = sibling.path == url.path ? .on : .off
+                // you are as well as where you could go. Nothing is ticked
+                // when the menu is about going deeper: none of it is here.
+                item.state = sibling.path == ticking?.path ? .on : .off
             }
         }
 
         filter?.onChange = build
         build("")
 
-        let position = NSPoint(x: 0, y: bounds.height + 4)
-        menu.popUp(positioning: nil, at: position, in: self)
+        let position = NSPoint(x: 0, y: anchor.bounds.height + 4)
+        menu.popUp(positioning: nil, at: position, in: anchor)
     }
 
     @objc private func siblingChosen(_ sender: NSMenuItem) {
