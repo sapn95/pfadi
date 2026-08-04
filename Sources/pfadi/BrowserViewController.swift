@@ -5,6 +5,14 @@ import Quartz
 /// One window: a path field on top, a file list below, a count at the bottom.
 final class BrowserViewController: NSViewController {
     private let preferences: Preferences
+    private let favourites: Favourites
+
+    /// Where this window is looking, for whoever needs to know: the sidebar,
+    /// and the menu item that puts it in the sidebar.
+    var currentDirectory: URL { directory }
+
+    /// Told when the favourites change, so the sidebar can redraw.
+    var onFavouritesChanged: (() -> Void)?
 
     private var directory: URL
     private var entries: [Entry] = []
@@ -40,9 +48,14 @@ final class BrowserViewController: NSViewController {
         return formatter
     }()
 
-    init(directory: URL, preferences: Preferences = Preferences()) {
+    init(
+        directory: URL,
+        preferences: Preferences = Preferences(),
+        favourites: Favourites? = nil
+    ) {
         self.directory = PathCompletion.directoryURL(directory)
         self.preferences = preferences
+        self.favourites = favourites ?? Favourites(preferences: preferences)
         // A choice made once should still be true next launch, so this is read
         // back rather than defaulted.
         self.showHidden = preferences.showHidden
@@ -323,6 +336,20 @@ final class BrowserViewController: NSViewController {
         reload(keepingSelection: true)
     }
 
+    /// ⌘D, the same key Finder uses for the same thing.
+    @objc func toggleFavourite(_ sender: Any?) {
+        let target = directory
+        let added = favourites.add(target)
+        if !added {
+            favourites.remove(target)
+        }
+        onFavouritesChanged?()
+        statusLabel.stringValue =
+            added
+            ? "added \(target.lastPathComponent) to favourites"
+            : "removed \(target.lastPathComponent) from favourites"
+    }
+
     @objc func copyPath(_ sender: Any?) {
         let target = actionTarget()
         Actions.copyPath(target)
@@ -349,6 +376,12 @@ extension BrowserViewController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleHidden(_:)) {
             menuItem.state = showHidden ? .on : .off
+        }
+        if menuItem.action == #selector(toggleFavourite(_:)) {
+            menuItem.title =
+                favourites.contains(directory)
+                ? "Remove from Favourites"
+                : "Add to Favourites"
         }
         return true
     }

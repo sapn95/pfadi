@@ -53,7 +53,16 @@ public final class Preferences {
         }
     }
 
+    /// The sidebar folders, or nil when the person has never touched them and
+    /// the defaults should still apply. An empty array is a real answer: it
+    /// means every one of them was removed on purpose.
+    public var favourites: [String]? {
+        get { store.object(forKey: Key.favourites) as? [String] }
+        set { store.set(newValue, forKey: Key.favourites) }
+    }
+
     enum Key {
+        static let favourites = "favourites"
         static let lastDirectory = "lastDirectory"
         static let showHidden = "showHidden"
         static let sortKey = "sortKey"

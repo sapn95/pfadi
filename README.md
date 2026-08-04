@@ -40,6 +40,7 @@ space   Quick Look, and again to close it
 ⇧⌘H     home
 ⇧⌘.     show hidden files
 ⌘R      refresh
+⌘D      add this folder to the sidebar, or take it back out
 ⇧⌘C     copy the path of the selection
 ⌃⌘T     open a terminal in this folder
 ⇧⌘R     reveal the selection in Finder
@@ -82,10 +83,16 @@ no size to sort by and having them scatter through the list helps nobody.
 Space opens Quick Look and space closes it. It stays open while you walk the
 list with the arrow keys, which is the point of having it.
 
-What you set stays set. The sort order, showing hidden files, the column
-widths, the window size and the folder you were last in all come back on the
-next launch, because a preference you have to make again every morning is not
-a preference.
+The sidebar holds the folders you keep going back to. ⌘D puts the one you are
+in there and ⌘D takes it out again, right-click removes a row, and a favourite
+whose folder has been deleted or unmounted is skipped rather than drawn as a
+row that beeps when clicked. It stays in the list, in case the volume comes
+back.
+
+What you set stays set. The favourites, the sort order, showing hidden files,
+the column widths, the window size and the folder you were last in all come
+back on the next launch, because a preference you have to make again every
+morning is not a preference.
 
 `⌃⌘T` opens whichever terminal is installed, preferring Ghostty, kitty, iTerm2,
 Warp and Alacritty over Terminal.app in that order. Terminal.app is last
@@ -170,7 +177,7 @@ release workflow refuses to run when the tag disagrees with it.
 
 | Path | What lives there |
 | --- | --- |
-| `Sources/PfadiCore` | Directory listing, sorting, path completion, type-ahead, the directory watcher, the start-folder rules. No AppKit, so it can be tested. |
+| `Sources/PfadiCore` | Directory listing, sorting, path completion, type-ahead, the watcher, the favourites, the preferences, the start-folder rules. No AppKit, so it can be tested. |
 | `Sources/pfadi` | The window, the table, the path field, the menu bar. AppKit, built in code, no nib files. |
 | `Tests/PfadiSelfTest` | The tests, as a plain executable. |
 | `scripts/make-app.sh` | Wraps the SwiftPM binary in a `.app` bundle. |
@@ -212,7 +219,6 @@ on Linux because they do not need to.
 Roughly in the order it hurts.
 
 - [ ] Copy, move, rename, delete. Nothing writes to disk yet.
-- [ ] A favourites sidebar.
 - [ ] Drag and drop.
 - [ ] Tabs.
 - [ ] A signed, notarised build.
