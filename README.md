@@ -29,8 +29,8 @@ So: one pane, one path field, keyboard first.
 
 ```text
 ⇧⌘G     jump to the path field
-tab     complete the half-typed component
-return  go there, or open the selected file
+tab     walk to the next match, ⇧tab back, escape to undo
+return  accept the match, then return again to go there
 a-z     type-ahead: jump to the row whose name starts like that
 ⌘↑      enclosing folder
 ⇧⌘H     home
@@ -41,10 +41,20 @@ a-z     type-ahead: jump to the row whose name starts like that
 ⇧⌘R     reveal the selection in Finder
 ```
 
-Completion works the way a shell does it. Type `/Users/sa`, press tab, land on
-`/Users/sapn/`. Directories keep their trailing slash so a second tab carries
-straight on into them. Dotfiles stay out of the candidate list until you type a
-dot, whether or not hidden files are shown.
+Completion works the way a shell does it, and stays on the keyboard. Tab puts
+the first match in the field, tab again replaces it with the next, shift-tab
+goes back, and both directions wrap. The status line counts along: `2 of 7`.
+Escape puts back exactly what you typed.
+
+Return has two jobs, in the order you need them. The first one accepts the
+match that is showing and leaves you in the field, so the next tab can carry
+straight on into the folder you just chose. The second one goes there. Typing a
+path yourself and pressing return once still just goes, because there is no
+match sitting there to accept.
+
+Directories keep their trailing slash. Dotfiles stay out of the matches until
+you type a dot, whether or not hidden files are shown. When nothing matches, it
+beeps and says so, rather than leaving you wondering whether the key registered.
 
 A path can be absolute, relative to where you are, or start with `~`. Pointing
 it at a file rather than a folder hands the file to whichever application owns

@@ -53,6 +53,10 @@ final class BrowserViewController: NSViewController {
         pathField.translatesAutoresizingMaskIntoConstraints = false
         pathField.target = self
         pathField.action = #selector(pathFieldCommitted(_:))
+        pathField.onCompletionChanged = { [weak self] progress in
+            guard let self else { return }
+            statusLabel.stringValue = progress ?? statusText()
+        }
 
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -200,9 +204,13 @@ final class BrowserViewController: NSViewController {
             previousSelection.flatMap { name in entries.firstIndex { $0.name == name } } ?? 0
         select(row: row)
 
+        statusLabel.stringValue = statusText()
+    }
+
+    private func statusText() -> String {
+        guard !entries.isEmpty else { return "empty folder" }
         let folders = entries.filter(\.isDirectory).count
-        statusLabel.stringValue =
-            "\(entries.count) items, \(folders) folders" + (showHidden ? ", hidden shown" : "")
+        return "\(entries.count) items, \(folders) folders" + (showHidden ? ", hidden shown" : "")
     }
 
     private func select(row: Int) {
@@ -246,6 +254,7 @@ final class BrowserViewController: NSViewController {
     }
 
     @objc private func pathFieldCommitted(_ sender: NSTextField) {
+        pathField.endCompletion()
         switch PathCompletion.resolve(sender.stringValue, relativeTo: directory) {
         case .directory(let url):
             navigate(to: url)
