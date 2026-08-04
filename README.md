@@ -131,6 +131,12 @@ the only rule that matters: a drag within a volume moves, across volumes it
 copies, ⌥ forces a copy and ⌘ forces a move. Dropping onto a folder puts things
 in it; dropping between rows puts them in the folder on screen.
 
+The sidebar takes drops too. A folder dropped between two favourites becomes
+one, at the position you dropped it, and dragging a favourite up or down its
+own section reorders it. A folder dropped **onto** a row copies into that
+folder, and only ever copies: dropping something onto a list of places is not a
+gesture anyone makes meaning "and take it out of where it was".
+
 Everything that changes anything is reversible, which is the rule the whole
 write side is built on. ⌘Z puts back a trashed file, undoes a rename, trashes a
 folder that was just created, and unwinds a copy or a move. A rename that would
@@ -199,7 +205,23 @@ open -a build/Pfadi.app file.txt # opens the folder holding it
 
 ```bash
 brew install sapn95/tap/pfadi
+pfadi-instead-of-finder --apply
 ```
+
+The second command is the way off Finder, and it says what it cannot do rather
+than quietly doing half the job. It links the app into `~/Applications` so
+Spotlight and ⌘Tab find it, and makes `open .` in a terminal open pfadi.
+`open report.pdf` is untouched and still goes to whatever owns a PDF.
+`pfadi-instead-of-finder --undo` puts both back. Run it with no arguments to
+see what it would do and change nothing.
+
+Two things it will not pretend to do:
+
+- **Finder cannot be removed from the Dock.** macOS reserves that tile and
+  there is no supported way to give it up.
+- **pfadi cannot become the system-wide handler for folders.** LaunchServices
+  refuses to reassign `public.folder`, which is the entire reason the shell
+  function above exists.
 
 The formula compiles from source rather than downloading a bundle. pfadi has no
 Developer ID signature and is not notarised, so a prebuilt `.app` fetched from a
@@ -337,6 +359,16 @@ on Linux because they do not need to.
 Roughly in the order it hurts.
 
 - [x] ~~A signed, notarised build.~~ Not planned. See below.
+
+## Wanted next
+
+- **A breadcrumb path bar.** Click a component between two slashes and get a
+  menu of everything at that level, with a filter field at the top, so you can
+  step sideways without retyping the path. `NSPathControl` gives the clickable
+  components and an `NSMenu` takes a custom view for the filter.
+- **Expandable folders in the list**, the way an open panel does it.
+- **Downloading and evicting cloud placeholders**, which needs the File
+  Provider domain APIs rather than a filesystem call.
 
 ## Licence
 

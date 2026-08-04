@@ -4,6 +4,10 @@ import PfadiCore
 /// The list of favourite folders down the left.
 final class SidebarViewController: NSViewController {
     var onSelect: ((URL) -> Void)?
+    /// A share to reconnect to, or nil to ask for one.
+    var onConnect: ((URL?) -> Void)?
+    /// Files dropped onto a folder row, to be copied or moved into it.
+    var onDrop: ((_ sources: [URL], _ destination: URL) -> Void)?
 
     private let favourites: Favourites
     private let home = FileManager.default.homeDirectoryForCurrentUser
@@ -13,12 +17,34 @@ final class SidebarViewController: NSViewController {
     /// A sidebar is a list of headings and things under them, and AppKit's
     /// table wants one flat array, so the two are spelled out as one type.
     private enum Row {
+        /// Which section a row came from, so removing one only offers to
+        /// remove the kind that is actually yours to remove.
+        enum Section {
+            case recents
+            case favourites
+            case cloud
+            case locations
+            case servers
+        }
+
         case heading(String)
-        case place(URL, title: String)
+        case place(URL, title: String, section: Section)
+        /// The last row: the way in to a share that is not mounted yet.
+        case connect
 
         var url: URL? {
-            if case .place(let url, _) = self { return url }
+            if case .place(let url, _, _) = self { return url }
             return nil
+        }
+
+        var section: Section? {
+            if case .place(_, _, let section) = self { return section }
+            return nil
+        }
+
+        var isSelectable: Bool {
+            if case .heading = self { return false }
+            return true
         }
     }
 
@@ -56,6 +82,9 @@ final class SidebarViewController: NSViewController {
         column.width = 170
         tableView.addTableColumn(column)
 
+        tableView.registerForDraggedTypes([.fileURL])
+        tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
+
         let menu = NSMenu()
         menu.addItem(
             withTitle: "Remove from Favourites",
@@ -75,35 +104,60 @@ final class SidebarViewController: NSViewController {
         reload()
     }
 
-    func reload() {
+    /// Cloud folders and volumes, kept between reloads.
+    ///
+    /// Finding them means listing a directory and asking the kernel for every
+    /// mounted filesystem, and the second of those can block for a long time on
+    /// a share whose server has gone away. Doing it on every navigation would
+    /// put that hang in the middle of walking around a folder tree.
+    private var discovered: (cloud: [URL], volumes: [URL])?
+
+    func reload(rediscover: Bool = false) {
+        if rediscover || discovered == nil {
+            discovered = (favourites.cloudLocations(), favourites.volumes())
+        }
         var built: [Row] = []
 
         let recents = favourites.recents()
         if !recents.isEmpty {
             built.append(.heading("Recents"))
-            built += recents.map { .place($0, title: Favourites.title(for: $0, home: home)) }
+            built += recents.map {
+                .place($0, title: Favourites.title(for: $0, home: home), section: .recents)
+            }
         }
 
         let favouriteRows = favourites.visible
         if !favouriteRows.isEmpty {
             built.append(.heading("Favourites"))
-            built += favouriteRows.map { .place($0, title: Favourites.title(for: $0, home: home)) }
+            built += favouriteRows.map {
+                .place($0, title: Favourites.title(for: $0, home: home), section: .favourites)
+            }
         }
 
         // Discovered, not configured, and rebuilt on every reload: a share can
         // be mounted and a cloud folder can be signed out of while the window
         // is open.
-        let cloud = favourites.cloudLocations()
+        let cloud = discovered?.cloud ?? []
         if !cloud.isEmpty {
             built.append(.heading("Cloud"))
-            built += cloud.map { .place($0, title: Favourites.cloudTitle(for: $0)) }
+            built += cloud.map {
+                .place($0, title: Favourites.cloudTitle(for: $0), section: .cloud)
+            }
         }
 
-        let volumes = favourites.volumes()
+        let volumes = discovered?.volumes ?? []
         if !volumes.isEmpty {
             built.append(.heading("Locations"))
-            built += volumes.map { .place($0, title: $0.lastPathComponent) }
+            built += volumes.map { .place($0, title: $0.lastPathComponent, section: .locations) }
         }
+
+        // Always present, even with nothing under it. A way to reach a share
+        // that only appears once you already have one is no way in at all.
+        built.append(.heading("Servers"))
+        built += favourites.servers().map {
+            .place($0, title: $0.host ?? $0.absoluteString, section: .servers)
+        }
+        built.append(.connect)
 
         rows = built
         tableView.reloadData()
@@ -114,9 +168,10 @@ final class SidebarViewController: NSViewController {
         // selection, so removing the selected row would delete the wrong one.
         let row = tableView.clickedRow
         guard rows.indices.contains(row), let url = rows[row].url else { return }
-        // Only favourites can be removed. Cloud folders and volumes are facts
-        // about the machine, not a list somebody curates.
-        guard favourites.contains(url) else {
+        // Only a favourites row, and by which section it is in rather than by
+        // whether the folder happens to also be a favourite: a cloud folder
+        // that was favourited must not be removable from its Cloud row.
+        guard rows[row].section == .favourites else {
             NSSound.beep()
             return
         }
@@ -145,7 +200,17 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.textField?.stringValue = title
             return cell
 
-        case .place(let url, let title):
+        case .connect:
+            let id = NSUserInterfaceItemIdentifier("favouriteCell")
+            let cell =
+                tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
+                ?? Self.makeCell(id: id)
+            cell.imageView?.image = NSImage(
+                systemSymbolName: "network", accessibilityDescription: nil)
+            cell.textField?.stringValue = "Connect to Server…"
+            return cell
+
+        case .place(let url, let title, _):
             let id = NSUserInterfaceItemIdentifier("favouriteCell")
             let cell =
                 tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
@@ -162,13 +227,23 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
-        rows.indices.contains(row) && rows[row].url != nil
+        rows.indices.contains(row) && rows[row].isSelectable
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         let row = tableView.selectedRow
-        guard rows.indices.contains(row), let url = rows[row].url else { return }
-        onSelect?(url)
+        guard rows.indices.contains(row) else { return }
+
+        switch rows[row] {
+        case .connect:
+            onConnect?(nil)
+        case .place(let url, _, .servers):
+            onConnect?(url)
+        case .place(let url, _, _):
+            onSelect?(url)
+        case .heading:
+            break
+        }
     }
 
     private static func makeHeadingCell(id: NSUserInterfaceItemIdentifier) -> NSTableCellView {
@@ -216,5 +291,98 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
             label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
         return cell
+    }
+}
+
+// MARK: - Drag and drop
+
+extension SidebarViewController {
+    /// A favourite can be dragged: out of the window as a folder, or up and
+    /// down its own section to reorder it.
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int)
+        -> (any NSPasteboardWriting)?
+    {
+        guard rows.indices.contains(row), rows[row].section == .favourites,
+            let url = rows[row].url
+        else { return nil }
+        return url as NSURL
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        validateDrop info: any NSDraggingInfo,
+        proposedRow row: Int,
+        proposedDropOperation operation: NSTableView.DropOperation
+    ) -> NSDragOperation {
+        let sources = draggedURLs(info)
+        guard !sources.isEmpty else { return [] }
+
+        // Onto a folder row: put the files in that folder.
+        if operation == .on, rows.indices.contains(row), let destination = rows[row].url,
+            rows[row].section != .servers, isFolder(destination)
+        {
+            return info.draggingSource as AnyObject? === tableView ? [] : .copy
+        }
+
+        // Between rows inside Favourites: add it, or move it if it is already
+        // there. Only folders, because a file in a folder list is not a place.
+        if operation == .above, favouritesRange().contains(row),
+            sources.allSatisfy({ isFolder($0) })
+        {
+            return info.draggingSource as AnyObject? === tableView ? .move : .copy
+        }
+        return []
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        acceptDrop info: any NSDraggingInfo,
+        row: Int,
+        dropOperation operation: NSTableView.DropOperation
+    ) -> Bool {
+        let sources = draggedURLs(info)
+        guard !sources.isEmpty else { return false }
+
+        if operation == .on, rows.indices.contains(row), let destination = rows[row].url,
+            isFolder(destination)
+        {
+            onDrop?(sources, destination)
+            return true
+        }
+
+        guard operation == .above else { return false }
+        // The row index counts headings too, so it has to come back to an
+        // index within the favourites themselves before anything is inserted.
+        let offset = row - favouritesRange().lowerBound
+        for (index, url) in sources.filter(isFolder).enumerated() {
+            favourites.insert(url, at: offset + index)
+        }
+        reload()
+        return true
+    }
+
+    /// Where the favourites sit in the flat row list, including the position
+    /// just past the last one so something can be dropped at the end.
+    private func favouritesRange() -> Range<Int> {
+        let indices = rows.indices.filter { rows[$0].section == .favourites }
+        guard let first = indices.first, let last = indices.last else {
+            // No favourites yet: the only place to drop is under the heading.
+            guard
+                let heading = rows.firstIndex(where: {
+                    if case .heading(let title) = $0 { return title == "Favourites" }
+                    return false
+                })
+            else { return 0..<0 }
+            return (heading + 1)..<(heading + 2)
+        }
+        return first..<(last + 2)
+    }
+
+    private func draggedURLs(_ info: any NSDraggingInfo) -> [URL] {
+        info.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
+    }
+
+    private func isFolder(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
     }
 }

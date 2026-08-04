@@ -50,12 +50,23 @@ final class BrowserWindow {
         window.isReleasedWhenClosed = false
 
         wire()
+        observeActivation()
         Self.all.append(self)
     }
 
     private func wire() {
         sidebar.onSelect = { [weak browser] url in browser?.navigate(to: url) }
+        sidebar.onConnect = { [weak browser] url in
+            guard let url else {
+                browser?.connectToServer(nil)
+                return
+            }
+            browser?.connect(to: url)
+        }
         browser.onFavouritesChanged = { [weak sidebar] in sidebar?.reload() }
+        sidebar.onDrop = { [weak browser] sources, destination in
+            browser?.transfer(sources, into: destination)
+        }
         browser.onNewTab = { [weak self] url in self?.openTab(at: url) }
         toolbar.onBack = { [weak browser] in browser?.goBack(nil) }
         toolbar.onForward = { [weak browser] in browser?.goForward(nil) }
@@ -63,11 +74,31 @@ final class BrowserWindow {
             self?.toolbar.update(canGoBack: back, canGoForward: forward)
         }
 
-        NotificationCenter.default.addObserver(
+        // The token is kept and removed when it fires: a block observer that
+        // is never removed keeps its closure, and with it the window, alive
+        // for the life of the process. Held in a box rather than a captured
+        // var, which the closure would be reading while it is still being
+        // assigned.
+        let token = ObserverToken()
+        token.value = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
         ) { [weak self] _ in
+            if let observer = token.value {
+                NotificationCenter.default.removeObserver(observer)
+            }
             guard let self else { return }
             Self.all.removeAll { $0 === self }
+        }
+    }
+
+    /// Volumes and cloud accounts are looked for again when the window comes
+    /// forward, which is when something is likely to have been mounted or
+    /// signed out of, rather than on every navigation.
+    private func observeActivation() {
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            self?.sidebar.reload(rediscover: true)
         }
     }
 
@@ -96,4 +127,9 @@ final class BrowserWindow {
         }
         return all.last
     }
+}
+
+/// Somewhere to put an observer token that the observer's own closure can read.
+private final class ObserverToken: @unchecked Sendable {
+    var value: (any NSObjectProtocol)?
 }

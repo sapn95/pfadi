@@ -59,6 +59,25 @@ enum P1Suites {
             Harness.expectEqual(
                 TypeAhead.buffer("te", appending: "r", lastKeystroke: 100, now: 102), "r",
                 "a slow one starts over")
+
+            Harness.expect(
+                TypeAhead.isLive(lastKeystroke: 100, now: 100.5), "half a second is still typing")
+            Harness.expect(
+                !TypeAhead.isLive(lastKeystroke: 100, now: 105), "five seconds is not")
+        }
+
+        Harness.suite("type-ahead: the same letter again cycles, it does not spell") {
+            // Pressing t twice means "the next thing starting with t". Appending
+            // would make it "tt" and search for a name nobody has.
+            Harness.expectEqual(
+                TypeAhead.buffer("t", appending: "t", lastKeystroke: 100, now: 100.2), "t",
+                "a repeated single letter stays one letter")
+            Harness.expectEqual(
+                TypeAhead.index(matching: "t", in: names, current: 1), 2,
+                "so it walks to the next t")
+            Harness.expectEqual(
+                TypeAhead.buffer("te", appending: "e", lastKeystroke: 100, now: 100.2), "tee",
+                "but a repeat inside a longer word is a real letter")
         }
     }
 

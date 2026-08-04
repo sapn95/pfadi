@@ -6,6 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// can deliver its URL either side of applicationDidFinishLaunching, so
     /// both orders have to work.
     private var pending: URL?
+    /// Further folders asked for before any window existed.
+    private var queued: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
@@ -13,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let first = BrowserWindow(directory: Self.startDirectory(explicit: pending))
         pending = nil
         first.show()
+        for url in queued { first.openTab(at: url) }
+        queued = []
 
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -22,14 +26,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// A second invocation opens a tab rather than replacing what is on screen:
     /// being sent somewhere new should not lose the folder you were in.
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first else { return }
-        let folder = Self.folder(for: url)
+        guard !urls.isEmpty else { return }
 
         guard let front = BrowserWindow.frontmost else {
-            pending = folder
+            // Nothing exists yet, so the first one seeds the window and the
+            // rest arrive as tabs once it does.
+            pending = Self.folder(for: urls[0])
+            for url in urls.dropFirst() { queued.append(Self.folder(for: url)) }
             return
         }
-        front.openTab(at: folder)
+        // Every URL, not only the first: `open -a Pfadi a b c` asked for three
+        // folders and silently dropping two of them is not an answer.
+        for url in urls {
+            front.openTab(at: Self.folder(for: url))
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 

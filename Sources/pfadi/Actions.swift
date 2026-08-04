@@ -47,6 +47,11 @@ enum Actions {
             [directory],
             withApplicationAt: terminal,
             configuration: NSWorkspace.OpenConfiguration()
-        )
+        ) { application, _ in
+            // The open is asynchronous, so a terminal that is present but
+            // refuses to launch would otherwise fail in complete silence.
+            guard application == nil else { return }
+            DispatchQueue.main.async { NSSound.beep() }
+        }
     }
 }

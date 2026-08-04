@@ -15,6 +15,10 @@ public final class DirectoryWatcher {
     private let debounce: DispatchTimeInterval
     private let onChange: () -> Void
 
+    // Guarded: start and stop are called from wherever the caller lives, while
+    // schedule runs on `queue`. With the default main queue those are the same
+    // thread and it never matters; with any other queue it is a data race.
+    private let lock = NSLock()
     private var source: DispatchSourceFileSystemObject?
     private var pending: DispatchWorkItem?
 
@@ -35,6 +39,8 @@ public final class DirectoryWatcher {
     }
 
     deinit {
+        // No lock: nothing else can hold a reference to an object being
+        // deinitialised, and taking one here would be the only path that could.
         pending?.cancel()
         source?.cancel()
     }
@@ -58,21 +64,33 @@ public final class DirectoryWatcher {
         source.setEventHandler { [weak self] in self?.schedule() }
         source.setCancelHandler { close(descriptor) }
         source.resume()
+
+        lock.lock()
         self.source = source
+        lock.unlock()
         return true
     }
 
     public func stop() {
-        pending?.cancel()
+        lock.lock()
+        let (oldPending, oldSource) = (pending, source)
         pending = nil
-        source?.cancel()
         source = nil
+        lock.unlock()
+
+        oldPending?.cancel()
+        oldSource?.cancel()
     }
 
     private func schedule() {
-        pending?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.onChange() }
+
+        lock.lock()
+        let previous = pending
         pending = work
+        lock.unlock()
+
+        previous?.cancel()
         queue.asyncAfter(deadline: .now() + debounce, execute: work)
     }
 }

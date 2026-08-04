@@ -65,6 +65,16 @@ public final class Favourites {
         return true
     }
 
+    /// Puts `url` at a particular place in the list, moving it if it is
+    /// already there. Dragging a favourite that is already a favourite is a
+    /// reorder, not a duplicate.
+    public func insert(_ url: URL, at index: Int) {
+        let path = url.standardizedFileURL.path
+        var updated = paths.filter { $0 != path }
+        updated.insert(path, at: min(max(index, 0), updated.count))
+        paths = updated
+    }
+
     public func contains(_ url: URL) -> Bool {
         paths.contains(url.standardizedFileURL.path)
     }
@@ -94,6 +104,19 @@ public final class Favourites {
             else { return nil }
             return URL(fileURLWithPath: path, isDirectory: true)
         }
+    }
+
+    /// Records a share that was connected to, so getting back to it is a
+    /// click rather than remembering how it was spelled.
+    public func rememberServer(_ url: URL) {
+        let text = url.absoluteString
+        var updated = preferences.servers.filter { $0 != text }
+        updated.insert(text, at: 0)
+        preferences.servers = Array(updated.prefix(Self.recentsLimit))
+    }
+
+    public func servers() -> [URL] {
+        preferences.servers.compactMap(URL.init(string:))
     }
 
     /// Cloud folders, discovered rather than configured.
