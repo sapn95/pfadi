@@ -20,6 +20,11 @@ rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 cp "$BINARY" "$BUNDLE/Contents/MacOS/pfadi"
 
+# The icon is drawn from source at every size rather than checked in, so it
+# stays diffable and cannot drift out of step with the palette it came from.
+swift scripts/make-icon.swift build >/dev/null
+cp build/Icon.icns "$BUNDLE/Contents/Resources/Icon.icns"
+
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -27,6 +32,8 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <dict>
 	<key>CFBundleExecutable</key>
 	<string>pfadi</string>
+	<key>CFBundleIconFile</key>
+	<string>Icon</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.sapn95.pfadi</string>
 	<key>CFBundleName</key>
