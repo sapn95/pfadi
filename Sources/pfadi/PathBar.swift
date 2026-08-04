@@ -11,10 +11,6 @@ import PfadiCore
 final class PathBar: NSPathControl {
     /// Somewhere to go, chosen from a component's menu.
     var onChoose: ((URL) -> Void)?
-    /// Asked for when somebody clicks past the end of the path: they want to
-    /// type, and the text field is what takes typing.
-    var onEdit: (() -> Void)?
-
     /// Whether hidden folders appear in the menus. Follows the list.
     var showHidden = false
 
@@ -35,10 +31,12 @@ final class PathBar: NSPathControl {
     }
 
     @objc private func componentClicked() {
-        guard let item = clickedPathItem, let url = item.url else {
-            onEdit?()
-            return
-        }
+        // A click that landed on the control but not on a component does
+        // nothing. It used to swap in the text field, which is a one-way door
+        // if the field never takes focus: only editing ending puts the bar
+        // back, and editing that never started never ends. ⇧⌘G is the way in
+        // to typing, and it is a deliberate act.
+        guard let item = clickedPathItem, let url = item.url else { return }
         presentSiblings(of: url)
     }
 

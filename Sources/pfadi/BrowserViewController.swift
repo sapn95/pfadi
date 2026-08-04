@@ -100,7 +100,6 @@ final class BrowserViewController: NSViewController {
         pathField.action = #selector(pathFieldCommitted(_:))
         pathBar.translatesAutoresizingMaskIntoConstraints = false
         pathBar.onChoose = { [weak self] url in self?.navigate(to: url) }
-        pathBar.onEdit = { [weak self] in self?.focusPathField(nil) }
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.placeholderString = "Filter"
@@ -539,7 +538,14 @@ final class BrowserViewController: NSViewController {
 
     @objc func focusPathField(_ sender: Any?) {
         showPathField(true)
-        view.window?.makeFirstResponder(pathField)
+        // Only stay swapped if the field really took focus. Otherwise nothing
+        // will ever end its editing, and nothing ending its editing is what
+        // leaves the text field on screen for good.
+        guard view.window?.makeFirstResponder(pathField) == true else {
+            showPathField(false)
+            NSSound.beep()
+            return
+        }
         pathField.currentEditor()?.selectAll(nil)
     }
 
