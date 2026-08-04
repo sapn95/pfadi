@@ -362,6 +362,14 @@ final class BrowserViewController: NSViewController {
         // than the path the person is looking at is the worst kind of wrong.
         let typed = pathField.typedText
         pathField.endCompletion()
+
+        // A share is an address too, so it goes in the address bar rather than
+        // behind a separate dialog with its own history.
+        if let share = NetworkShare.url(from: typed) {
+            connect(to: share)
+            return
+        }
+
         switch PathCompletion.resolve(typed, relativeTo: directory) {
         case .directory(let url):
             navigate(to: url)
@@ -372,6 +380,38 @@ final class BrowserViewController: NSViewController {
         case nil:
             NSSound.beep()
         }
+    }
+
+    private func connect(to share: URL) {
+        statusLabel.stringValue = "connecting to \(share.host ?? share.absoluteString)…"
+
+        ShareMounter.mount(share) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .alreadyMounted(let url):
+                statusLabel.stringValue = "already mounted"
+                navigate(to: url)
+            case .mounted(let url):
+                navigate(to: url)
+            case .needsCredentials:
+                // The system already has a connect sheet with keychain and
+                // guest handling in it. A second one would be worse.
+                statusLabel.stringValue = "asking the system for credentials"
+                ShareMounter.askSystemToConnect(share)
+            case .failed(let reason):
+                NSSound.beep()
+                statusLabel.stringValue = reason
+                pathField.stringValue = directory.path
+            }
+        }
+    }
+
+    /// ⌘K, which is the key everyone already presses for this.
+    @objc func connectToServer(_ sender: Any?) {
+        view.window?.makeFirstResponder(pathField)
+        pathField.stringValue = "smb://"
+        pathField.currentEditor()?.selectedRange = NSRange(location: 6, length: 0)
+        statusLabel.stringValue = "type a share address, for example smb://server/share"
     }
 
     // MARK: - Menu actions

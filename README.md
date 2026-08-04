@@ -46,6 +46,7 @@ space   Quick Look, and again to close it
 F2      rename the selection
 ⌘⌫      move the selection to the trash
 ⌘I      what is this thing: kind, size, dates, access, cloud status
+⌘K      connect to a server, or just type smb://server/share above
 ⌘Z      undo any of those three
 ⇧⌘C     copy the path of the selection
 ⌃⌘T     open a terminal in this folder
@@ -94,6 +95,15 @@ for that file with the current default first. Hold option and the same list
 becomes "always open every file of this kind with this", which is what the
 system actually offers: defaults are per kind, never per file, so the menu
 says so rather than hiding it behind the word "always".
+
+**A share is an address too.** Type `smb://server/share` or
+`nfs://filer/export` into the path field and it mounts and opens, rather than
+sending you to a separate dialog with its own history and its own idea of what
+you meant. `⌘K` puts `smb://` in the field for you. If it is already mounted it
+goes straight there instead of producing a second mount point with a number on
+the end, which is how people end up with `share-1` through `share-4`. Anything
+needing a password is handed to the system, which already has a connect sheet
+with keychain handling in it.
 
 **Cloud files are marked and never downloaded by being looked at.** OneDrive,
 Dropbox, Google Drive and iCloud all leave placeholder files that have a name,
@@ -244,7 +254,6 @@ on Linux because they do not need to.
 Roughly in the order it hurts.
 
 - [ ] Copy and move, with progress and a conflict story.
-- [ ] SMB and NFS shares, mounted by typing one in the path field.
 - [ ] Drag and drop.
 - [ ] Tabs.
 - [ ] A signed, notarised build.

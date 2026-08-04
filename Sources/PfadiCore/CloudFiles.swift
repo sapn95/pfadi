@@ -54,9 +54,12 @@ public enum CloudFiles {
     public static func provider(for url: URL) -> (provider: String, account: String?)? {
         let components = url.pathComponents
 
+        // index > 0 before reaching back for Library: firstIndex can return 0,
+        // and index - 1 on an Int array subscript is a crash, not a nil.
         if let index = components.firstIndex(of: "CloudStorage"),
-            components.indices.contains(index + 1),
-            components[index - 1] == "Library"
+            index > 0,
+            components[index - 1] == "Library",
+            components.indices.contains(index + 1)
         {
             // The folder is named `OneDrive-SBB`, `GoogleDrive-me@example.com`,
             // or just `Dropbox` when there is only one account.
@@ -68,7 +71,13 @@ public enum CloudFiles {
             )
         }
 
-        if components.contains("Mobile Documents") {
+        // Anchored the same way. A folder somebody called "Mobile Documents"
+        // in their own home is not iCloud, and saying it is would put a cloud
+        // marker on files that are entirely here.
+        if let index = components.firstIndex(of: "Mobile Documents"),
+            index > 0,
+            components[index - 1] == "Library"
+        {
             return ("iCloud Drive", nil)
         }
         return nil
