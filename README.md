@@ -108,6 +108,13 @@ your applications folder:
 ln -sfn "$(brew --prefix pfadi)/Pfadi.app" ~/Applications/Pfadi.app
 ```
 
+## The mark
+
+A forward slash and a terminal cursor. The character every path is made of,
+next to the place you type one. It is drawn by
+[`scripts/make-icon.swift`](scripts/make-icon.swift) rather than checked in as
+a binary, so it stays diffable and the palette lives in one enum.
+
 ## Build
 
 Needs Swift 6 and macOS 14. The Command Line Tools are enough. Xcode is not
@@ -135,6 +142,7 @@ release workflow refuses to run when the tag disagrees with it.
 | `Sources/pfadi` | The window, the table, the path field, the menu bar. AppKit, built in code, no nib files. |
 | `Tests/PfadiSelfTest` | The tests, as a plain executable. |
 | `scripts/make-app.sh` | Wraps the SwiftPM binary in a `.app` bundle. |
+| `scripts/make-icon.swift` | Draws the icon at every size macOS asks for. |
 | `Formula/pfadi.rb` | The Homebrew formula, copied into the tap on release. |
 
 Two decisions worth knowing about before reading the code.
@@ -177,7 +185,6 @@ Roughly in the order it hurts.
 - [ ] A favourites sidebar.
 - [ ] Drag and drop.
 - [ ] Tabs.
-- [ ] An application icon.
 - [ ] A signed, notarised build.
 
 ## Licence
