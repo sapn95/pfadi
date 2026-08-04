@@ -74,6 +74,10 @@ folder shows up on its own. The selected row survives the refresh, because
 being thrown back to the top every time a build writes a file is worse than a
 stale list.
 
+What you set stays set. Showing hidden files, the column widths, the window
+size and the folder you were last in all come back on the next launch, because
+a preference you have to make again every morning is not a preference.
+
 `⌃⌘T` opens whichever terminal is installed, preferring Ghostty, kitty, iTerm2,
 Warp and Alacritty over Terminal.app in that order. Terminal.app is last
 because it is always present, so ranking it anywhere else would mean nobody's
@@ -103,6 +107,9 @@ From a terminal that is all you need:
 pfadi           # the current directory
 pfadi ~/git     # somewhere else
 ```
+
+The command returns immediately rather than holding the terminal, and a window
+that is already open is reused instead of a second one appearing.
 
 To have it appear in Spotlight, Launchpad and `open -a`, link the bundle into
 your applications folder:

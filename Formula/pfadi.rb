@@ -27,9 +27,19 @@ class Pfadi < Formula
     system "./scripts/make-app.sh", "release"
 
     prefix.install "build/Pfadi.app"
-    # `pfadi` and `pfadi ~/git` from a shell. The bundle is what Finder,
-    # Spotlight and `open -a` want; the shim is what a terminal wants.
-    bin.write_exec_script prefix/"Pfadi.app/Contents/MacOS/pfadi"
+
+    # `pfadi` and `pfadi ~/git` from a shell.
+    #
+    # Deliberately `open` rather than the binary itself. Running the executable
+    # holds the terminal until the window is closed, which is the wrong shape
+    # for a browser you glance at. Going through LaunchServices returns at once,
+    # reuses a window that is already open, and gets the Dock and the app
+    # switcher right.
+    (bin/"pfadi").write <<~LAUNCHER
+      #!/bin/sh
+      exec /usr/bin/open -a "#{opt_prefix}/Pfadi.app" "${1:-$PWD}"
+    LAUNCHER
+    (bin/"pfadi").chmod 0755
   end
 
   def caveats
@@ -51,6 +61,9 @@ class Pfadi < Formula
     # test proves the bundle is well formed and the binary is executable.
     assert_path_exists prefix/"Pfadi.app/Contents/MacOS/pfadi"
     assert_predicate prefix/"Pfadi.app/Contents/MacOS/pfadi", :executable?
+    # The launcher must hand over to LaunchServices rather than exec the
+    # binary, or `pfadi ~/git` holds the terminal it was typed into.
+    assert_match "/usr/bin/open", (bin/"pfadi").read
     system "plutil", "-lint", prefix/"Pfadi.app/Contents/Info.plist"
     assert_match version.to_s,
       shell_output("/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' " \

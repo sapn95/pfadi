@@ -107,5 +107,6 @@ Harness.suite("resolve: a directory always comes back in one spelling") {
 P1Suites.run()
 ReviewSuites.run()
 CycleSuites.run()
+PreferenceSuites.run()
 
 Harness.finish()

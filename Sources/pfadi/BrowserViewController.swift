@@ -3,12 +3,13 @@ import PfadiCore
 
 /// One window: a path field on top, a file list below, a count at the bottom.
 final class BrowserViewController: NSViewController {
-    /// Where the last window was looking, restored on the next launch.
-    static let lastDirectoryKey = "lastDirectory"
+    private let preferences: Preferences
 
     private var directory: URL
     private var entries: [Entry] = []
-    private var showHidden = false
+    private var showHidden: Bool {
+        didSet { preferences.showHidden = showHidden }
+    }
     private var watcher: DirectoryWatcher?
 
     /// Counts reload requests so a slow listing for a folder we have since
@@ -35,8 +36,12 @@ final class BrowserViewController: NSViewController {
         return formatter
     }()
 
-    init(directory: URL) {
+    init(directory: URL, preferences: Preferences = Preferences()) {
         self.directory = PathCompletion.directoryURL(directory)
+        self.preferences = preferences
+        // A choice made once should still be true next launch, so this is read
+        // back rather than defaulted.
+        self.showHidden = preferences.showHidden
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -103,6 +108,11 @@ final class BrowserViewController: NSViewController {
         tableView.onReturn = { [weak self] in self?.openSelection() }
         tableView.onTypeAhead = { [weak self] prefix in self?.typeAhead(prefix) }
 
+        // Column widths are the other thing a person sets once and expects to
+        // find again. AppKit persists them itself once the table has a name.
+        tableView.autosaveName = "io.github.sapn95.pfadi.files"
+        tableView.autosaveTableColumns = true
+
         addColumn(id: "name", title: "Name", width: 420)
         addColumn(id: "size", title: "Size", width: 90)
         addColumn(id: "modified", title: "Modified", width: 160)
@@ -132,7 +142,7 @@ final class BrowserViewController: NSViewController {
     private func enter(_ url: URL) {
         directory = url
         reload(keepingSelection: false)
-        UserDefaults.standard.set(url.path, forKey: Self.lastDirectoryKey)
+        preferences.lastDirectory = url.path
 
         watcher?.stop()
         watcher = DirectoryWatcher(url: url) { [weak self] in
