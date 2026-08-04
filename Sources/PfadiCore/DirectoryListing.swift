@@ -9,6 +9,7 @@ public enum DirectoryListing {
     public static func read(
         _ directory: URL,
         showHidden: Bool,
+        order: ListingOrder = .byName,
         fileManager: FileManager = .default
     ) throws -> [Entry] {
         // Deliberately not .localizedNameKey. It returns the name as Finder
@@ -44,17 +45,6 @@ public enum DirectoryListing {
             )
         }
 
-        return sorted(entries)
-    }
-
-    /// Directories first, then case- and number-aware by name, so `img2`
-    /// sorts before `img10` the way Finder does it.
-    public static func sorted(_ entries: [Entry]) -> [Entry] {
-        entries.sorted { lhs, rhs in
-            if lhs.isDirectory != rhs.isDirectory {
-                return lhs.isDirectory
-            }
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-        }
+        return sorted(entries, by: order)
     }
 }

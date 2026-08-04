@@ -38,8 +38,25 @@ public final class Preferences {
         set { store.set(newValue, forKey: Key.showHidden) }
     }
 
+    /// Which column the list is sorted by, and which way.
+    public var sortOrder: ListingOrder {
+        get {
+            let key =
+                (store.object(forKey: Key.sortKey) as? String)
+                .flatMap(ListingOrder.Key.init(rawValue:)) ?? .name
+            let ascending = store.object(forKey: Key.sortAscending) as? Bool ?? true
+            return ListingOrder(key: key, ascending: ascending)
+        }
+        set {
+            store.set(newValue.key.rawValue, forKey: Key.sortKey)
+            store.set(newValue.ascending, forKey: Key.sortAscending)
+        }
+    }
+
     enum Key {
         static let lastDirectory = "lastDirectory"
         static let showHidden = "showHidden"
+        static let sortKey = "sortKey"
+        static let sortAscending = "sortAscending"
     }
 }

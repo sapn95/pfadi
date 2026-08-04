@@ -6,6 +6,7 @@ import PfadiCore
 final class FileTableView: NSTableView {
     var onReturn: (() -> Void)?
     var onTypeAhead: ((String) -> Void)?
+    var onSpace: (() -> Void)?
 
     private var buffer = ""
     private var lastKeystroke: TimeInterval = 0
@@ -14,6 +15,15 @@ final class FileTableView: NSTableView {
         // 36 is return, 76 is enter on the numeric keypad.
         if event.keyCode == 36 || event.keyCode == 76 {
             onReturn?()
+            return
+        }
+
+        // A bare space is Quick Look, unless a name is being typed, in which
+        // case it is part of the name.
+        if event.charactersIgnoringModifiers == " ", buffer.isEmpty,
+            !event.modifierFlags.intersects([.command, .control, .option])
+        {
+            onSpace?()
             return
         }
 
@@ -41,8 +51,8 @@ final class FileTableView: NSTableView {
         // the arrow and function keys. Neither is something anyone is spelling.
         guard scalar.value >= 0x20, scalar.value < 0xF700 else { return nil }
 
-        // A bare space scrolls, and will one day open Quick Look. It only
-        // counts as input once it is part of a name being typed.
+        // A bare space is handled above as Quick Look. It only counts as
+        // input once it is part of a name being typed.
         if scalar == " ", buffer.isEmpty { return nil }
 
         return characters

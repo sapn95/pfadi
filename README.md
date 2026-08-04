@@ -35,6 +35,7 @@ So: one pane, one path field, keyboard first.
 tab     walk to the next match, ⇧tab back, escape to undo
 return  accept the match, then return again to go there
 a-z     type-ahead: jump to the row whose name starts like that
+space   Quick Look, and again to close it
 ⌘↑      enclosing folder
 ⇧⌘H     home
 ⇧⌘.     show hidden files
@@ -74,9 +75,17 @@ folder shows up on its own. The selected row survives the refresh, because
 being thrown back to the top every time a build writes a file is worse than a
 stale list.
 
-What you set stays set. Showing hidden files, the column widths, the window
-size and the folder you were last in all come back on the next launch, because
-a preference you have to make again every morning is not a preference.
+Click a column header to sort by it, click again to turn it around. Folders
+stay above files whichever column and whichever direction, because a folder has
+no size to sort by and having them scatter through the list helps nobody.
+
+Space opens Quick Look and space closes it. It stays open while you walk the
+list with the arrow keys, which is the point of having it.
+
+What you set stays set. The sort order, showing hidden files, the column
+widths, the window size and the folder you were last in all come back on the
+next launch, because a preference you have to make again every morning is not
+a preference.
 
 `⌃⌘T` opens whichever terminal is installed, preferring Ghostty, kitty, iTerm2,
 Warp and Alacritty over Terminal.app in that order. Terminal.app is last
@@ -203,8 +212,6 @@ on Linux because they do not need to.
 Roughly in the order it hurts.
 
 - [ ] Copy, move, rename, delete. Nothing writes to disk yet.
-- [ ] Quick Look on space.
-- [ ] Sorting by clicking a column header.
 - [ ] A favourites sidebar.
 - [ ] Drag and drop.
 - [ ] Tabs.
