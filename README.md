@@ -131,6 +131,12 @@ the only rule that matters: a drag within a volume moves, across volumes it
 copies, ⌥ forces a copy and ⌘ forces a move. Dropping onto a folder puts things
 in it; dropping between rows puts them in the folder on screen.
 
+The sidebar takes drops too. A folder dropped between two favourites becomes
+one, at the position you dropped it, and dragging a favourite up or down its
+own section reorders it. A folder dropped **onto** a row copies into that
+folder, and only ever copies: dropping something onto a list of places is not a
+gesture anyone makes meaning "and take it out of where it was".
+
 Everything that changes anything is reversible, which is the rule the whole
 write side is built on. ⌘Z puts back a trashed file, undoes a rename, trashes a
 folder that was just created, and unwinds a copy or a move. A rename that would

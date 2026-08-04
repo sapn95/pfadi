@@ -65,6 +65,16 @@ public final class Favourites {
         return true
     }
 
+    /// Puts `url` at a particular place in the list, moving it if it is
+    /// already there. Dragging a favourite that is already a favourite is a
+    /// reorder, not a duplicate.
+    public func insert(_ url: URL, at index: Int) {
+        let path = url.standardizedFileURL.path
+        var updated = paths.filter { $0 != path }
+        updated.insert(path, at: min(max(index, 0), updated.count))
+        paths = updated
+    }
+
     public func contains(_ url: URL) -> Bool {
         paths.contains(url.standardizedFileURL.path)
     }

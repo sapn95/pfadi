@@ -64,6 +64,9 @@ final class BrowserWindow {
             browser?.connect(to: url)
         }
         browser.onFavouritesChanged = { [weak sidebar] in sidebar?.reload() }
+        sidebar.onDrop = { [weak browser] sources, destination in
+            browser?.transfer(sources, into: destination)
+        }
         browser.onNewTab = { [weak self] url in self?.openTab(at: url) }
         toolbar.onBack = { [weak browser] in browser?.goBack(nil) }
         toolbar.onForward = { [weak browser] in browser?.goForward(nil) }

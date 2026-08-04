@@ -688,6 +688,25 @@ final class BrowserViewController: NSViewController {
         NSPasteboard.general.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
     }
 
+    /// Files dropped somewhere that is not the list: the sidebar, for now.
+    /// Always a copy, because a drop onto a place in a list of places is not a
+    /// gesture anybody makes meaning "and take it out of where it was".
+    func transfer(_ sources: [URL], into destination: URL) {
+        guard !transfers.isRunning else {
+            statusLabel.stringValue = "one transfer at a time, for now"
+            return
+        }
+        if let refusal = Transfer.check(moving: sources, into: destination, kind: .copy) {
+            NSSound.beep()
+            statusLabel.stringValue = refusal.message
+            return
+        }
+        let plan = Transfer.plan(sources, into: destination, kind: .copy)
+        transfers.start(plan, in: view.window) { [weak self] outcome in
+            self?.finished(outcome, kind: .copy)
+        }
+    }
+
     private func transfer(kind: Transfer.Kind) {
         guard !transfers.isRunning else {
             statusLabel.stringValue = "one transfer at a time, for now"

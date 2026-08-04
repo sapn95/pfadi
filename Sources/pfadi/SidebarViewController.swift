@@ -6,6 +6,8 @@ final class SidebarViewController: NSViewController {
     var onSelect: ((URL) -> Void)?
     /// A share to reconnect to, or nil to ask for one.
     var onConnect: ((URL?) -> Void)?
+    /// Files dropped onto a folder row, to be copied or moved into it.
+    var onDrop: ((_ sources: [URL], _ destination: URL) -> Void)?
 
     private let favourites: Favourites
     private let home = FileManager.default.homeDirectoryForCurrentUser
@@ -79,6 +81,9 @@ final class SidebarViewController: NSViewController {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("favourite"))
         column.width = 170
         tableView.addTableColumn(column)
+
+        tableView.registerForDraggedTypes([.fileURL])
+        tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
 
         let menu = NSMenu()
         menu.addItem(
@@ -286,5 +291,98 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
             label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
         return cell
+    }
+}
+
+// MARK: - Drag and drop
+
+extension SidebarViewController {
+    /// A favourite can be dragged: out of the window as a folder, or up and
+    /// down its own section to reorder it.
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int)
+        -> (any NSPasteboardWriting)?
+    {
+        guard rows.indices.contains(row), rows[row].section == .favourites,
+            let url = rows[row].url
+        else { return nil }
+        return url as NSURL
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        validateDrop info: any NSDraggingInfo,
+        proposedRow row: Int,
+        proposedDropOperation operation: NSTableView.DropOperation
+    ) -> NSDragOperation {
+        let sources = draggedURLs(info)
+        guard !sources.isEmpty else { return [] }
+
+        // Onto a folder row: put the files in that folder.
+        if operation == .on, rows.indices.contains(row), let destination = rows[row].url,
+            rows[row].section != .servers, isFolder(destination)
+        {
+            return info.draggingSource as AnyObject? === tableView ? [] : .copy
+        }
+
+        // Between rows inside Favourites: add it, or move it if it is already
+        // there. Only folders, because a file in a folder list is not a place.
+        if operation == .above, favouritesRange().contains(row),
+            sources.allSatisfy({ isFolder($0) })
+        {
+            return info.draggingSource as AnyObject? === tableView ? .move : .copy
+        }
+        return []
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        acceptDrop info: any NSDraggingInfo,
+        row: Int,
+        dropOperation operation: NSTableView.DropOperation
+    ) -> Bool {
+        let sources = draggedURLs(info)
+        guard !sources.isEmpty else { return false }
+
+        if operation == .on, rows.indices.contains(row), let destination = rows[row].url,
+            isFolder(destination)
+        {
+            onDrop?(sources, destination)
+            return true
+        }
+
+        guard operation == .above else { return false }
+        // The row index counts headings too, so it has to come back to an
+        // index within the favourites themselves before anything is inserted.
+        let offset = row - favouritesRange().lowerBound
+        for (index, url) in sources.filter(isFolder).enumerated() {
+            favourites.insert(url, at: offset + index)
+        }
+        reload()
+        return true
+    }
+
+    /// Where the favourites sit in the flat row list, including the position
+    /// just past the last one so something can be dropped at the end.
+    private func favouritesRange() -> Range<Int> {
+        let indices = rows.indices.filter { rows[$0].section == .favourites }
+        guard let first = indices.first, let last = indices.last else {
+            // No favourites yet: the only place to drop is under the heading.
+            guard
+                let heading = rows.firstIndex(where: {
+                    if case .heading(let title) = $0 { return title == "Favourites" }
+                    return false
+                })
+            else { return 0..<0 }
+            return (heading + 1)..<(heading + 2)
+        }
+        return first..<(last + 2)
+    }
+
+    private func draggedURLs(_ info: any NSDraggingInfo) -> [URL] {
+        info.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
+    }
+
+    private func isFolder(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
     }
 }
