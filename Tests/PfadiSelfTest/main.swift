@@ -114,5 +114,6 @@ WriteSuites.run()
 HistorySuites.run()
 InfoSuites.run()
 ShareSuites.run()
+TransferSuites.run()
 
 Harness.finish()

@@ -6,9 +6,9 @@
 A small macOS file browser with the one thing macOS has never had: an address
 bar you can click into and type, with tab completion.
 
-> **Work in progress.** It browses, and it can now make a folder, rename one
-> thing and trash one thing, each of which ⌘Z takes back. It cannot copy or
-> move anything yet. Keep Finder around.
+> **Work in progress.** It browses, copies, moves, renames, trashes and makes
+> folders, and ⌘Z takes back any of it. It has no tabs, no drag and drop and no
+> signature. Keep Finder around for those.
 
 ## The problem
 
@@ -47,7 +47,8 @@ F2      rename the selection
 ⌘⌫      move the selection to the trash
 ⌘I      what is this thing: kind, size, dates, access, cloud status
 ⌘K      connect to a server, or just type smb://server/share above
-⌘Z      undo any of those three
+⌘C ⌘V   copy, then paste, with ⌥⌘V to move instead
+⌘Z      undo any of it
 ⇧⌘C     copy the path of the selection
 ⌃⌘T     open a terminal in this folder
 ⇧⌘R     reveal the selection in Finder
@@ -113,10 +114,27 @@ metered connection. A placeholder shows a cloud in the size column, and ⌘I say
 which provider and which account. The check is `lstat` against the dataless
 flag plus the path, so describing a file never asks its provider anything.
 
-The three operations that change anything are all reversible, which is why they
-are the ones that exist. ⌘Z puts back a trashed file, undoes a rename, and
-trashes a folder that was just created. A rename that would land on a file that
-already exists is refused rather than replacing it.
+Everything that changes anything is reversible, which is the rule the whole
+write side is built on. ⌘Z puts back a trashed file, undoes a rename, trashes a
+folder that was just created, and unwinds a copy or a move. A rename that would
+land on an existing file is refused rather than replacing it.
+
+**Replacing never destroys.** Choosing Replace during a paste puts the existing
+item in the trash first and then copies. A wrong answer in that dialog is
+recoverable, which is not true of any file manager that overwrites in place.
+
+Copies go through `copyfile` with `COPYFILE_CLONE`. On APFS that is a
+constant-time copy sharing blocks until one side is written to, so duplicating
+twenty gigabytes costs no time and no disk, and it carries the extended
+attributes, ACLs and flags that a read-and-write copy silently drops. A move
+within one volume is `rename(2)`; across volumes it falls back to copy and
+delete.
+
+The tree is expanded before anything starts, so the progress bar is honest
+about how much is left and Stop lands between two files rather than somewhere
+inside a black box. Conflicts are all asked about up front: being interrupted
+halfway through a long copy, with no idea what has already happened, is what
+makes people stop trusting a file manager.
 
 The sidebar holds the folders you keep going back to. ⌘D puts the one you are
 in there and ⌘D takes it out again, right-click removes a row, and a favourite
@@ -253,7 +271,6 @@ on Linux because they do not need to.
 
 Roughly in the order it hurts.
 
-- [ ] Copy and move, with progress and a conflict story.
 - [ ] Drag and drop.
 - [ ] Tabs.
 - [ ] A signed, notarised build.
