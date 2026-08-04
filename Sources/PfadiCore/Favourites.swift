@@ -71,7 +71,7 @@ public final class Favourites {
 
     /// How many folders to remember. Long enough to cover a working day,
     /// short enough that the sidebar stays a sidebar.
-    public static let recentsLimit = 8
+    public static let recentsLimit = 10
 
     /// Records arriving somewhere, newest first and without repeats.
     public func remember(_ url: URL) {
