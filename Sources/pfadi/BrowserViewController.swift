@@ -538,6 +538,9 @@ final class BrowserViewController: NSViewController {
     // MARK: - Menu actions
 
     @objc func focusPathField(_ sender: Any?) {
+        // Shown first, because a hidden view cannot become first responder.
+        // If it does not take focus it stays on screen anyway: a visible field
+        // can be clicked into, and one that has been put away cannot.
         showPathField(true)
         view.window?.makeFirstResponder(pathField)
         pathField.currentEditor()?.selectAll(nil)

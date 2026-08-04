@@ -54,6 +54,8 @@ enum ConnectSheet {
         let hint = NSTextField(labelWithString: schemes[0].hint)
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
+        hint.lineBreakMode = .byWordWrapping
+        hint.preferredMaxLayoutWidth = 360
 
         let magic = NSButton(
             checkboxWithTitle: "Understand pasted addresses", target: nil, action: nil)
@@ -77,13 +79,24 @@ enum ConnectSheet {
         previous.target = coordinator
         previous.action = #selector(Coordinator.recentChosen)
 
-        let stack = NSStackView(views: [picker, field, hint, previous, magic])
+        // Grouped rather than evenly spaced: the field belongs to the protocol
+        // above it and the hint belongs to the field, so those sit close and
+        // the breaks go between the groups.
+        let entry = NSStackView(views: [picker, field, hint])
+        entry.orientation = .vertical
+        entry.alignment = .leading
+        entry.spacing = 6
+        entry.setCustomSpacing(10, after: picker)
+
+        let stack = NSStackView(views: [entry, previous, magic])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 6
+        stack.spacing = 16
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        field.widthAnchor.constraint(equalToConstant: 340).isActive = true
-        previous.widthAnchor.constraint(equalToConstant: 340).isActive = true
+        field.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        previous.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        hint.widthAnchor.constraint(lessThanOrEqualToConstant: 360).isActive = true
 
         // Sized to what it holds, then given that as a frame. An accessory
         // view with a guessed height leaves a gap above it in the sheet.
@@ -94,7 +107,7 @@ enum ConnectSheet {
 
         let alert = NSAlert()
         alert.messageText = "Connect to Server"
-        alert.informativeText = "The path field takes the same thing, if you know the spelling."
+        alert.informativeText = "Or type the same thing into the path bar, if you know it."
         alert.accessoryView = stack
         alert.addButton(withTitle: "Connect")
         alert.addButton(withTitle: "Cancel")
