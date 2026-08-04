@@ -13,8 +13,19 @@ BUNDLE="build/Pfadi.app"
 # against it, and a source tarball has no git history to describe.
 VERSION="$(tr -d '[:space:]' < VERSION)"
 
-swift build -c "$CONFIGURATION"
-BINARY="$(swift build -c "$CONFIGURATION" --show-bin-path)/pfadi"
+# Extra flags for every swift build below. Homebrew sets --disable-sandbox
+# here: it already runs the whole formula inside sandbox-exec, and SwiftPM
+# opening a second sandbox inside that one is refused by macOS with
+# "sandbox_apply: Operation not permitted". Compiling the manifest is enough
+# to trigger it, so --show-bin-path needs the flag just as much as the build.
+SWIFT_FLAGS=()
+if [ -n "${PFADI_SWIFT_FLAGS:-}" ]; then
+	# shellcheck disable=SC2206 # deliberate word splitting: it is a flag list
+	SWIFT_FLAGS=(${PFADI_SWIFT_FLAGS})
+fi
+
+swift build -c "$CONFIGURATION" "${SWIFT_FLAGS[@]}"
+BINARY="$(swift build -c "$CONFIGURATION" "${SWIFT_FLAGS[@]}" --show-bin-path)/pfadi"
 
 rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"

@@ -17,8 +17,12 @@ class Pfadi < Formula
   def install
     odie "swift is missing: install the Xcode Command Line Tools" unless which("swift")
 
-    # --disable-sandbox: Homebrew already builds in one, and SwiftPM's own
-    # sandbox denies the writes its build directory needs inside it.
+    # --disable-sandbox everywhere, not just here. Homebrew runs the whole
+    # formula inside sandbox-exec, and SwiftPM opening a second sandbox inside
+    # that one is refused by macOS with "sandbox_apply: Operation not
+    # permitted". make-app.sh builds again to find the binary, so it needs the
+    # same flag or the install dies after this line has already succeeded.
+    ENV["PFADI_SWIFT_FLAGS"] = "--disable-sandbox"
     system "swift", "build", "-c", "release", "--disable-sandbox"
     system "./scripts/make-app.sh", "release"
 

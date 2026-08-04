@@ -1,5 +1,8 @@
 # pfadi
 
+<img src="assets/logo.svg" alt="The pfadi mark: a forward slash next to a text cursor"
+     width="112" align="right">
+
 A small macOS file browser with the one thing macOS has never had: an address
 bar you can click into and type, with tab completion.
 
@@ -110,10 +113,23 @@ ln -sfn "$(brew --prefix pfadi)/Pfadi.app" ~/Applications/Pfadi.app
 
 ## The mark
 
-A forward slash and a terminal cursor. The character every path is made of,
-next to the place you type one. It is drawn by
-[`scripts/make-icon.swift`](scripts/make-icon.swift) rather than checked in as
-a binary, so it stays diffable and the palette lives in one enum.
+<img src="assets/logo.svg" alt="" width="88" align="left">
+
+Two characters, side by side. The white shape is a **forward slash**, the one
+character every path on this system is made of. The amber block is a **text
+cursor**, the kind that sits blinking in a terminal waiting for you to type.
+
+Put together they read `/▮`: a path, and the place you type one. That is the
+entire application in two shapes, and it is the thing macOS itself refuses to
+give you.
+
+Nothing alpine in it. No cross, no edelweiss, no mountain.
+
+The icon is drawn by [`scripts/make-icon.swift`](scripts/make-icon.swift)
+rather than checked in as a bitmap, so it stays diffable, the palette lives in
+one enum, and every size macOS asks for is drawn rather than resampled.
+[`assets/logo.svg`](assets/logo.svg) is the same geometry as a vector, for
+places like this one that want to scale it.
 
 ## Build
 
