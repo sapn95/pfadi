@@ -13,8 +13,21 @@ BUNDLE="build/Pfadi.app"
 # against it, and a source tarball has no git history to describe.
 VERSION="$(tr -d '[:space:]' < VERSION)"
 
-swift build -c "$CONFIGURATION"
-BINARY="$(swift build -c "$CONFIGURATION" --show-bin-path)/pfadi"
+# PFADI_SWIFT_FLAGS carries extra flags into every swift build below. Homebrew
+# sets --disable-sandbox: it already runs the whole formula inside
+# sandbox-exec, and SwiftPM opening a second sandbox inside that one is refused
+# by macOS with "sandbox_apply: Operation not permitted". Compiling the
+# manifest is enough to trigger it, so --show-bin-path needs the flag just as
+# much as the build does.
+#
+# Expanded unquoted and on purpose, so an empty value disappears rather than
+# becoming an empty argument. An array would be tidier, but bash 3.2 is still
+# what /bin/bash is on macOS, and there an empty array under `set -u` is an
+# unbound variable rather than nothing at all.
+# shellcheck disable=SC2086 # deliberate word splitting: it is a list of flags
+swift build -c "$CONFIGURATION" ${PFADI_SWIFT_FLAGS:-}
+# shellcheck disable=SC2086 # same
+BINARY="$(swift build -c "$CONFIGURATION" ${PFADI_SWIFT_FLAGS:-} --show-bin-path)/pfadi"
 
 rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"

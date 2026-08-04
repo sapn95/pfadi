@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The pfadi mark: a forward slash and a terminal cursor.
+
+  The same geometry as scripts/make-icon.swift, which draws the .icns for the
+  bundle. This file exists because a README wants a vector, not a screenshot.
+  SVG counts y downwards where CoreGraphics counts it upwards, so the numbers
+  here are the mirror of the ones there.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"
+     role="img" aria-label="pfadi: a forward slash next to a text cursor">
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#323747"/>
+      <stop offset="1" stop-color="#131620"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="64" y="64" width="896" height="896" rx="200" ry="200" fill="url(#plate)"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" ry="200"
+        fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="6"/>
+
+  <!-- The slash: the character every path is made of. -->
+  <polygon points="248,766 413,766 641,258 476,258" fill="#F2F5F9"/>
+
+  <!-- The cursor: the place you type one. -->
+  <rect x="656" y="466" width="120" height="300" rx="16" ry="16" fill="#FEB454"/>
+</svg>
