@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
 
-        let browser = BrowserViewController(directory: pending ?? Self.startDirectory())
+        let browser = BrowserViewController(directory: Self.startDirectory(explicit: pending))
         pending = nil
         self.browser = browser
 
@@ -57,12 +57,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    /// Opening in the shell's working directory is what makes `open .` useful.
-    /// A launched .app inherits `/`, so home is the honest fallback.
-    private static func startDirectory() -> URL {
-        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        return cwd.path == "/"
-            ? FileManager.default.homeDirectoryForCurrentUser
-            : PathCompletion.directoryURL(cwd)
+    private static func startDirectory(explicit: URL?) -> URL {
+        StartDirectory.choose(
+            explicit: explicit,
+            workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            remembered: UserDefaults.standard.string(
+                forKey: BrowserViewController.lastDirectoryKey),
+            home: FileManager.default.homeDirectoryForCurrentUser
+        )
     }
 }

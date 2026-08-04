@@ -30,11 +30,15 @@ So: one pane, one path field, keyboard first.
 ```text
 ⇧⌘G     jump to the path field
 tab     complete the half-typed component
-return  go there
+return  go there, or open the selected file
+a-z     type-ahead: jump to the row whose name starts like that
 ⌘↑      enclosing folder
 ⇧⌘H     home
 ⇧⌘.     show hidden files
 ⌘R      refresh
+⇧⌘C     copy the path of the selection
+⌃⌘T     open a terminal in this folder
+⇧⌘R     reveal the selection in Finder
 ```
 
 Completion works the way a shell does it. Type `/Users/sa`, press tab, land on
@@ -45,6 +49,22 @@ dot, whether or not hidden files are shown.
 A path can be absolute, relative to where you are, or start with `~`. Pointing
 it at a file rather than a folder hands the file to whichever application owns
 it.
+
+Type-ahead follows the rules every list on this platform uses. A single letter
+cycles through the entries starting with it, two or more letters are a
+refinement that lands on the same row every time, and the prefix expires a
+second after the last keystroke. Case and diacritics are ignored, so `uber`
+finds `Über`.
+
+The listing is watched, so anything the shell or a build tool does to the
+folder shows up on its own. The selected row survives the refresh, because
+being thrown back to the top every time a build writes a file is worse than a
+stale list.
+
+`⌃⌘T` opens whichever terminal is installed, preferring Ghostty, kitty, iTerm2,
+Warp and Alacritty over Terminal.app in that order. Terminal.app is last
+because it is always present, so ranking it anywhere else would mean nobody's
+actual terminal ever wins.
 
 From a shell:
 
@@ -72,8 +92,8 @@ this is worth shipping.
 
 | Path | What lives there |
 | --- | --- |
-| `Sources/PfadiCore` | Directory listing, sorting, path completion. No AppKit, so it can be tested. |
-| `Sources/pfadi` | The window, the table, the path field. AppKit, built in code, no nib files. |
+| `Sources/PfadiCore` | Directory listing, sorting, path completion, type-ahead, the directory watcher, the start-folder rules. No AppKit, so it can be tested. |
+| `Sources/pfadi` | The window, the table, the path field, the menu bar. AppKit, built in code, no nib files. |
 | `Tests/PfadiSelfTest` | The tests, as a plain executable. |
 | `scripts/make-app.sh` | Wraps the SwiftPM binary in a `.app` bundle. |
 
@@ -112,13 +132,12 @@ on Linux because they do not need to.
 Roughly in the order it hurts.
 
 - [ ] Copy, move, rename, delete. Nothing writes to disk yet.
-- [ ] Watching the directory, so external changes appear without ⌘R.
-- [ ] Type-ahead selection in the list.
-- [ ] Remembering the last folder between launches.
-- [ ] Sorting by clicking a column header.
 - [ ] Quick Look on space.
+- [ ] Sorting by clicking a column header.
+- [ ] A favourites sidebar.
 - [ ] Drag and drop.
 - [ ] Tabs.
+- [ ] An application icon.
 - [ ] A signed, notarised build.
 
 ## Licence

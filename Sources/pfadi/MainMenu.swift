@@ -11,6 +11,7 @@ enum MainMenu {
         main.addItem(appMenu())
         main.addItem(goMenu())
         main.addItem(viewMenu())
+        main.addItem(actionsMenu())
         return main
     }
 
@@ -84,6 +85,35 @@ enum MainMenu {
             action: #selector(BrowserViewController.refresh(_:)),
             keyEquivalent: "r"
         )
+
+        item.submenu = menu
+        return item
+    }
+
+    private static func actionsMenu() -> NSMenuItem {
+        let item = NSMenuItem()
+        let menu = NSMenu(title: "Actions")
+
+        let copy = menu.addItem(
+            withTitle: "Copy Path",
+            action: #selector(BrowserViewController.copyPath(_:)),
+            keyEquivalent: "c"
+        )
+        copy.keyEquivalentModifierMask = [.command, .shift]
+
+        let terminal = menu.addItem(
+            withTitle: "Open Terminal Here",
+            action: #selector(BrowserViewController.openTerminalHere(_:)),
+            keyEquivalent: "t"
+        )
+        terminal.keyEquivalentModifierMask = [.command, .control]
+
+        let reveal = menu.addItem(
+            withTitle: "Reveal in Finder",
+            action: #selector(BrowserViewController.revealInFinder(_:)),
+            keyEquivalent: "r"
+        )
+        reveal.keyEquivalentModifierMask = [.command, .shift]
 
         item.submenu = menu
         return item

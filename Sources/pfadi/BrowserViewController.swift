@@ -3,9 +3,13 @@ import PfadiCore
 
 /// One window: a path field on top, a file list below, a count at the bottom.
 final class BrowserViewController: NSViewController {
+    /// Where the last window was looking, restored on the next launch.
+    static let lastDirectoryKey = "lastDirectory"
+
     private var directory: URL
     private var entries: [Entry] = []
     private var showHidden = false
+    private var watcher: DirectoryWatcher?
 
     private let pathField = PathField()
     private let tableView = FileTableView()
@@ -86,6 +90,7 @@ final class BrowserViewController: NSViewController {
         tableView.target = self
         tableView.doubleAction = #selector(openSelection)
         tableView.onReturn = { [weak self] in self?.openSelection() }
+        tableView.onTypeAhead = { [weak self] prefix in self?.typeAhead(prefix) }
 
         addColumn(id: "name", title: "Name", width: 420)
         addColumn(id: "size", title: "Size", width: 90)
@@ -101,19 +106,35 @@ final class BrowserViewController: NSViewController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        reload()
+        enter(directory)
         view.window?.makeFirstResponder(tableView)
     }
 
     // MARK: - Navigation
 
     func navigate(to url: URL) {
-        directory = PathCompletion.directoryURL(url)
-        reload()
+        enter(PathCompletion.directoryURL(url))
         view.window?.makeFirstResponder(tableView)
     }
 
-    private func reload() {
+    /// Moves to a folder: list it, watch it, remember it, select the top row.
+    private func enter(_ url: URL) {
+        directory = url
+        reload(keepingSelection: false)
+        UserDefaults.standard.set(url.path, forKey: Self.lastDirectoryKey)
+
+        watcher?.stop()
+        watcher = DirectoryWatcher(url: url) { [weak self] in
+            // Something changed out there. Keep the cursor where the person
+            // left it, or a build finishing would yank them back to the top.
+            self?.reload(keepingSelection: true)
+        }
+        watcher?.start()
+    }
+
+    private func reload(keepingSelection: Bool) {
+        let previous = keepingSelection ? selectedEntry()?.name : nil
+
         var failure: String?
         do {
             entries = try DirectoryListing.read(directory, showHidden: showHidden)
@@ -134,22 +155,54 @@ final class BrowserViewController: NSViewController {
             return
         }
 
-        tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
-        tableView.scrollRowToVisible(0)
+        // The remembered row may have been renamed or deleted by whatever
+        // triggered this reload, so falling back to the top is normal.
+        let row = previous.flatMap { name in entries.firstIndex { $0.name == name } } ?? 0
+        select(row: row)
+
         let folders = entries.filter(\.isDirectory).count
         statusLabel.stringValue =
             "\(entries.count) items, \(folders) folders" + (showHidden ? ", hidden shown" : "")
     }
 
-    @objc private func openSelection() {
+    private func select(row: Int) {
+        guard entries.indices.contains(row) else { return }
+        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        tableView.scrollRowToVisible(row)
+    }
+
+    private func selectedEntry() -> Entry? {
         let row = tableView.selectedRow
-        guard row >= 0, row < entries.count else { return }
-        let entry = entries[row]
+        return entries.indices.contains(row) ? entries[row] : nil
+    }
+
+    /// What the actions work on: the selected row, or the folder itself when
+    /// nothing is selected. Copying "the path" with an empty list should still
+    /// give you a path.
+    private func actionTarget() -> URL {
+        selectedEntry()?.url ?? directory
+    }
+
+    @objc private func openSelection() {
+        guard let entry = selectedEntry() else { return }
         if entry.isDirectory {
             navigate(to: entry.url)
         } else {
             NSWorkspace.shared.open(entry.url)
         }
+    }
+
+    private func typeAhead(_ prefix: String) {
+        let row = TypeAhead.index(
+            matching: prefix,
+            in: entries.map(\.name),
+            current: tableView.selectedRow >= 0 ? tableView.selectedRow : nil
+        )
+        guard let row else {
+            NSSound.beep()
+            return
+        }
+        select(row: row)
     }
 
     @objc private func pathFieldCommitted(_ sender: NSTextField) {
@@ -183,11 +236,28 @@ final class BrowserViewController: NSViewController {
 
     @objc func toggleHidden(_ sender: Any?) {
         showHidden.toggle()
-        reload()
+        reload(keepingSelection: true)
     }
 
     @objc func refresh(_ sender: Any?) {
-        reload()
+        reload(keepingSelection: true)
+    }
+
+    @objc func copyPath(_ sender: Any?) {
+        let target = actionTarget()
+        Actions.copyPath(target)
+        statusLabel.stringValue = "copied \(target.path)"
+    }
+
+    @objc func revealInFinder(_ sender: Any?) {
+        Actions.revealInFinder(actionTarget())
+    }
+
+    @objc func openTerminalHere(_ sender: Any?) {
+        // A shell opens in a folder, never on a file: use the folder holding
+        // the selection when something is selected.
+        let target = selectedEntry().map { $0.isDirectory ? $0.url : directory } ?? directory
+        Actions.openTerminal(at: target)
     }
 }
 
