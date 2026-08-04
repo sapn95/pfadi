@@ -33,7 +33,8 @@ So: one pane, one path field, keyboard first.
 
 ```text
 click    a path component: everything beside it, with a filter
-⇧⌘G     jump to the path field and type instead
+2×click  the path bar: type a path instead
+⇧⌘G     the same, from the keyboard
 tab     walk to the next match, ⇧tab back, escape to undo
 return  accept the match, then return again to go there
 a-z     type-ahead: jump to the row whose name starts like that
@@ -184,8 +185,10 @@ components, and clicking `git` offers everything in `~` — including `git`
 itself, ticked, so the menu says where you are as well as where you could go.
 Past eight entries the menu grows a filter field at the top, already focused,
 because a filter you have to click into first is slower than scrolling past the
-thing you wanted. ⇧⌘G swaps the whole bar for a text field when you would
-rather type.
+thing you wanted. Double-click the bar, or press ⇧⌘G, to swap it for a text field and type
+instead. A single click that misses a component does nothing: swapping on a
+stray click is a one-way door, because only editing ending puts the bar back
+and editing that never started never ends.
 
 ⌘F filters the folder you are in. Substring rather than prefix and blind to
 case and accents, so `config` finds `.eslintrc.config.js`. The status line

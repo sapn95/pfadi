@@ -14,10 +14,15 @@ final class PathBar: NSPathControl {
     /// Whether hidden folders appear in the menus. Follows the list.
     var showHidden = false
 
+    /// Asked for by a double click: somebody who wants to type.
+    var onEdit: (() -> Void)?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         pathStyle = .standard
         focusRingType = .none
+        doubleAction = #selector(editRequested)
+        toolTip = "Click a component to see what is beside it. Double-click to type a path."
         target = self
         action = #selector(componentClicked)
         // Nothing is dropped on the bar itself; the list and the sidebar take
@@ -28,6 +33,11 @@ final class PathBar: NSPathControl {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("pfadi builds its views in code")
+    }
+
+    /// Double click, which is deliberate in a way a stray single click is not.
+    @objc private func editRequested() {
+        onEdit?()
     }
 
     @objc private func componentClicked() {
