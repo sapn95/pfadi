@@ -14,9 +14,6 @@ final class PathBar: NSPathControl {
     /// Whether hidden folders appear in the menus. Follows the list.
     var showHidden = false
 
-    /// Asked for by a double click: somebody who wants to type.
-    var onEdit: (() -> Void)?
-
     /// The folder being shown.
     ///
     /// NSPathControlItem carries a read-only URL, so items cannot be built by
@@ -30,8 +27,8 @@ final class PathBar: NSPathControl {
         super.init(frame: frameRect)
         pathStyle = .standard
         focusRingType = .none
-        doubleAction = #selector(editRequested)
-        toolTip = "Click a component to see what is beside it. Double-click to type a path."
+        doubleAction = #selector(componentOpened)
+        toolTip = "Click a folder to see what is beside it. Double-click to go there."
         target = self
         action = #selector(componentClicked)
         // Nothing is dropped on the bar itself; the list and the sidebar take
@@ -44,9 +41,12 @@ final class PathBar: NSPathControl {
         fatalError("pfadi builds its views in code")
     }
 
-    /// Double click, which is deliberate in a way a stray single click is not.
-    @objc private func editRequested() {
-        onEdit?()
+    /// Double click on a component goes there. Typing is the button at the end
+    /// of the row and ⇧⌘G, which are both deliberate acts rather than the
+    /// second half of a click somebody was already making.
+    @objc private func componentOpened() {
+        guard let url = clickedPathItem?.url else { return }
+        onChoose?(url)
     }
 
     @objc private func componentClicked() {

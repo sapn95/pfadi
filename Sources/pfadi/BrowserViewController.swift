@@ -109,7 +109,6 @@ final class BrowserViewController: NSViewController {
         pathBar.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         pathDescend.setContentHuggingPriority(.required, for: .horizontal)
         pathBar.onChoose = { [weak self] url in self?.navigate(to: url) }
-        pathBar.onEdit = { [weak self] in self?.focusPathField(nil) }
         pathField.onEndEditing = { [weak self] in
             guard let self else { return }
             // Whatever half-typed path is in there described a place nobody
@@ -174,10 +173,11 @@ final class BrowserViewController: NSViewController {
             pathBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
             pathBar.leadingAnchor.constraint(equalTo: pathField.leadingAnchor),
             pathBar.heightAnchor.constraint(equalTo: pathField.heightAnchor),
-            // The bar hugs its components so the arrow sits right after the
-            // last one, which is where somebody reaches for "and then into".
-            pathBar.trailingAnchor.constraint(
-                lessThanOrEqualTo: pathDescend.leadingAnchor, constant: -2),
+            // Pinned to the bar, not merely kept left of the next thing. With
+            // only an upper bound the arrow drifted to the far right, which is
+            // nowhere near the folder it belongs to.
+            pathDescend.leadingAnchor.constraint(
+                equalTo: pathBar.trailingAnchor, constant: 2),
 
             pathDescend.centerYAnchor.constraint(equalTo: pathBar.centerYAnchor),
             pathDescend.widthAnchor.constraint(equalToConstant: 22),
