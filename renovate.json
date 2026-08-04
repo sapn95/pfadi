@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard", ":semanticCommits"],
+  "packageRules": [
+    {
+      "description": "Auto-merge low-risk updates (digests, pins, minor, patch)",
+      "matchUpdateTypes": ["digest", "pin", "minor", "patch"],
+      "automerge": true
+    }
+  ],
+  "github-actions": { "enabled": true }
+}
