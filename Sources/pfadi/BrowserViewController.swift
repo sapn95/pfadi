@@ -506,10 +506,9 @@ final class BrowserViewController: NSViewController {
 
     /// ⌘K, which is the key everyone already presses for this.
     @objc func connectToServer(_ sender: Any?) {
-        view.window?.makeFirstResponder(pathField)
-        pathField.stringValue = "smb://"
-        pathField.currentEditor()?.selectedRange = NSRange(location: 6, length: 0)
-        statusLabel.stringValue = "type a share address, for example smb://server/share"
+        ConnectSheet.show(in: view.window, recents: favourites.servers()) { [weak self] url in
+            self?.connect(to: url)
+        }
     }
 
     // MARK: - Menu actions
