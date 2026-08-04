@@ -113,5 +113,6 @@ FavouriteSuites.run()
 WriteSuites.run()
 HistorySuites.run()
 InfoSuites.run()
+ShareSuites.run()
 
 Harness.finish()
