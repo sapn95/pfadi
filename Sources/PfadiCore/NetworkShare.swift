@@ -35,21 +35,77 @@ public enum NetworkShare {
         return url
     }
 
+    /// What was made of what somebody typed.
+    public struct Interpretation: Equatable {
+        public let url: URL
+        /// The original text, when it had to be rewritten to get here. Nil
+        /// when what was typed was already an address.
+        public let rewrittenFrom: String?
+
+        public var wasRewritten: Bool { rewrittenFrom != nil }
+    }
+
     /// Turns what somebody typed into a share URL.
     ///
-    /// Forgiving about the two things everybody does: pasting a whole
-    /// `smb://…` in while a different protocol is selected, and leading
-    /// slashes copied from `//server/share`.
-    public static func assemble(scheme: String, from input: String) -> URL? {
-        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// People paste what their colleague sent them, and what colleagues send
+    /// is `\\filer\projects` from a Windows machine, or `//filer/projects`
+    /// from a Mac, or `filer:/export` from whoever set the NFS up. All three
+    /// mean a place, and refusing them because of the punctuation is the
+    /// application being difficult about something it can work out.
+    ///
+    /// With `rewriting` off, only a real address is accepted, for anybody who
+    /// would rather it did exactly what they typed.
+    public static func interpret(
+        _ input: String,
+        scheme: String,
+        rewriting: Bool = true
+    ) -> Interpretation? {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
 
-        // Somebody who pasted a full URL meant it, whichever button is lit.
-        if let pasted = url(from: text) { return pasted }
+        // Already an address: nothing to rewrite, whichever button is lit.
+        if let direct = url(from: text) {
+            return Interpretation(url: direct, rewrittenFrom: nil)
+        }
+        guard rewriting else { return nil }
 
-        while text.hasPrefix("/") { text.removeFirst() }
-        guard !text.isEmpty, schemes.contains(scheme) else { return nil }
-        return url(from: "\(scheme)://\(text)")
+        var body = text
+        var chosen = scheme
+
+        if body.contains("\\") {
+            // A UNC path. The leading pair of backslashes is the marker, the
+            // rest are separators, and SMB is the only thing it can mean.
+            chosen = "smb"
+            while body.hasPrefix("\\") { body.removeFirst() }
+            body = body.replacingOccurrences(of: "\\", with: "/")
+        } else if let colon = body.firstIndex(of: ":"), !body.hasPrefix("/"),
+            !body.contains("//")
+        {
+            // `filer:/export`, which is how an NFS export is written down
+            // everywhere except in a URL.
+            chosen = "nfs"
+            body = body.replacingCharacters(in: colon...colon, with: "/")
+        }
+
+        while body.hasPrefix("/") { body.removeFirst() }
+        // A trailing separator is noise and produces an empty last component.
+        while body.hasSuffix("/") { body.removeLast() }
+        guard !body.isEmpty, schemes.contains(chosen) else { return nil }
+
+        // Spaces and the rest are legal in a share name and illegal in a URL.
+        let encoded =
+            body.split(separator: "/").map { component in
+                component.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+                    ?? String(component)
+            }.joined(separator: "/")
+
+        guard let built = url(from: "\(chosen)://\(encoded)") else { return nil }
+        return Interpretation(url: built, rewrittenFrom: text)
+    }
+
+    /// The old shape, kept for callers that only want the URL.
+    public static func assemble(scheme: String, from input: String) -> URL? {
+        interpret(input, scheme: scheme)?.url
     }
 
     /// Where this share already is, if it is already there.

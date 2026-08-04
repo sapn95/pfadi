@@ -67,6 +67,13 @@ public final class Preferences {
         set { store.set(newValue, forKey: Key.servers) }
     }
 
+    /// Whether a pasted `\\server\share` is understood as an address. On by
+    /// default, because being told what it did is better than being refused.
+    public var rewriteAddresses: Bool {
+        get { store.object(forKey: Key.rewriteAddresses) as? Bool ?? true }
+        set { store.set(newValue, forKey: Key.rewriteAddresses) }
+    }
+
     /// Folders visited recently, newest first.
     public var recents: [String] {
         get { store.object(forKey: Key.recents) as? [String] ?? [] }
@@ -77,6 +84,7 @@ public final class Preferences {
         static let favourites = "favourites"
         static let recents = "recents"
         static let servers = "servers"
+        static let rewriteAddresses = "rewriteAddresses"
         static let lastDirectory = "lastDirectory"
         static let showHidden = "showHidden"
         static let sortKey = "sortKey"

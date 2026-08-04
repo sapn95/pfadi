@@ -32,7 +32,8 @@ So: one pane, one path field, keyboard first.
 ## What it does
 
 ```text
-⇧⌘G     jump to the path field
+click    a path component: everything beside it, with a filter
+⇧⌘G     jump to the path field and type instead
 tab     walk to the next match, ⇧tab back, escape to undo
 return  accept the match, then return again to go there
 a-z     type-ahead: jump to the row whose name starts like that
@@ -108,9 +109,22 @@ If you do not already know how it is spelled, `⌘K` or **Connect to Server** in
 the sidebar asks instead: SMB, NFS or AFP as a button, one field for the rest,
 and the shape that protocol expects written underneath it. Servers you have
 connected to before are in a menu on the same sheet, and picking one sets the
-protocol button to match so the two cannot disagree. Leading slashes are
-forgiven and a pasted `smb://…` wins over whichever button is lit, because
-those are the two things everybody does. If it is already mounted it
+protocol button to match so the two cannot disagree. It also understands what people actually paste. A colleague on Windows sends
+`\\filer\projects`, a Mac sends `//filer/projects`, and whoever set up the NFS
+writes `filer:/export`. All three mean a place, and refusing them over
+punctuation is the application being difficult about something it can work out:
+
+| Pasted | Understood as |
+| --- | --- |
+| `\\filer\projects` | `smb://filer/projects` |
+| `\\filer\team share\docs` | `smb://filer/team%20share/docs` |
+| `filer:/export/data` | `nfs://filer/export/data` |
+| `//filer/projects/` | `smb://filer/projects` |
+
+**It tells you when it rewrote something**, quoting both back, because silently
+changing what somebody typed is how they stop trusting the field. The checkbox
+on the sheet turns it off for anybody who would rather it did exactly what they
+typed, and that choice is remembered. If it is already mounted it
 goes straight there instead of producing a second mount point with a number on
 the end, which is how people end up with `share-1` through `share-4`. Anything
 needing a password is handed to the system, which already has a connect sheet
@@ -164,6 +178,14 @@ about how much is left and Stop lands between two files rather than somewhere
 inside a black box. Conflicts are all asked about up front: being interrupted
 halfway through a long copy, with no idea what has already happened, is what
 makes people stop trusting a file manager.
+
+The path along the top is clickable. `/Users/sapn/git/pfadi` is four
+components, and clicking `git` offers everything in `~` — including `git`
+itself, ticked, so the menu says where you are as well as where you could go.
+Past eight entries the menu grows a filter field at the top, already focused,
+because a filter you have to click into first is slower than scrolling past the
+thing you wanted. ⇧⌘G swaps the whole bar for a text field when you would
+rather type.
 
 ⌘F filters the folder you are in. Substring rather than prefix and blind to
 case and accents, so `config` finds `.eslintrc.config.js`. The status line
@@ -368,10 +390,6 @@ Roughly in the order it hurts.
 
 ## Wanted next
 
-- **A breadcrumb path bar.** Click a component between two slashes and get a
-  menu of everything at that level, with a filter field at the top, so you can
-  step sideways without retyping the path. `NSPathControl` gives the clickable
-  components and an `NSMenu` takes a custom view for the filter.
 - **Expandable folders in the list**, the way an open panel does it.
 - **Downloading and evicting cloud placeholders**, which needs the File
   Provider domain APIs rather than a filesystem call.

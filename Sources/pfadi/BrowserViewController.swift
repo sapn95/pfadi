@@ -51,6 +51,7 @@ final class BrowserViewController: NSViewController {
     private let listingQueue = DispatchQueue(
         label: "io.github.sapn95.pfadi.listing", qos: .userInitiated)
 
+    private let pathBar = PathBar()
     private let pathField = PathField()
     private let searchField = NSSearchField()
     private let tableView = FileTableView()
@@ -97,6 +98,10 @@ final class BrowserViewController: NSViewController {
         pathField.translatesAutoresizingMaskIntoConstraints = false
         pathField.target = self
         pathField.action = #selector(pathFieldCommitted(_:))
+        pathBar.translatesAutoresizingMaskIntoConstraints = false
+        pathBar.onChoose = { [weak self] url in self?.navigate(to: url) }
+        pathBar.onEdit = { [weak self] in self?.focusPathField(nil) }
+
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.placeholderString = "Filter"
         searchField.sendsSearchStringImmediately = true
@@ -122,6 +127,7 @@ final class BrowserViewController: NSViewController {
 
         configureTable()
 
+        view.addSubview(pathBar)
         view.addSubview(pathField)
         view.addSubview(searchField)
         view.addSubview(scrollView)
@@ -132,6 +138,11 @@ final class BrowserViewController: NSViewController {
             // The safe area, not the view: the window is fullSizeContentView so
             // that the sidebar's translucency can reach the top, which means
             // the content pane starts underneath the title bar.
+            pathBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            pathBar.leadingAnchor.constraint(equalTo: pathField.leadingAnchor),
+            pathBar.trailingAnchor.constraint(equalTo: pathField.trailingAnchor),
+            pathBar.heightAnchor.constraint(equalTo: pathField.heightAnchor),
+
             pathField.topAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
             pathField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
@@ -288,6 +299,9 @@ final class BrowserViewController: NSViewController {
         // Truncation hides the start, and the start is what you want when you
         // are checking which of two similar folders this is.
         pathField.toolTip = directory.path
+        pathBar.url = directory
+        pathBar.showHidden = showHidden
+        showPathField(false)
         pathField.showHidden = showHidden
         pathField.currentDirectory = directory
         view.window?.title = directory.lastPathComponent.isEmpty ? "/" : directory.lastPathComponent
@@ -374,6 +388,13 @@ final class BrowserViewController: NSViewController {
         return entries.filter {
             $0.name.range(of: text, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
+    }
+
+    /// The bar and the field share a slot. The bar is what you look at and
+    /// click; the field is what you type into, and it appears when you ask.
+    private func showPathField(_ editing: Bool) {
+        pathBar.isHidden = editing
+        pathField.isHidden = !editing
     }
 
     @objc func focusSearch(_ sender: Any?) {
@@ -506,7 +527,10 @@ final class BrowserViewController: NSViewController {
 
     /// ⌘K, which is the key everyone already presses for this.
     @objc func connectToServer(_ sender: Any?) {
-        ConnectSheet.show(in: view.window, recents: favourites.servers()) { [weak self] url in
+        ConnectSheet.show(
+            in: view.window, recents: favourites.servers(), preferences: preferences
+        ) { [weak self] url, note in
+            if let note { self?.statusLabel.stringValue = note }
             self?.connect(to: url)
         }
     }
@@ -514,6 +538,7 @@ final class BrowserViewController: NSViewController {
     // MARK: - Menu actions
 
     @objc func focusPathField(_ sender: Any?) {
+        showPathField(true)
         view.window?.makeFirstResponder(pathField)
         pathField.currentEditor()?.selectAll(nil)
     }

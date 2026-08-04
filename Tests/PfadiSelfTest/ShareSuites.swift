@@ -109,6 +109,48 @@ enum ShareSuites {
     }
 
     private static func assembling() {
+        Harness.suite("connect: what people paste, understood") {
+            // A colleague sends what their machine showed them, and what a
+            // Windows machine shows is backslashes.
+            let unc = NetworkShare.interpret("\\\\filer\\projects", scheme: "smb")
+            Harness.expectEqual(
+                unc?.url, URL(string: "smb://filer/projects"), "a UNC path is an smb share")
+            Harness.expect(unc?.wasRewritten == true, "and it says it changed it")
+            Harness.expectEqual(
+                unc?.rewrittenFrom, "\\\\filer\\projects", "quoting the original back")
+
+            Harness.expectEqual(
+                NetworkShare.interpret("\\\\filer\\team share\\docs", scheme: "smb")?.url,
+                URL(string: "smb://filer/team%20share/docs"),
+                "a space is legal in a share name and not in a URL")
+
+            Harness.expectEqual(
+                NetworkShare.interpret("filer:/export/data", scheme: "smb")?.url,
+                URL(string: "nfs://filer/export/data"),
+                "the colon form is nfs, whichever button is lit")
+
+            Harness.expectEqual(
+                NetworkShare.interpret("//filer/projects/", scheme: "smb")?.url,
+                URL(string: "smb://filer/projects"),
+                "slashes either end are noise")
+
+            let plain = NetworkShare.interpret("smb://filer/projects", scheme: "nfs")
+            Harness.expect(
+                plain?.wasRewritten == false, "a real address is not a rewrite, so nothing is said")
+        }
+
+        Harness.suite("connect: the magic can be turned off") {
+            Harness.expect(
+                NetworkShare.interpret("\\\\filer\\projects", scheme: "smb", rewriting: false)
+                    == nil,
+                "with rewriting off a UNC path is refused rather than reinterpreted")
+            Harness.expectEqual(
+                NetworkShare.interpret("smb://filer/projects", scheme: "smb", rewriting: false)?
+                    .url,
+                URL(string: "smb://filer/projects"),
+                "but a real address still works")
+        }
+
         Harness.suite("connect: what gets typed becomes a URL") {
             Harness.expectEqual(
                 NetworkShare.assemble(scheme: "smb", from: "fileserver/projects"),
