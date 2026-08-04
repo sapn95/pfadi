@@ -60,12 +60,21 @@ enum ShareMounter {
         status == 80 || status == 13 || status == 1 || status >= 6000
     }
 
+    /// Errors people can act on, rather than a number to search for.
     private static func message(for status: Int32) -> String {
         switch status {
-        case 2: return "no such share on that server"
-        case 51, 65: return "cannot reach that server"
-        case 60: return "the server did not answer in time"
-        default: return "the server refused (error \(status))"
+        case 2:
+            return "no such share on that server. Check the part after the last slash"
+        case 22:
+            return "that address is not one this protocol understands"
+        case 51, 65:
+            return "cannot reach that server. Check the name, and whether the VPN is up"
+        case 60:
+            return "the server did not answer in time"
+        case 64:
+            return "the server is not answering on this protocol. SMB and NFS are not the same"
+        default:
+            return "the server refused (error \(status))"
         }
     }
 }

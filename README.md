@@ -102,9 +102,15 @@ system actually offers: defaults are per kind, never per file, so the menu
 says so rather than hiding it behind the word "always".
 
 **A share is an address too.** Type `smb://server/share` or
-`nfs://filer/export` into the path field and it mounts and opens, rather than
-sending you to a separate dialog with its own history and its own idea of what
-you meant. `⌘K` puts `smb://` in the field for you. If it is already mounted it
+`nfs://filer/export` into the path field and it mounts and opens.
+
+If you do not already know how it is spelled, `⌘K` or **Connect to Server** in
+the sidebar asks instead: SMB, NFS or AFP as a button, one field for the rest,
+and the shape that protocol expects written underneath it. Servers you have
+connected to before are in a menu on the same sheet, and picking one sets the
+protocol button to match so the two cannot disagree. Leading slashes are
+forgiven and a pasted `smb://…` wins over whichever button is lit, because
+those are the two things everybody does. If it is already mounted it
 goes straight there instead of producing a second mount point with a number on
 the end, which is how people end up with `share-1` through `share-4`. Anything
 needing a password is handed to the system, which already has a connect sheet

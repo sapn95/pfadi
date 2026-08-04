@@ -35,6 +35,23 @@ public enum NetworkShare {
         return url
     }
 
+    /// Turns what somebody typed into a share URL.
+    ///
+    /// Forgiving about the two things everybody does: pasting a whole
+    /// `smb://…` in while a different protocol is selected, and leading
+    /// slashes copied from `//server/share`.
+    public static func assemble(scheme: String, from input: String) -> URL? {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+
+        // Somebody who pasted a full URL meant it, whichever button is lit.
+        if let pasted = url(from: text) { return pasted }
+
+        while text.hasPrefix("/") { text.removeFirst() }
+        guard !text.isEmpty, schemes.contains(scheme) else { return nil }
+        return url(from: "\(scheme)://\(text)")
+    }
+
     /// Where this share already is, if it is already there.
     ///
     /// Mounting something that is mounted produces a second mount point with a

@@ -5,6 +5,7 @@ enum ShareSuites {
     static func run() {
         recognising()
         matching()
+        assembling()
         listing()
     }
 
@@ -104,6 +105,38 @@ enum ShareSuites {
                 NetworkShare.existingMount(for: URL(string: "smb://fileserver")!, in: mounts)?.path,
                 "/Volumes/projects",
                 "any mount from that server will do")
+        }
+    }
+
+    private static func assembling() {
+        Harness.suite("connect: what gets typed becomes a URL") {
+            Harness.expectEqual(
+                NetworkShare.assemble(scheme: "smb", from: "fileserver/projects"),
+                URL(string: "smb://fileserver/projects"),
+                "server and share")
+            Harness.expectEqual(
+                NetworkShare.assemble(scheme: "nfs", from: "filer/export/data"),
+                URL(string: "nfs://filer/export/data"),
+                "an nfs export path")
+
+            // The two things everybody does: leading slashes, and pasting a
+            // whole URL in while a different button is lit.
+            Harness.expectEqual(
+                NetworkShare.assemble(scheme: "smb", from: "//fileserver/projects"),
+                URL(string: "smb://fileserver/projects"),
+                "leading slashes are forgiven")
+            Harness.expectEqual(
+                NetworkShare.assemble(scheme: "smb", from: "nfs://filer/export"),
+                URL(string: "nfs://filer/export"),
+                "a pasted URL wins over the button")
+
+            Harness.expect(
+                NetworkShare.assemble(scheme: "smb", from: "") == nil, "nothing typed")
+            Harness.expect(
+                NetworkShare.assemble(scheme: "smb", from: "   ") == nil, "only spaces")
+            Harness.expect(
+                NetworkShare.assemble(scheme: "smb", from: "///") == nil,
+                "slashes and nothing else")
         }
     }
 
