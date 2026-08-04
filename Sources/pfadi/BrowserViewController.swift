@@ -1135,7 +1135,17 @@ extension BrowserViewController: NSTextFieldDelegate {
     /// puts the old text back and ends editing without telling the delegate a
     /// new value.
     func controlTextDidEndEditing(_ notification: Notification) {
-        guard let field = notification.object as? NSTextField, field !== pathField else { return }
+        guard let field = notification.object as? NSTextField else { return }
+
+        // Giving up on the path field, by clicking away or pressing escape,
+        // puts the clickable bar back. Without this the text field stays for
+        // the rest of the session because only navigating ever restored it.
+        if field === pathField {
+            pathField.endCompletion()
+            pathField.stringValue = directory.path
+            showPathField(false)
+            return
+        }
         defer {
             field.isEditable = false
             renaming = nil
