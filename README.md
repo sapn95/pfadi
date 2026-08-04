@@ -48,6 +48,7 @@ F2      rename the selection
 ⌘⌫      move the selection to the trash
 ⌘I      what is this thing: kind, size, dates, access, cloud status
 ⌘K      connect to a server, or just type smb://server/share above
+⌘F      filter this folder by name
 ⌘T ⌘N   a new tab, a new window
 ⌘↓      open the selected folder in a tab, keeping where you are
 ⌘C ⌘V   copy, then paste, with ⌥⌘V to move instead
@@ -146,11 +147,21 @@ inside a black box. Conflicts are all asked about up front: being interrupted
 halfway through a long copy, with no idea what has already happened, is what
 makes people stop trusting a file manager.
 
-The sidebar has three sections. **Favourites** are yours: ⌘D puts the folder
+⌘F filters the folder you are in. Substring rather than prefix and blind to
+case and accents, so `config` finds `.eslintrc.config.js`. The status line
+counts what survived. The filter is dropped when you leave, because it
+described the folder you were in and carrying it into the next one shows an
+empty list with no explanation.
+
+The sidebar has four sections. **Favourites** are yours: ⌘D puts the folder
 you are in there and ⌘D takes it out again, and right-click removes a row. A
 favourite whose folder has been deleted or unmounted is skipped rather than
 drawn as a row that beeps when clicked, and it stays in the list in case the
 volume comes back.
+
+**Recents** is the last eight folders you went to, newest first, with home left
+out because that is where a window opens when nothing else is known rather than
+somewhere you chose.
 
 **Cloud** and **Locations** are not yours and cannot be edited, because they
 are facts about the machine rather than a list somebody curates. Cloud is
