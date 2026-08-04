@@ -11,11 +11,14 @@ public enum DirectoryListing {
         showHidden: Bool,
         fileManager: FileManager = .default
     ) throws -> [Entry] {
+        // Deliberately not .localizedNameKey. It returns the name as Finder
+        // would draw it, which drops the extension unless "Show all filename
+        // extensions" is on, and translates system folders. In a tool built
+        // around typing paths, the name on disk is the only useful one.
         let keys: [URLResourceKey] = [
             .isDirectoryKey,
             .fileSizeKey,
             .contentModificationDateKey,
-            .localizedNameKey,
         ]
         var options: FileManager.DirectoryEnumerationOptions = []
         if !showHidden {
@@ -34,7 +37,7 @@ public enum DirectoryListing {
             let values = try? url.resourceValues(forKeys: Set(keys))
             return Entry(
                 url: url,
-                name: values?.localizedName ?? url.lastPathComponent,
+                name: url.lastPathComponent,
                 isDirectory: values?.isDirectory ?? false,
                 size: values?.fileSize.map(Int64.init),
                 modified: values?.contentModificationDate

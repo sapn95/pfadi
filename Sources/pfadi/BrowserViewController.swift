@@ -11,6 +11,13 @@ final class BrowserViewController: NSViewController {
     private var showHidden = false
     private var watcher: DirectoryWatcher?
 
+    /// Counts reload requests so a slow listing for a folder we have since
+    /// left can be recognised and dropped.
+    private var generation = 0
+
+    private let listingQueue = DispatchQueue(
+        label: "io.github.sapn95.pfadi.listing", qos: .userInitiated)
+
     private let pathField = PathField()
     private let tableView = FileTableView()
     private let statusLabel = NSTextField(labelWithString: "")
@@ -132,22 +139,54 @@ final class BrowserViewController: NSViewController {
         watcher?.start()
     }
 
+    /// Lists the folder on a worker and applies the result on the main thread.
+    ///
+    /// Enumerating a directory is a synchronous filesystem call. On a network
+    /// mount or a folder with tens of thousands of entries it takes long enough
+    /// to freeze every menu, keystroke and scroll in the application, and the
+    /// watcher makes it happen without anybody asking.
     private func reload(keepingSelection: Bool) {
         let previous = keepingSelection ? selectedEntry()?.name : nil
 
+        // The path field and the title describe where we are going, so they
+        // update immediately rather than when the listing arrives.
+        pathField.stringValue = directory.path
+        pathField.showHidden = showHidden
+        pathField.currentDirectory = directory
+        view.window?.title = directory.lastPathComponent.isEmpty ? "/" : directory.lastPathComponent
+
+        generation &+= 1
+        let generation = self.generation
+        let directory = self.directory
+        let showHidden = self.showHidden
+
+        listingQueue.async { [weak self] in
+            let result = Result { try DirectoryListing.read(directory, showHidden: showHidden) }
+            DispatchQueue.main.async {
+                // A newer navigation has already been asked for, so this answer
+                // is about a folder nobody is looking at any more.
+                guard let self, generation == self.generation else { return }
+                self.apply(result, directory: directory, previousSelection: previous)
+            }
+        }
+    }
+
+    private func apply(
+        _ result: Result<[Entry], any Error>,
+        directory: URL,
+        previousSelection: String?
+    ) {
         var failure: String?
-        do {
-            entries = try DirectoryListing.read(directory, showHidden: showHidden)
-        } catch {
+        switch result {
+        case .success(let listed):
+            entries = listed
+        case .failure(let error):
             // An unreadable directory is a normal event, not a crash: think
             // /Library/Caches, or anything behind a TCC prompt not yet granted.
             entries = []
             failure = "cannot read \(directory.path): \(error.localizedDescription)"
         }
 
-        pathField.stringValue = directory.path
-        pathField.showHidden = showHidden
-        view.window?.title = directory.lastPathComponent.isEmpty ? "/" : directory.lastPathComponent
         tableView.reloadData()
 
         guard !entries.isEmpty else {
@@ -157,7 +196,8 @@ final class BrowserViewController: NSViewController {
 
         // The remembered row may have been renamed or deleted by whatever
         // triggered this reload, so falling back to the top is normal.
-        let row = previous.flatMap { name in entries.firstIndex { $0.name == name } } ?? 0
+        let row =
+            previousSelection.flatMap { name in entries.firstIndex { $0.name == name } } ?? 0
         select(row: row)
 
         let folders = entries.filter(\.isDirectory).count

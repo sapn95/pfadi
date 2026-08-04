@@ -10,6 +10,10 @@ final class PathField: NSTextField, NSTextFieldDelegate {
     /// Whether hidden entries take part in completion. Follows the list.
     var showHidden = false
 
+    /// What a relative path is relative to. Without it, typing `sub/` and
+    /// pressing tab offers nothing, while committing the same text navigates.
+    var currentDirectory: URL?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         configure()
@@ -27,12 +31,21 @@ final class PathField: NSTextField, NSTextFieldDelegate {
         isBezeled = true
         bezelStyle = .roundedBezel
         focusRingType = .default
-        // A path is not prose: the system would otherwise capitalise it,
-        // curl the quotes and helpfully correct `/usr/bin` into something else.
         isAutomaticTextCompletionEnabled = false
-        if let editor = currentEditor() as? NSTextView {
-            editor.isAutomaticTextReplacementEnabled = false
-        }
+    }
+
+    /// A path is not prose: left alone the system capitalises it, curls the
+    /// quotes and helpfully corrects `/usr/bin` into something else.
+    ///
+    /// This has to happen here rather than in `configure()`. The field editor
+    /// is shared and created on demand, so at initialisation `currentEditor()`
+    /// is nil and setting anything on it does nothing at all.
+    func controlTextDidBeginEditing(_ notification: Notification) {
+        guard let editor = notification.userInfo?["NSFieldEditor"] as? NSTextView else { return }
+        editor.isAutomaticTextReplacementEnabled = false
+        editor.isAutomaticQuoteSubstitutionEnabled = false
+        editor.isAutomaticDashSubstitutionEnabled = false
+        editor.isAutomaticSpellingCorrectionEnabled = false
     }
 
     func control(
@@ -61,7 +74,8 @@ final class PathField: NSTextField, NSTextFieldDelegate {
         return PathCompletion.candidates(
             prefix: prefix,
             partial: partial,
-            showHidden: showHidden
+            showHidden: showHidden,
+            base: currentDirectory
         )
     }
 }

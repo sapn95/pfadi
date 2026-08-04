@@ -11,15 +11,19 @@ public enum PathCompletion {
     /// - Parameters:
     ///   - prefix: the text before the word being completed, e.g. `~/git/`.
     ///   - partial: the word being completed, e.g. `berndeu`.
+    ///   - base: what a relative prefix is relative to, normally the folder on
+    ///     screen. Without it, typing `sub/` and pressing tab offers nothing,
+    ///     even though committing the same text navigates there perfectly well.
     /// - Returns: matching entry names, directories with a trailing slash so a
     ///   second tab keeps going instead of stopping at the folder.
     public static func candidates(
         prefix: String,
         partial: String,
         showHidden: Bool,
+        base: URL? = nil,
         fileManager: FileManager = .default
     ) -> [String] {
-        let directory = resolveDirectory(prefix, fileManager: fileManager)
+        let directory = resolveDirectory(prefix, base: base, fileManager: fileManager)
         guard let directory else { return [] }
 
         let contents = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
