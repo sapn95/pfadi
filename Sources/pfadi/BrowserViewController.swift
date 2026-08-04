@@ -108,14 +108,17 @@ final class BrowserViewController: NSViewController {
         tableView.onReturn = { [weak self] in self?.openSelection() }
         tableView.onTypeAhead = { [weak self] prefix in self?.typeAhead(prefix) }
 
-        // Column widths are the other thing a person sets once and expects to
-        // find again. AppKit persists them itself once the table has a name.
-        tableView.autosaveName = "io.github.sapn95.pfadi.files"
-        tableView.autosaveTableColumns = true
-
         addColumn(id: "name", title: "Name", width: 420)
         addColumn(id: "size", title: "Size", width: 90)
         addColumn(id: "modified", title: "Modified", width: 160)
+
+        // Column widths are the other thing a person sets once and expects to
+        // find again, and AppKit persists them itself once the table has a
+        // name. It has to come after the columns exist: the saved widths are
+        // applied to the columns present at the moment the name is set, so
+        // doing this first silently restores nothing at all.
+        tableView.autosaveName = "io.github.sapn95.pfadi.files"
+        tableView.autosaveTableColumns = true
     }
 
     private func addColumn(id: String, title: String, width: CGFloat) {

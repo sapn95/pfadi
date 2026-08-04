@@ -7,6 +7,9 @@
 class Pfadi < Formula
   desc "macOS file browser with an address bar you can click into and type"
   homepage "https://github.com/sapn95/pfadi"
+  # url and sha256 point at the last release, not at VERSION. They trail it by
+  # design: the checksum of a tag's tarball cannot be known before the tag
+  # exists, so the release workflow rewrites both once it does.
   url "https://github.com/sapn95/pfadi/archive/refs/tags/v0.1.1.tar.gz"
   sha256 "d66da8a02a14c646652e51dd46072f3dae1edfc533ace5bc757b52f5f370d594"
   license "MIT"
