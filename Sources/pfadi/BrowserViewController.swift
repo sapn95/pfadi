@@ -1,5 +1,6 @@
 import AppKit
 import PfadiCore
+import Quartz
 
 /// One window: a path field on top, a file list below, a count at the bottom.
 final class BrowserViewController: NSViewController {
@@ -9,6 +10,9 @@ final class BrowserViewController: NSViewController {
     private var entries: [Entry] = []
     private var showHidden: Bool {
         didSet { preferences.showHidden = showHidden }
+    }
+    private var order: ListingOrder {
+        didSet { preferences.sortOrder = order }
     }
     private var watcher: DirectoryWatcher?
 
@@ -42,6 +46,7 @@ final class BrowserViewController: NSViewController {
         // A choice made once should still be true next launch, so this is read
         // back rather than defaulted.
         self.showHidden = preferences.showHidden
+        self.order = preferences.sortOrder
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -107,6 +112,7 @@ final class BrowserViewController: NSViewController {
         tableView.doubleAction = #selector(openSelection)
         tableView.onReturn = { [weak self] in self?.openSelection() }
         tableView.onTypeAhead = { [weak self] prefix in self?.typeAhead(prefix) }
+        tableView.onSpace = { [weak self] in self?.toggleQuickLook() }
 
         addColumn(id: "name", title: "Name", width: 420)
         addColumn(id: "size", title: "Size", width: 90)
@@ -119,12 +125,21 @@ final class BrowserViewController: NSViewController {
         // doing this first silently restores nothing at all.
         tableView.autosaveName = "io.github.sapn95.pfadi.files"
         tableView.autosaveTableColumns = true
+
+        // Show the order that was restored, without asking for a reload: the
+        // first listing has not happened yet.
+        tableView.sortDescriptors = [
+            NSSortDescriptor(key: order.key.rawValue, ascending: order.ascending)
+        ]
     }
 
     private func addColumn(id: String, title: String, width: CGFloat) {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
         column.title = title
         column.width = width
+        // The prototype is what makes the header clickable and draws the
+        // arrow. AppKit only reports the change; the sorting is ours.
+        column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true)
         tableView.addTableColumn(column)
     }
 
@@ -176,9 +191,12 @@ final class BrowserViewController: NSViewController {
         let generation = self.generation
         let directory = self.directory
         let showHidden = self.showHidden
+        let order = self.order
 
         listingQueue.async { [weak self] in
-            let result = Result { try DirectoryListing.read(directory, showHidden: showHidden) }
+            let result = Result {
+                try DirectoryListing.read(directory, showHidden: showHidden, order: order)
+            }
             DispatchQueue.main.async {
                 // A newer navigation has already been asked for, so this answer
                 // is about a folder nobody is looking at any more.
@@ -343,6 +361,25 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         entries.count
     }
 
+    /// A header was clicked. AppKit has already flipped the arrow, so all that
+    /// is left is to agree with it and re-read the folder.
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        guard QLPreviewPanel.sharedPreviewPanelExists(),
+            let panel = QLPreviewPanel.shared(), panel.isVisible
+        else { return }
+        panel.reloadData()
+    }
+
+    func tableView(_ tableView: NSTableView, sortDescriptorsDidChange old: [NSSortDescriptor]) {
+        guard
+            let descriptor = tableView.sortDescriptors.first,
+            let key = descriptor.key.flatMap(ListingOrder.Key.init(rawValue:))
+        else { return }
+
+        order = ListingOrder(key: key, ascending: descriptor.ascending)
+        reload(keepingSelection: true)
+    }
+
     func tableView(
         _ tableView: NSTableView,
         viewFor tableColumn: NSTableColumn?,
@@ -440,5 +477,49 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
             label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
         return cell
+    }
+}
+
+// MARK: - Quick Look
+
+extension BrowserViewController: QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+    /// Space opens the preview, and space again closes it. Holding the panel
+    /// open while walking the list with the arrow keys is the whole point, so
+    /// the selection tells the panel to refresh rather than reopening it.
+    func toggleQuickLook() {
+        guard let panel = QLPreviewPanel.shared() else { return }
+        if QLPreviewPanel.sharedPreviewPanelExists(), panel.isVisible {
+            panel.orderOut(nil)
+        } else {
+            panel.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = self
+        panel.delegate = self
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = nil
+        panel.delegate = nil
+    }
+
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+        selectedEntry() == nil ? 0 : 1
+    }
+
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
+        selectedEntry()?.url as (any QLPreviewItem)?
+    }
+
+    /// Send the panel's own key events back to the table, so the arrow keys
+    /// still move the selection while the preview has focus.
+    func previewPanel(_ panel: QLPreviewPanel!, handle event: NSEvent!) -> Bool {
+        guard event.type == .keyDown else { return false }
+        tableView.keyDown(with: event)
+        return true
     }
 }

@@ -108,5 +108,6 @@ P1Suites.run()
 ReviewSuites.run()
 CycleSuites.run()
 PreferenceSuites.run()
+SortingSuites.run()
 
 Harness.finish()
