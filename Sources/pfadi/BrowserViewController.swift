@@ -204,6 +204,7 @@ final class BrowserViewController: NSViewController {
         menu.addItem(.separator())
         for (title, action) in [
             ("Open in New Tab", #selector(openInNewTab(_:))),
+            ("Add to Favourites", #selector(toggleFavourite(_:))),
             ("Get Info", #selector(showInfo(_:))),
             ("Copy", #selector(copy(_:))),
             ("Paste", #selector(paste(_:))),
@@ -351,7 +352,15 @@ final class BrowserViewController: NSViewController {
         }
         guard !entries.isEmpty else { return "empty folder" }
         let folders = entries.filter(\.isDirectory).count
-        return "\(entries.count) items, \(folders) folders" + (showHidden ? ", hidden shown" : "")
+        var text = "\(entries.count) items, \(folders) folders"
+
+        // Only in a cloud folder, and only when some of it is not here. In an
+        // ordinary folder this line would be noise.
+        let placeholders = entries.filter { $0.cloud.isCloud && !$0.cloud.isDownloaded }.count
+        if placeholders > 0 {
+            text += ", \(placeholders) online only"
+        }
+        return text + (showHidden ? ", hidden shown" : "")
     }
 
     /// Substring rather than prefix, and blind to case and accents. Looking for
@@ -535,9 +544,17 @@ final class BrowserViewController: NSViewController {
         reload(keepingSelection: true)
     }
 
+    /// What ⌘D acts on: the selected folder, or the one on screen when the
+    /// selection is a file or there is none. Right-clicking a folder and being
+    /// offered the folder you are already in would be no use at all.
+    private func favouriteTarget() -> URL {
+        if let entry = selectedEntry(), entry.isDirectory { return entry.url }
+        return directory
+    }
+
     /// ⌘D, the same key Finder uses for the same thing.
     @objc func toggleFavourite(_ sender: Any?) {
-        let target = directory
+        let target = favouriteTarget()
         let added = favourites.add(target)
         if !added {
             favourites.remove(target)
@@ -798,10 +815,12 @@ extension BrowserViewController: NSMenuItemValidation {
             return selectedEntry() != nil
         }
         if menuItem.action == #selector(toggleFavourite(_:)) {
+            let target = favouriteTarget()
+            let name = target.path == directory.path ? "This Folder" : target.lastPathComponent
             menuItem.title =
-                favourites.contains(directory)
-                ? "Remove from Favourites"
-                : "Add to Favourites"
+                favourites.contains(target)
+                ? "Remove \(name) from Favourites"
+                : "Add \(name) to Favourites"
         }
         return true
     }

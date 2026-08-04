@@ -6,6 +6,9 @@ public struct FileInfo {
     public let name: String
     public let kind: String?
     public let size: Int64?
+    /// Bytes on this machine. Differs from `size` for a cloud placeholder,
+    /// which reports its full size and occupies none of it.
+    public let onDisk: Int64?
     public let isDirectory: Bool
     public let created: Date?
     public let modified: Date?
@@ -21,6 +24,9 @@ public struct FileInfo {
             .creationDateKey,
             .contentModificationDateKey,
             .localizedTypeDescriptionKey,
+            // What the file actually occupies here. For a cloud placeholder
+            // that is nothing, which is the honest answer to "how big is it".
+            .totalFileAllocatedSizeKey,
         ]
         let values = try? url.resourceValues(forKeys: keys)
         let attributes = try? fileManager.attributesOfItem(atPath: url.path)
@@ -30,6 +36,7 @@ public struct FileInfo {
             name: url.lastPathComponent,
             kind: values?.localizedTypeDescription,
             size: values?.fileSize.map(Int64.init),
+            onDisk: values?.totalFileAllocatedSize.map(Int64.init),
             isDirectory: values?.isDirectory ?? false,
             created: values?.creationDate,
             modified: values?.contentModificationDate,
