@@ -13,17 +13,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
 
-        let browser = BrowserViewController(directory: Self.startDirectory(explicit: pending))
+        let preferences = Preferences()
+        let favourites = Favourites(preferences: preferences)
+
+        let browser = BrowserViewController(
+            directory: Self.startDirectory(explicit: pending),
+            preferences: preferences,
+            favourites: favourites
+        )
         pending = nil
         self.browser = browser
 
+        let sidebar = SidebarViewController(favourites: favourites)
+        sidebar.onSelect = { [weak browser] url in browser?.navigate(to: url) }
+        browser.onFavouritesChanged = { [weak sidebar] in sidebar?.reload() }
+
+        // A split view controller rather than a hand-rolled NSSplitView: it is
+        // what gives the sidebar its translucency, its collapse behaviour and
+        // the ⌃⌘S menu item, none of which are worth reimplementing.
+        let split = NSSplitViewController()
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        sidebarItem.minimumThickness = 150
+        sidebarItem.maximumThickness = 320
+        split.addSplitViewItem(sidebarItem)
+        split.addSplitViewItem(NSSplitViewItem(viewController: browser))
+
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        window.contentViewController = browser
+        window.contentViewController = split
         window.titlebarAppearsTransparent = true
         window.title = "pfadi"
         window.setFrameAutosaveName("io.github.sapn95.pfadi.main")

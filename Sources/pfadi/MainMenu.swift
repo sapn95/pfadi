@@ -58,6 +58,13 @@ enum MainMenu {
         )
         up.keyEquivalentModifierMask = [.command]
 
+        let favourite = menu.addItem(
+            withTitle: "Add to Favourites",
+            action: #selector(BrowserViewController.toggleFavourite(_:)),
+            keyEquivalent: "d"
+        )
+        favourite.keyEquivalentModifierMask = [.command]
+
         let home = menu.addItem(
             withTitle: "Home",
             action: #selector(BrowserViewController.goHome(_:)),
