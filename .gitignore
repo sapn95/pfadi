@@ -1,0 +1,11 @@
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# The .app bundle assembled by scripts/make-app.sh
+build/
+
+# Editor / OS
+.DS_Store
+*.xcuserstate
