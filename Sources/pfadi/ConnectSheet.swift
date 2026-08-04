@@ -40,7 +40,8 @@ enum ConnectSheet {
     static func show(
         in window: NSWindow?,
         recents: [URL],
-        then use: @escaping (URL) -> Void
+        preferences: Preferences = Preferences(),
+        then use: @escaping (URL, _ note: String?) -> Void
     ) {
         let picker = NSSegmentedControl(
             labels: schemes.map(\.name), trackingMode: .selectOne, target: nil, action: nil)
@@ -53,6 +54,13 @@ enum ConnectSheet {
         let hint = NSTextField(labelWithString: schemes[0].hint)
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
+
+        let magic = NSButton(
+            checkboxWithTitle: "Understand pasted addresses", target: nil, action: nil)
+        magic.state = preferences.rewriteAddresses ? .on : .off
+        magic.toolTip =
+            "Turns \\\\server\\share and //server/share into an address. "
+            + "Off means only a real smb:// or nfs:// is accepted."
 
         let previous = NSPopUpButton()
         previous.addItem(withTitle: "Recent servers")
@@ -69,18 +77,24 @@ enum ConnectSheet {
         previous.target = coordinator
         previous.action = #selector(Coordinator.recentChosen)
 
-        let stack = NSStackView(views: [picker, field, hint, previous])
+        let stack = NSStackView(views: [picker, field, hint, previous, magic])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
-        stack.frame = NSRect(x: 0, y: 0, width: 340, height: 108)
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
         field.widthAnchor.constraint(equalToConstant: 340).isActive = true
         previous.widthAnchor.constraint(equalToConstant: 340).isActive = true
 
+        // Sized to what it holds, then given that as a frame. An accessory
+        // view with a guessed height leaves a gap above it in the sheet.
+        stack.layoutSubtreeIfNeeded()
+        let fitting = stack.fittingSize
+        stack.translatesAutoresizingMaskIntoConstraints = true
+        stack.frame = NSRect(origin: .zero, size: fitting)
+
         let alert = NSAlert()
         alert.messageText = "Connect to Server"
-        alert.informativeText =
-            "The path field takes the same thing, if you already know how it is spelled."
+        alert.informativeText = "The path field takes the same thing, if you know the spelling."
         alert.accessoryView = stack
         alert.addButton(withTitle: "Connect")
         alert.addButton(withTitle: "Cancel")
@@ -89,13 +103,23 @@ enum ConnectSheet {
             // Keep the coordinator alive until the sheet is gone.
             withExtendedLifetime(coordinator) {}
             guard response == .alertFirstButtonReturn else { return }
+
+            let rewriting = magic.state == .on
+            preferences.rewriteAddresses = rewriting
+
             guard
-                let url = assemble(scheme: schemes[picker.selectedSegment], from: field.stringValue)
+                let read = NetworkShare.interpret(
+                    field.stringValue,
+                    scheme: schemes[picker.selectedSegment].scheme,
+                    rewriting: rewriting)
             else {
                 NSSound.beep()
                 return
             }
-            use(url)
+            // Say what was made of it. Silently changing what somebody typed
+            // is how they end up not trusting the field.
+            let note = read.rewrittenFrom.map { "read \($0) as \(read.url.absoluteString)" }
+            use(read.url, note)
         }
 
         if let window {
@@ -104,10 +128,6 @@ enum ConnectSheet {
         } else {
             handler(alert.runModal())
         }
-    }
-
-    private static func assemble(scheme: Scheme, from input: String) -> URL? {
-        NetworkShare.assemble(scheme: scheme.scheme, from: input)
     }
 
     private final class Coordinator: NSObject {
