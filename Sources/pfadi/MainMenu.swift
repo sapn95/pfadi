@@ -56,6 +56,27 @@ enum MainMenu {
         let item = NSMenuItem()
         let menu = NSMenu(title: "File")
 
+        menu.addItem(
+            withTitle: "New Tab",
+            action: #selector(AppDelegate.newTab(_:)),
+            keyEquivalent: "t"
+        )
+        let window = menu.addItem(
+            withTitle: "New Window",
+            action: #selector(AppDelegate.newWindow(_:)),
+            keyEquivalent: "n"
+        )
+        window.keyEquivalentModifierMask = [.command]
+
+        let openTab = menu.addItem(
+            withTitle: "Open in New Tab",
+            action: #selector(BrowserViewController.openInNewTab(_:)),
+            keyEquivalent: String(utf16CodeUnits: [unichar(NSDownArrowFunctionKey)], count: 1)
+        )
+        openTab.keyEquivalentModifierMask = [.command]
+
+        menu.addItem(.separator())
+
         let folder = menu.addItem(
             withTitle: "New Folder",
             action: #selector(BrowserViewController.newFolder(_:)),

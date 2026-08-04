@@ -14,6 +14,9 @@ final class BrowserViewController: NSViewController {
     /// Told when moving somewhere changes what the arrows can do.
     var onHistoryChanged: ((_ canGoBack: Bool, _ canGoForward: Bool) -> Void)?
 
+    /// Asked to open a folder in a tab of the same window.
+    var onNewTab: ((URL) -> Void)?
+
     /// Told when the favourites change, so the sidebar can redraw.
     var onFavouritesChanged: (() -> Void)?
 
@@ -151,6 +154,8 @@ final class BrowserViewController: NSViewController {
         tableView.onSpace = { [weak self] in self?.toggleQuickLook() }
 
         tableView.menu = makeContextMenu()
+        tableView.registerForDraggedTypes([.fileURL])
+        tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
 
         addColumn(id: "name", title: "Name", width: 420)
         addColumn(id: "size", title: "Size", width: 90)
@@ -180,6 +185,7 @@ final class BrowserViewController: NSViewController {
 
         menu.addItem(.separator())
         for (title, action) in [
+            ("Open in New Tab", #selector(openInNewTab(_:))),
             ("Get Info", #selector(showInfo(_:))),
             ("Copy", #selector(copy(_:))),
             ("Paste", #selector(paste(_:))),
@@ -342,6 +348,16 @@ final class BrowserViewController: NSViewController {
     /// give you a path.
     private func actionTarget() -> URL {
         selectedEntry()?.url ?? directory
+    }
+
+    /// ⌘↓ on a folder, and the context menu. Opening in a tab keeps where you
+    /// were, which is the entire point of having tabs.
+    @objc func openInNewTab(_ sender: Any?) {
+        guard let entry = selectedEntry(), entry.isDirectory else {
+            NSSound.beep()
+            return
+        }
+        onNewTab?(entry.url)
     }
 
     @objc private func openSelection() {
@@ -723,6 +739,9 @@ extension BrowserViewController: NSMenuItemValidation {
         {
             return !transfers.isRunning && !pasteboardURLs().isEmpty
         }
+        if menuItem.action == #selector(openInNewTab(_:)) {
+            return selectedEntry()?.isDirectory == true
+        }
         if menuItem.action == #selector(copy(_:))
             || menuItem.action == #selector(renameSelection(_:))
             || menuItem.action == #selector(moveToTrash(_:))
@@ -982,5 +1001,96 @@ extension BrowserViewController: NSMenuDelegate {
         }
         guard let entry = selectedEntry() else { return }
         rebuildOpenWithMenu(openWithMenu, for: entry)
+    }
+}
+
+// MARK: - Drag and drop
+
+extension BrowserViewController {
+    /// Dragging out. A row is its file URL, so this works into any application
+    /// that takes files, not only back into this one.
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int)
+        -> (any NSPasteboardWriting)?
+    {
+        entries.indices.contains(row) ? entries[row].url as NSURL : nil
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        validateDrop info: any NSDraggingInfo,
+        proposedRow row: Int,
+        proposedDropOperation operation: NSTableView.DropOperation
+    ) -> NSDragOperation {
+        guard !transfers.isRunning else { return [] }
+        let sources = draggedURLs(info)
+        guard !sources.isEmpty else { return [] }
+
+        // Dropping between rows means "into the folder on screen"; dropping on
+        // a row means that row, but only when it is a folder.
+        let destination: URL
+        if operation == .on, entries.indices.contains(row), entries[row].isDirectory {
+            destination = entries[row].url
+        } else {
+            destination = directory
+            tableView.setDropRow(-1, dropOperation: .on)
+        }
+
+        guard Transfer.check(moving: sources, into: destination, kind: kind(for: info)) == nil
+        else { return [] }
+        return kind(for: info) == .move ? .move : .copy
+    }
+
+    func tableView(
+        _ tableView: NSTableView,
+        acceptDrop info: any NSDraggingInfo,
+        row: Int,
+        dropOperation operation: NSTableView.DropOperation
+    ) -> Bool {
+        let sources = draggedURLs(info)
+        guard !sources.isEmpty else { return false }
+
+        let destination: URL
+        if operation == .on, entries.indices.contains(row), entries[row].isDirectory {
+            destination = entries[row].url
+        } else {
+            destination = directory
+        }
+
+        let transferKind = kind(for: info)
+        if let refusal = Transfer.check(moving: sources, into: destination, kind: transferKind) {
+            NSSound.beep()
+            statusLabel.stringValue = refusal.message
+            return false
+        }
+
+        let plan = Transfer.plan(sources, into: destination, kind: transferKind)
+        transfers.start(plan, in: view.window) { [weak self] outcome in
+            self?.finished(outcome, kind: transferKind)
+        }
+        return true
+    }
+
+    private func draggedURLs(_ info: any NSDraggingInfo) -> [URL] {
+        info.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
+    }
+
+    /// Finder's rule, because muscle memory is the only rule that matters here:
+    /// within a volume a drag moves, across volumes it copies, option forces a
+    /// copy and command forces a move.
+    private func kind(for info: any NSDraggingInfo) -> Transfer.Kind {
+        let modifiers = NSEvent.modifierFlags
+        if modifiers.contains(.option) { return .copy }
+        if modifiers.contains(.command) { return .move }
+
+        guard let source = draggedURLs(info).first else { return .copy }
+        return sameVolume(source, directory) ? .move : .copy
+    }
+
+    private func sameVolume(_ left: URL, _ right: URL) -> Bool {
+        let key: Set<URLResourceKey> = [.volumeIdentifierKey]
+        let a = try? left.resourceValues(forKeys: key).volumeIdentifier
+        let b = try? right.resourceValues(forKeys: key).volumeIdentifier
+        guard let a, let b else { return false }
+        return a.isEqual(b)
     }
 }

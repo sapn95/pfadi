@@ -2,11 +2,7 @@ import AppKit
 import PfadiCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var window: NSWindow?
-    private var browser: BrowserViewController?
-    private let toolbar = NavigationToolbar()
-
-    /// A folder handed over before the window existed. `open -a Pfadi ~/git`
+    /// A folder handed over before any window existed. `open -a Pfadi ~/git`
     /// can deliver its URL either side of applicationDidFinishLaunching, so
     /// both orders have to work.
     private var pending: URL?
@@ -14,60 +10,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
 
-        let preferences = Preferences()
-        let favourites = Favourites(preferences: preferences)
-
-        let browser = BrowserViewController(
-            directory: Self.startDirectory(explicit: pending),
-            preferences: preferences,
-            favourites: favourites
-        )
+        let first = BrowserWindow(directory: Self.startDirectory(explicit: pending))
         pending = nil
-        self.browser = browser
-
-        let sidebar = SidebarViewController(favourites: favourites)
-        sidebar.onSelect = { [weak browser] url in browser?.navigate(to: url) }
-        browser.onFavouritesChanged = { [weak sidebar] in sidebar?.reload() }
-
-        // A split view controller rather than a hand-rolled NSSplitView: it is
-        // what gives the sidebar its translucency, its collapse behaviour and
-        // the ⌃⌘S menu item, none of which are worth reimplementing.
-        let split = NSSplitViewController()
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
-        sidebarItem.minimumThickness = 150
-        sidebarItem.maximumThickness = 320
-        split.addSplitViewItem(sidebarItem)
-        split.addSplitViewItem(NSSplitViewItem(viewController: browser))
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        toolbar.onBack = { [weak browser] in browser?.goBack(nil) }
-        toolbar.onForward = { [weak browser] in browser?.goForward(nil) }
-        browser.onHistoryChanged = { [weak self] back, forward in
-            self?.toolbar.update(canGoBack: back, canGoForward: forward)
-        }
-
-        window.contentViewController = split
-        window.toolbar = toolbar.makeToolbar()
-        window.toolbarStyle = .unified
-        window.titlebarAppearsTransparent = true
-        window.title = "pfadi"
-        window.setFrameAutosaveName("io.github.sapn95.pfadi.main")
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        self.window = window
+        first.show()
 
         NSApp.activate(ignoringOtherApps: true)
     }
 
     /// `open -a Pfadi <path>`, and dropping a folder on the Dock icon.
+    ///
+    /// A second invocation opens a tab rather than replacing what is on screen:
+    /// being sent somewhere new should not lose the folder you were in.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
-        show(Self.folder(for: url))
+        let folder = Self.folder(for: url)
+
+        guard let front = BrowserWindow.frontmost else {
+            pending = folder
+            return
+        }
+        front.openTab(at: folder)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// A path given on the command line, before the application starts.
@@ -75,14 +38,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pending = Self.folder(for: url)
     }
 
-    private func show(_ directory: URL) {
-        guard let browser else {
-            pending = directory
+    @objc func newWindow(_ sender: Any?) {
+        let directory =
+            BrowserWindow.frontmost?.browser.currentDirectory
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        BrowserWindow(directory: directory).show()
+    }
+
+    @objc func newTab(_ sender: Any?) {
+        guard let front = BrowserWindow.frontmost else {
+            newWindow(sender)
             return
         }
-        browser.navigate(to: directory)
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        front.openTab(at: front.browser.currentDirectory)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 
     /// A file is shown in the folder that holds it, which is the only sensible
@@ -91,10 +63,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var isDirectory: ObjCBool = false
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
         return isDirectory.boolValue ? url : url.deletingLastPathComponent()
-    }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
     }
 
     private static func startDirectory(explicit: URL?) -> URL {

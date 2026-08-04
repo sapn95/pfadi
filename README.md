@@ -7,8 +7,9 @@ A small macOS file browser with the one thing macOS has never had: an address
 bar you can click into and type, with tab completion.
 
 > **Work in progress.** It browses, copies, moves, renames, trashes and makes
-> folders, and ⌘Z takes back any of it. It has no tabs, no drag and drop and no
-> signature. Keep Finder around for those.
+> folders, in tabs, with drag and drop, and ⌘Z takes back any of it. It is not
+> signed or notarised, so a copy handed to somebody else will not open on their
+> Mac. Building it yourself works, which is what the Homebrew formula does.
 
 ## The problem
 
@@ -47,6 +48,8 @@ F2      rename the selection
 ⌘⌫      move the selection to the trash
 ⌘I      what is this thing: kind, size, dates, access, cloud status
 ⌘K      connect to a server, or just type smb://server/share above
+⌘T ⌘N   a new tab, a new window
+⌘↓      open the selected folder in a tab, keeping where you are
 ⌘C ⌘V   copy, then paste, with ⌥⌘V to move instead
 ⌘Z      undo any of it
 ⇧⌘C     copy the path of the selection
@@ -113,6 +116,13 @@ which is how copying "everything" quietly pulls a hundred gigabytes down a
 metered connection. A placeholder shows a cloud in the size column, and ⌘I says
 which provider and which account. The check is `lstat` against the dataless
 flag plus the path, so describing a file never asks its provider anything.
+
+Tabs are macOS's own window tabs rather than a tab bar drawn by hand, so ⌘⇧[
+and ⌘⇧], Merge All Windows and Move Tab to New Window all work the way they do
+everywhere else. Drag and drop follows Finder's rule, because muscle memory is
+the only rule that matters: a drag within a volume moves, across volumes it
+copies, ⌥ forces a copy and ⌘ forces a move. Dropping onto a folder puts things
+in it; dropping between rows puts them in the folder on screen.
 
 Everything that changes anything is reversible, which is the rule the whole
 write side is built on. ⌘Z puts back a trashed file, undoes a rename, trashes a
@@ -220,8 +230,22 @@ swift run pfadi-selftest     # the tests
 
 There is no Developer ID signature and no notarisation, which is why the
 Homebrew formula compiles instead of downloading. A prebuilt copy handed to
-someone else will refuse to open, and that stays true until this is worth
-shipping.
+someone else will refuse to open.
+
+Everything needed to change that is in place and waiting for a certificate:
+
+```bash
+PFADI_SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" \
+PFADI_NOTARY_PROFILE=pfadi \
+  ./scripts/sign-and-notarise.sh
+```
+
+Hardened runtime, a trusted timestamp, an empty entitlements file because a
+file browser needs no exceptions, then notarise and staple so it opens on a
+machine that is offline. The release workflow runs the same script when
+`SIGNING_CERTIFICATE_P12` is set as a repository secret, and warns and carries
+on when it is not. What is missing is an Apple Developer Program membership,
+which is not something a script can arrange.
 
 Releases are cut by tagging. `VERSION` is the single source of truth and the
 release workflow refuses to run when the tag disagrees with it.
@@ -271,8 +295,6 @@ on Linux because they do not need to.
 
 Roughly in the order it hurts.
 
-- [ ] Drag and drop.
-- [ ] Tabs.
 - [ ] A signed, notarised build.
 
 ## Licence

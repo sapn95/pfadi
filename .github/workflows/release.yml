@@ -80,6 +80,74 @@ jobs:
           echo "sha256=$sha" >> "$GITHUB_OUTPUT"
           echo "tarball sha256: $sha"
 
+  sign:
+    name: sign and notarise
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: is there a certificate to sign with
+        id: secrets
+        env:
+          CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
+        run: |
+          if [ -z "${CERTIFICATE}" ]; then
+            echo "::warning::No SIGNING_CERTIFICATE_P12, so this release is" \
+                 "unsigned and will not open on anybody else's Mac."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: import the certificate
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          # A keychain of its own, deleted with the runner. Importing into the
+          # login keychain would leave the key behind on a self-hosted runner.
+          keychain=build.keychain
+          password="$(uuidgen)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 900 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "${CERTIFICATE}" | base64 --decode > /tmp/certificate.p12
+          security import /tmp/certificate.p12 -k "$keychain" \
+            -P "${CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" login.keychain
+          rm -f /tmp/certificate.p12
+      - name: build, sign, notarise
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          PFADI_SIGN_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          APP_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          ./scripts/make-app.sh
+          if [ -n "${APPLE_ID}" ]; then
+            xcrun notarytool store-credentials pfadi \
+              --apple-id "${APPLE_ID}" --team-id "${TEAM_ID}" \
+              --password "${APP_PASSWORD}"
+            PFADI_NOTARY_PROFILE=pfadi ./scripts/sign-and-notarise.sh
+          else
+            echo "::warning::Signed but not notarised: no notary credentials."
+            ./scripts/sign-and-notarise.sh
+          fi
+      - name: attach the signed app to the release
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/ditto -c -k --keepParent build/Pfadi.app \
+            "build/Pfadi-${GITHUB_REF_NAME}.zip"
+          gh release upload "${GITHUB_REF_NAME}" \
+            "build/Pfadi-${GITHUB_REF_NAME}.zip" --clobber
+
   formula:
     name: point the formula at the tag
     needs: publish
