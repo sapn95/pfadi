@@ -33,6 +33,7 @@ final class BrowserViewController: NSViewController {
 
     private var history = NavigationHistory()
     private let infoPanel = InfoPanel()
+    private let transfers = TransferController()
     private let openWithMenu = NSMenu(title: "Open With")
 
     /// The row being renamed, and a folder that was just created and should be
@@ -109,6 +110,7 @@ final class BrowserViewController: NSViewController {
         view.addSubview(pathField)
         view.addSubview(scrollView)
         view.addSubview(statusLabel)
+        view.addSubview(transfers.view)
 
         NSLayoutConstraint.activate([
             // The safe area, not the view: the window is fullSizeContentView so
@@ -125,8 +127,13 @@ final class BrowserViewController: NSViewController {
             scrollView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -6),
 
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
-            statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            statusLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: transfers.view.leadingAnchor, constant: -12),
             statusLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
+
+            transfers.view.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor, constant: -14),
+            transfers.view.centerYAnchor.constraint(equalTo: statusLabel.centerYAnchor),
         ])
     }
 
@@ -174,6 +181,7 @@ final class BrowserViewController: NSViewController {
         menu.addItem(.separator())
         for (title, action) in [
             ("Get Info", #selector(showInfo(_:))),
+            ("Copy", #selector(copyToPasteboard(_:))),
             ("Copy Path", #selector(copyPath(_:))),
             ("Reveal in Finder", #selector(revealInFinder(_:))),
         ] {
@@ -534,6 +542,82 @@ final class BrowserViewController: NSViewController {
         let other = menu.addItem(
             withTitle: "Other…", action: #selector(openWithOther(_:)), keyEquivalent: "")
         other.target = self
+    }
+
+    // MARK: - Copy and paste
+
+    @objc func copyToPasteboard(_ sender: Any?) {
+        guard let entry = selectedEntry() else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        // File URLs, so this works with Finder and everything else that deals
+        // in files rather than only within this application.
+        pasteboard.writeObjects([entry.url as NSURL])
+        statusLabel.stringValue = "copied \(entry.name)"
+    }
+
+    @objc func paste(_ sender: Any?) {
+        transfer(kind: .copy)
+    }
+
+    @objc func pasteAsMove(_ sender: Any?) {
+        transfer(kind: .move)
+    }
+
+    private func transfer(kind: Transfer.Kind) {
+        guard !transfers.isRunning else {
+            statusLabel.stringValue = "one transfer at a time, for now"
+            return
+        }
+
+        let sources =
+            NSPasteboard.general.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
+        guard !sources.isEmpty else {
+            statusLabel.stringValue = "nothing on the clipboard to paste"
+            return
+        }
+
+        if let refusal = Transfer.check(moving: sources, into: directory, kind: kind) {
+            NSSound.beep()
+            statusLabel.stringValue = refusal.message
+            return
+        }
+
+        let plan = Transfer.plan(sources, into: directory, kind: kind)
+        transfers.start(plan, in: view.window) { [weak self] outcome in
+            self?.finished(outcome, kind: kind)
+        }
+    }
+
+    private func finished(_ outcome: TransferRunner.Outcome, kind: Transfer.Kind) {
+        registerUndo(kind == .copy ? "Copy" : "Move") { controller in
+            // Backwards: the deepest thing was created last, and a folder
+            // cannot go to the trash while its contents are still arriving.
+            for url in outcome.created.reversed() {
+                _ = try? FileOperations.trash(url)
+            }
+            for move in outcome.moved.reversed() {
+                try? FileManager.default.moveItem(at: move.to, to: move.from)
+            }
+            for displaced in outcome.displaced {
+                try? FileManager.default.moveItem(at: displaced.inTrash, to: displaced.original)
+            }
+            controller.reload(keepingSelection: true)
+        }
+
+        var parts: [String] = []
+        parts.append(outcome.cancelled ? "stopped" : (kind == .copy ? "copied" : "moved"))
+        parts.append("\(outcome.created.count) items")
+        if outcome.skipped > 0 { parts.append("\(outcome.skipped) skipped") }
+        if !outcome.displaced.isEmpty {
+            parts.append("\(outcome.displaced.count) replaced, the old ones are in the trash")
+        }
+        if !outcome.failed.isEmpty {
+            NSSound.beep()
+            parts.append("\(outcome.failed.count) failed: \(outcome.failed[0].1)")
+        }
+        statusLabel.stringValue = parts.joined(separator: ", ")
+        reload(keepingSelection: true)
     }
 
     // MARK: - Writing to disk

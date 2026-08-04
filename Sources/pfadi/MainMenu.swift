@@ -10,6 +10,7 @@ enum MainMenu {
         let main = NSMenu()
         main.addItem(appMenu())
         main.addItem(fileMenu())
+        main.addItem(editMenu())
         main.addItem(goMenu())
         main.addItem(viewMenu())
         main.addItem(actionsMenu())
@@ -86,6 +87,34 @@ enum MainMenu {
             keyEquivalent: String(utf16CodeUnits: [unichar(NSBackspaceCharacter)], count: 1)
         )
         trash.keyEquivalentModifierMask = [.command]
+
+        item.submenu = menu
+        return item
+    }
+
+    private static func editMenu() -> NSMenuItem {
+        let item = NSMenuItem()
+        let menu = NSMenu(title: "Edit")
+
+        menu.addItem(
+            withTitle: "Copy",
+            action: #selector(BrowserViewController.copyToPasteboard(_:)),
+            keyEquivalent: "c"
+        )
+        menu.addItem(
+            withTitle: "Paste",
+            action: #selector(BrowserViewController.paste(_:)),
+            keyEquivalent: "v"
+        )
+
+        // Finder's spelling: there is no cut for files, there is copy and then
+        // "move it here instead", and the modifier is the one people know.
+        let move = menu.addItem(
+            withTitle: "Move Item Here",
+            action: #selector(BrowserViewController.pasteAsMove(_:)),
+            keyEquivalent: "v"
+        )
+        move.keyEquivalentModifierMask = [.command, .option]
 
         item.submenu = menu
         return item
