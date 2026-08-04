@@ -11,12 +11,21 @@ public struct Entry: Sendable, Equatable {
     public let isDirectory: Bool
     public let size: Int64?
     public let modified: Date?
+    public let cloud: CloudFiles.Status
 
-    public init(url: URL, name: String, isDirectory: Bool, size: Int64?, modified: Date?) {
+    public init(
+        url: URL,
+        name: String,
+        isDirectory: Bool,
+        size: Int64?,
+        modified: Date?,
+        cloud: CloudFiles.Status = .local
+    ) {
         self.url = url
         self.name = name
         self.isDirectory = isDirectory
         self.size = size
         self.modified = modified
+        self.cloud = cloud
     }
 }

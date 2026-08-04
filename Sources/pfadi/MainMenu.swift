@@ -71,6 +71,13 @@ enum MainMenu {
         )
         rename.keyEquivalentModifierMask = []
 
+        let info = menu.addItem(
+            withTitle: "Get Info",
+            action: #selector(BrowserViewController.showInfo(_:)),
+            keyEquivalent: "i"
+        )
+        info.keyEquivalentModifierMask = [.command]
+
         menu.addItem(.separator())
 
         let trash = menu.addItem(
