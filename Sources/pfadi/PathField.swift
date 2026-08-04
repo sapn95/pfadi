@@ -18,6 +18,13 @@ final class PathField: NSTextField, NSTextFieldDelegate {
     /// Progress through the matches, or nil once there is nothing to report.
     var onCompletionChanged: ((String?) -> Void)?
 
+    /// Editing has finished, by return, by escape or by clicking away.
+    ///
+    /// This field is its own delegate, so nobody else hears the text-field
+    /// notifications for it. Anything outside that needs to know has to be
+    /// told from in here.
+    var onEndEditing: (() -> Void)?
+
     private var cycle: CompletionCycle?
     private var isApplyingCompletion = false
 
@@ -74,6 +81,11 @@ final class PathField: NSTextField, NSTextFieldDelegate {
         editor.isAutomaticQuoteSubstitutionEnabled = false
         editor.isAutomaticDashSubstitutionEnabled = false
         editor.isAutomaticSpellingCorrectionEnabled = false
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        endCompletion()
+        onEndEditing?()
     }
 
     func controlTextDidChange(_ notification: Notification) {

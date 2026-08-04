@@ -52,6 +52,10 @@ final class BrowserViewController: NSViewController {
         label: "io.github.sapn95.pfadi.listing", qos: .userInitiated)
 
     private let pathBar = PathBar()
+    /// Switches the path row between the clickable bar and the text field. A
+    /// button, because a keystroke and a double click are both things you have
+    /// to be told about and a visible control is not.
+    private let pathToggle = NSButton()
     private let pathField = PathField()
     private let searchField = NSSearchField()
     private let tableView = FileTableView()
@@ -101,6 +105,13 @@ final class BrowserViewController: NSViewController {
         pathBar.translatesAutoresizingMaskIntoConstraints = false
         pathBar.onChoose = { [weak self] url in self?.navigate(to: url) }
         pathBar.onEdit = { [weak self] in self?.focusPathField(nil) }
+        pathField.onEndEditing = { [weak self] in
+            guard let self else { return }
+            // Whatever half-typed path is in there described a place nobody
+            // went to, so it goes back to saying where we actually are.
+            pathField.stringValue = directory.path
+            showPathField(false)
+        }
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.placeholderString = "Filter"
@@ -127,6 +138,13 @@ final class BrowserViewController: NSViewController {
 
         configureTable()
 
+        pathToggle.translatesAutoresizingMaskIntoConstraints = false
+        pathToggle.bezelStyle = .accessoryBar
+        pathToggle.isBordered = false
+        pathToggle.target = self
+        pathToggle.action = #selector(togglePathEditing(_:))
+
+        view.addSubview(pathToggle)
         view.addSubview(pathBar)
         view.addSubview(pathField)
         view.addSubview(searchField)
@@ -147,7 +165,12 @@ final class BrowserViewController: NSViewController {
                 equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
             pathField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             pathField.trailingAnchor.constraint(
+                equalTo: pathToggle.leadingAnchor, constant: -4),
+
+            pathToggle.centerYAnchor.constraint(equalTo: pathField.centerYAnchor),
+            pathToggle.trailingAnchor.constraint(
                 equalTo: searchField.leadingAnchor, constant: -8),
+            pathToggle.widthAnchor.constraint(equalToConstant: 24),
 
             searchField.centerYAnchor.constraint(equalTo: pathField.centerYAnchor),
             searchField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
@@ -395,6 +418,23 @@ final class BrowserViewController: NSViewController {
     private func showPathField(_ editing: Bool) {
         pathBar.isHidden = editing
         pathField.isHidden = !editing
+
+        // The button says what pressing it will do next, not what is on screen.
+        pathToggle.image = NSImage(
+            systemSymbolName: editing ? "list.bullet.indent" : "character.cursor.ibeam",
+            accessibilityDescription: editing ? "Show the path as components" : "Type a path")
+        pathToggle.toolTip =
+            editing ? "Back to the clickable path" : "Type a path instead (⇧⌘G)"
+    }
+
+    @objc private func togglePathEditing(_ sender: Any?) {
+        if pathField.isHidden {
+            focusPathField(nil)
+        } else {
+            // Giving up focus is what ends editing, and ending editing is what
+            // puts the bar back, so there is one route rather than two.
+            view.window?.makeFirstResponder(tableView)
+        }
     }
 
     @objc func focusSearch(_ sender: Any?) {
@@ -1140,15 +1180,10 @@ extension BrowserViewController: NSTextFieldDelegate {
     func controlTextDidEndEditing(_ notification: Notification) {
         guard let field = notification.object as? NSTextField else { return }
 
-        // Giving up on the path field, by clicking away or pressing escape,
-        // puts the clickable bar back. Without this the text field stays for
-        // the rest of the session because only navigating ever restored it.
-        if field === pathField {
-            pathField.endCompletion()
-            pathField.stringValue = directory.path
-            showPathField(false)
-            return
-        }
+        // Not the path field: that one is its own delegate and reports through
+        // onEndEditing instead, because these notifications never reach here
+        // for it.
+        guard field !== pathField else { return }
         defer {
             field.isEditable = false
             renaming = nil

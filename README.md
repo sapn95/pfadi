@@ -35,6 +35,7 @@ So: one pane, one path field, keyboard first.
 click    a path component: everything beside it, with a filter
 2×click  the path bar: type a path instead
 ⇧⌘G     the same, from the keyboard
+button   at the end of the path row, switching between the two
 tab     walk to the next match, ⇧tab back, escape to undo
 return  accept the match, then return again to go there
 a-z     type-ahead: jump to the row whose name starts like that
@@ -185,8 +186,11 @@ components, and clicking `git` offers everything in `~` — including `git`
 itself, ticked, so the menu says where you are as well as where you could go.
 Past eight entries the menu grows a filter field at the top, already focused,
 because a filter you have to click into first is slower than scrolling past the
-thing you wanted. Double-click the bar, or press ⇧⌘G, to swap it for a text field and type
-instead. A single click that misses a component does nothing: swapping on a
+thing you wanted. The button at the end of the path row switches between the two, and says which
+one it will give you next rather than which one you are looking at.
+Double-clicking the bar or pressing ⇧⌘G does the same. Both directions go
+through giving up focus, so there is one route back rather than two that can
+disagree. A single click that misses a component does nothing: swapping on a
 stray click is a one-way door, because only editing ending puts the bar back
 and editing that never started never ends.
 
