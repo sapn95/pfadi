@@ -96,6 +96,19 @@ public final class Favourites {
         }
     }
 
+    /// Records a share that was connected to, so getting back to it is a
+    /// click rather than remembering how it was spelled.
+    public func rememberServer(_ url: URL) {
+        let text = url.absoluteString
+        var updated = preferences.servers.filter { $0 != text }
+        updated.insert(text, at: 0)
+        preferences.servers = Array(updated.prefix(Self.recentsLimit))
+    }
+
+    public func servers() -> [URL] {
+        preferences.servers.compactMap(URL.init(string:))
+    }
+
     /// Cloud folders, discovered rather than configured.
     ///
     /// OneDrive, Dropbox and the rest all live in `~/Library/CloudStorage`,

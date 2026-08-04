@@ -253,6 +253,7 @@ final class BrowserViewController: NSViewController {
         // one shows an empty list and no explanation.
         filter = ""
         searchField.stringValue = ""
+        tableView.resetTypeAhead()
         if recordingHistory {
             history.visit(url)
         }
@@ -396,6 +397,12 @@ final class BrowserViewController: NSViewController {
     private func beginRename(row: Int) {
         guard entries.indices.contains(row) else { return }
         renaming = entries[row].url
+        // The row's cell may already exist, made when renaming was nil and so
+        // not editable. editColumn on a field that refuses to edit does
+        // nothing at all and looks like the command was ignored.
+        tableView.reloadData(
+            forRowIndexes: IndexSet(integer: row),
+            columnIndexes: IndexSet(integer: 0))
         tableView.editColumn(0, row: row, with: nil, select: true)
     }
 
@@ -469,7 +476,7 @@ final class BrowserViewController: NSViewController {
         }
     }
 
-    private func connect(to share: URL) {
+    func connect(to share: URL) {
         statusLabel.stringValue = "connecting to \(share.host ?? share.absoluteString)…"
 
         ShareMounter.mount(share) { [weak self] result in
@@ -477,8 +484,12 @@ final class BrowserViewController: NSViewController {
             switch result {
             case .alreadyMounted(let url):
                 statusLabel.stringValue = "already mounted"
+                favourites.rememberServer(share)
+                onFavouritesChanged?()
                 navigate(to: url)
             case .mounted(let url):
+                favourites.rememberServer(share)
+                onFavouritesChanged?()
                 navigate(to: url)
             case .needsCredentials:
                 // The system already has a connect sheet with keychain and
@@ -545,6 +556,24 @@ final class BrowserViewController: NSViewController {
 
     @objc func refresh(_ sender: Any?) {
         reload(keepingSelection: true)
+    }
+
+    // MARK: - Quick Look control
+    //
+    // In the class body rather than the extension below: these override
+    // NSResponder, and an override belongs where the compiler can see the
+    // superclass rather than in an extension where it works by @objc accident.
+
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = self
+        panel.delegate = self
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = nil
+        panel.delegate = nil
     }
 
     /// What ⌘D acts on: the selected folder, or the one on screen when the
@@ -721,10 +750,19 @@ final class BrowserViewController: NSViewController {
         do {
             let created = try FileOperations.createFolder(named: name, in: directory)
             registerUndo("New Folder") { controller in
-                _ = try? FileOperations.trash(created)
-                controller.reload(keepingSelection: true)
+                controller.attempt("undo the new folder") {
+                    _ = try FileOperations.trash(created)
+                }
+                controller.registerUndo("New Folder") { controller in
+                    controller.attempt("redo the new folder") {
+                        try FileOperations.createFolder(named: name, in: controller.directory)
+                    }
+                }
             }
             statusLabel.stringValue = "created \(name)"
+            // Normally the watcher brings the row in. On a folder it could not
+            // attach to, nothing would ever arrive and the rename never starts.
+            reload(keepingSelection: true)
             // The listing is watched, so the row will arrive on its own. Wait
             // for it, then put the cursor straight into its name: nobody wants
             // a folder called "untitled folder".
@@ -745,8 +783,14 @@ final class BrowserViewController: NSViewController {
             let trashed = try FileOperations.trash(entry.url)
             if let trashed {
                 registerUndo("Move to Trash") { controller in
-                    try? FileManager.default.moveItem(at: trashed, to: entry.url)
-                    controller.reload(keepingSelection: true)
+                    controller.attempt("put \(entry.name) back") {
+                        try FileManager.default.moveItem(at: trashed, to: entry.url)
+                    }
+                    controller.registerUndo("Move to Trash") { controller in
+                        controller.attempt("move \(entry.name) to the trash again") {
+                            _ = try FileOperations.trash(entry.url)
+                        }
+                    }
                 }
             }
             statusLabel.stringValue = "moved \(entry.name) to the trash"
@@ -758,7 +802,22 @@ final class BrowserViewController: NSViewController {
     /// Undo is worth the small amount of bookkeeping precisely because these
     /// are the first operations that change anything: ⌘Z should work from the
     /// first version that can lose you something.
-    private func registerUndo(_ name: String, _ undo: @escaping (BrowserViewController) -> Void) {
+    /// Runs something that touches the disk and says so when it fails.
+    ///
+    /// Undo used to swallow its errors. An undo that silently does nothing is
+    /// worse than one that refuses, because the person believes it worked.
+    fileprivate func attempt(_ what: String, _ work: () throws -> Void) {
+        do {
+            try work()
+        } catch {
+            report(error, doing: what)
+        }
+        reload(keepingSelection: true)
+    }
+
+    fileprivate func registerUndo(
+        _ name: String, _ undo: @escaping (BrowserViewController) -> Void
+    ) {
         guard let manager = undoManager else { return }
         manager.setActionName(name)
         manager.registerUndo(withTarget: self) { controller in
@@ -985,18 +1044,6 @@ extension BrowserViewController: QLPreviewPanelDataSource, QLPreviewPanelDelegat
         }
     }
 
-    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
-
-    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
-        panel.dataSource = self
-        panel.delegate = self
-    }
-
-    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
-        panel.dataSource = nil
-        panel.delegate = nil
-    }
-
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
         selectedEntry() == nil ? 0 : 1
     }
@@ -1041,8 +1088,14 @@ extension BrowserViewController: NSTextFieldDelegate {
         do {
             let renamed = try FileOperations.rename(original, to: name)
             registerUndo("Rename") { controller in
-                _ = try? FileOperations.rename(renamed, to: original.lastPathComponent)
-                controller.reload(keepingSelection: true)
+                controller.attempt("undo the rename") {
+                    _ = try FileOperations.rename(renamed, to: original.lastPathComponent)
+                }
+                controller.registerUndo("Rename") { controller in
+                    controller.attempt("redo the rename") {
+                        _ = try FileOperations.rename(original, to: name)
+                    }
+                }
             }
             statusLabel.stringValue = "renamed to \(name)"
         } catch {
@@ -1106,9 +1159,10 @@ extension BrowserViewController {
             tableView.setDropRow(-1, dropOperation: .on)
         }
 
-        guard Transfer.check(moving: sources, into: destination, kind: kind(for: info)) == nil
+        let transferKind = kind(for: info, into: destination)
+        guard Transfer.check(moving: sources, into: destination, kind: transferKind) == nil
         else { return [] }
-        return kind(for: info) == .move ? .move : .copy
+        return transferKind == .move ? .move : .copy
     }
 
     func tableView(
@@ -1127,7 +1181,7 @@ extension BrowserViewController {
             destination = directory
         }
 
-        let transferKind = kind(for: info)
+        let transferKind = kind(for: info, into: destination)
         if let refusal = Transfer.check(moving: sources, into: destination, kind: transferKind) {
             NSSound.beep()
             statusLabel.stringValue = refusal.message
@@ -1148,13 +1202,16 @@ extension BrowserViewController {
     /// Finder's rule, because muscle memory is the only rule that matters here:
     /// within a volume a drag moves, across volumes it copies, option forces a
     /// copy and command forces a move.
-    private func kind(for info: any NSDraggingInfo) -> Transfer.Kind {
+    private func kind(for info: any NSDraggingInfo, into destination: URL) -> Transfer.Kind {
         let modifiers = NSEvent.modifierFlags
         if modifiers.contains(.option) { return .copy }
         if modifiers.contains(.command) { return .move }
 
+        // Against the folder being dropped into, not the one on screen. Those
+        // differ whenever the drop lands on a folder row, and a folder row can
+        // be a mount point on another volume.
         guard let source = draggedURLs(info).first else { return .copy }
-        return sameVolume(source, directory) ? .move : .copy
+        return sameVolume(source, destination) ? .move : .copy
     }
 
     private func sameVolume(_ left: URL, _ right: URL) -> Bool {

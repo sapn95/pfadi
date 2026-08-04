@@ -61,6 +61,12 @@ public final class Preferences {
         set { store.set(newValue, forKey: Key.favourites) }
     }
 
+    /// Shares connected to recently, newest first, as URL strings.
+    public var servers: [String] {
+        get { store.object(forKey: Key.servers) as? [String] ?? [] }
+        set { store.set(newValue, forKey: Key.servers) }
+    }
+
     /// Folders visited recently, newest first.
     public var recents: [String] {
         get { store.object(forKey: Key.recents) as? [String] ?? [] }
@@ -70,6 +76,7 @@ public final class Preferences {
     enum Key {
         static let favourites = "favourites"
         static let recents = "recents"
+        static let servers = "servers"
         static let lastDirectory = "lastDirectory"
         static let showHidden = "showHidden"
         static let sortKey = "sortKey"

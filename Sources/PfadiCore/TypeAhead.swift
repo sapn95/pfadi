@@ -41,7 +41,20 @@ public enum TypeAhead {
         lastKeystroke: TimeInterval,
         now: TimeInterval
     ) -> String {
-        now - lastKeystroke > timeout ? character : existing + character
+        guard now - lastKeystroke <= timeout else { return character }
+        // Pressing the same single letter again means "the next one starting
+        // with this", which is how everybody walks a run of similar names.
+        // Appending would make it "tt" and search for a name nobody has.
+        if existing == character { return character }
+        return existing + character
+    }
+
+    /// Whether a keystroke still belongs to the prefix being typed.
+    ///
+    /// A stale buffer is not a prefix any more, which matters for space: it is
+    /// part of a name while one is being typed, and Quick Look otherwise.
+    public static func isLive(lastKeystroke: TimeInterval, now: TimeInterval) -> Bool {
+        now - lastKeystroke <= timeout
     }
 }
 

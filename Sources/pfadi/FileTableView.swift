@@ -4,6 +4,13 @@ import PfadiCore
 /// A table that treats return as "open this" and letters as "find this",
 /// rather than as the start of a rename.
 final class FileTableView: NSTableView {
+    /// Forgets a half-typed name. Called when the folder changes: a prefix
+    /// describes the list it was typed into and means nothing in the next one.
+    func resetTypeAhead() {
+        buffer = ""
+        lastKeystroke = 0
+    }
+
     var onReturn: (() -> Void)?
     var onTypeAhead: ((String) -> Void)?
     var onSpace: (() -> Void)?
@@ -18,12 +25,21 @@ final class FileTableView: NSTableView {
             return
         }
 
-        // A bare space is Quick Look, unless a name is being typed, in which
-        // case it is part of the name.
-        if event.charactersIgnoringModifiers == " ", buffer.isEmpty,
-            !event.modifierFlags.intersects([.command, .control, .option])
+        // A bare space is Quick Look, unless a name is actually being typed
+        // right now, in which case it belongs to the name. A buffer left over
+        // from a minute ago is not somebody typing.
+        if event.charactersIgnoringModifiers == " ",
+            !event.modifierFlags.intersects([.command, .control, .option, .shift]),
+            buffer.isEmpty
+                || !TypeAhead.isLive(
+                    lastKeystroke: lastKeystroke, now: Date().timeIntervalSinceReferenceDate)
         {
-            onSpace?()
+            // Holding the key down would otherwise open and close the panel
+            // several times a second.
+            if !event.isARepeat {
+                buffer = ""
+                onSpace?()
+            }
             return
         }
 

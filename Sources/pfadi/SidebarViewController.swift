@@ -4,6 +4,8 @@ import PfadiCore
 /// The list of favourite folders down the left.
 final class SidebarViewController: NSViewController {
     var onSelect: ((URL) -> Void)?
+    /// A share to reconnect to, or nil to ask for one.
+    var onConnect: ((URL?) -> Void)?
 
     private let favourites: Favourites
     private let home = FileManager.default.homeDirectoryForCurrentUser
@@ -13,12 +15,34 @@ final class SidebarViewController: NSViewController {
     /// A sidebar is a list of headings and things under them, and AppKit's
     /// table wants one flat array, so the two are spelled out as one type.
     private enum Row {
+        /// Which section a row came from, so removing one only offers to
+        /// remove the kind that is actually yours to remove.
+        enum Section {
+            case recents
+            case favourites
+            case cloud
+            case locations
+            case servers
+        }
+
         case heading(String)
-        case place(URL, title: String)
+        case place(URL, title: String, section: Section)
+        /// The last row: the way in to a share that is not mounted yet.
+        case connect
 
         var url: URL? {
-            if case .place(let url, _) = self { return url }
+            if case .place(let url, _, _) = self { return url }
             return nil
+        }
+
+        var section: Section? {
+            if case .place(_, _, let section) = self { return section }
+            return nil
+        }
+
+        var isSelectable: Bool {
+            if case .heading = self { return false }
+            return true
         }
     }
 
@@ -81,13 +105,17 @@ final class SidebarViewController: NSViewController {
         let recents = favourites.recents()
         if !recents.isEmpty {
             built.append(.heading("Recents"))
-            built += recents.map { .place($0, title: Favourites.title(for: $0, home: home)) }
+            built += recents.map {
+                .place($0, title: Favourites.title(for: $0, home: home), section: .recents)
+            }
         }
 
         let favouriteRows = favourites.visible
         if !favouriteRows.isEmpty {
             built.append(.heading("Favourites"))
-            built += favouriteRows.map { .place($0, title: Favourites.title(for: $0, home: home)) }
+            built += favouriteRows.map {
+                .place($0, title: Favourites.title(for: $0, home: home), section: .favourites)
+            }
         }
 
         // Discovered, not configured, and rebuilt on every reload: a share can
@@ -96,14 +124,24 @@ final class SidebarViewController: NSViewController {
         let cloud = favourites.cloudLocations()
         if !cloud.isEmpty {
             built.append(.heading("Cloud"))
-            built += cloud.map { .place($0, title: Favourites.cloudTitle(for: $0)) }
+            built += cloud.map {
+                .place($0, title: Favourites.cloudTitle(for: $0), section: .cloud)
+            }
         }
 
         let volumes = favourites.volumes()
         if !volumes.isEmpty {
             built.append(.heading("Locations"))
-            built += volumes.map { .place($0, title: $0.lastPathComponent) }
+            built += volumes.map { .place($0, title: $0.lastPathComponent, section: .locations) }
         }
+
+        // Always present, even with nothing under it. A way to reach a share
+        // that only appears once you already have one is no way in at all.
+        built.append(.heading("Servers"))
+        built += favourites.servers().map {
+            .place($0, title: $0.host ?? $0.absoluteString, section: .servers)
+        }
+        built.append(.connect)
 
         rows = built
         tableView.reloadData()
@@ -114,9 +152,10 @@ final class SidebarViewController: NSViewController {
         // selection, so removing the selected row would delete the wrong one.
         let row = tableView.clickedRow
         guard rows.indices.contains(row), let url = rows[row].url else { return }
-        // Only favourites can be removed. Cloud folders and volumes are facts
-        // about the machine, not a list somebody curates.
-        guard favourites.contains(url) else {
+        // Only a favourites row, and by which section it is in rather than by
+        // whether the folder happens to also be a favourite: a cloud folder
+        // that was favourited must not be removable from its Cloud row.
+        guard rows[row].section == .favourites else {
             NSSound.beep()
             return
         }
@@ -145,7 +184,17 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.textField?.stringValue = title
             return cell
 
-        case .place(let url, let title):
+        case .connect:
+            let id = NSUserInterfaceItemIdentifier("favouriteCell")
+            let cell =
+                tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
+                ?? Self.makeCell(id: id)
+            cell.imageView?.image = NSImage(
+                systemSymbolName: "network", accessibilityDescription: nil)
+            cell.textField?.stringValue = "Connect to Server…"
+            return cell
+
+        case .place(let url, let title, _):
             let id = NSUserInterfaceItemIdentifier("favouriteCell")
             let cell =
                 tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
@@ -162,13 +211,23 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
-        rows.indices.contains(row) && rows[row].url != nil
+        rows.indices.contains(row) && rows[row].isSelectable
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         let row = tableView.selectedRow
-        guard rows.indices.contains(row), let url = rows[row].url else { return }
-        onSelect?(url)
+        guard rows.indices.contains(row) else { return }
+
+        switch rows[row] {
+        case .connect:
+            onConnect?(nil)
+        case .place(let url, _, .servers):
+            onConnect?(url)
+        case .place(let url, _, _):
+            onSelect?(url)
+        case .heading:
+            break
+        }
     }
 
     private static func makeHeadingCell(id: NSUserInterfaceItemIdentifier) -> NSTableCellView {
