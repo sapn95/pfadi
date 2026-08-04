@@ -1,0 +1,158 @@
+---
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two tags pushed together would race over the formula, and the loser
+  # publishes a release the tap was never pointed at.
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: the tag and VERSION agree
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: compare
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file="$(tr -d '[:space:]' < VERSION)"
+          echo "tag=$tag VERSION=$file"
+          test "$tag" = "$file" || {
+            echo "VERSION says $file, the tag says $tag"
+            exit 1
+          }
+
+  verify:
+    name: it builds and the tests pass
+    needs: guard
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: build
+        run: swift build -c release
+      - name: self-test
+        run: swift run pfadi-selftest
+      - name: the bundle assembles
+        run: |
+          ./scripts/make-app.sh
+          plutil -lint build/Pfadi.app/Contents/Info.plist
+
+  publish:
+    name: publish the release
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      sha256: ${{ steps.tarball.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag
+      - name: checksum of the source tarball
+        id: tarball
+        # The formula builds from source, so the only asset that matters is the
+        # tarball GitHub generates for the tag. It exists once the release does.
+        run: |
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+          curl -fsSL --retry 5 --retry-delay 3 -o source.tar.gz "$url"
+          sha="$(sha256sum source.tar.gz | cut -d' ' -f1)"
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          echo "tarball sha256: $sha"
+
+  formula:
+    name: point the formula at the tag
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: rewrite Formula/pfadi.rb
+        env:
+          SHA256: ${{ needs.publish.outputs.sha256 }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sed -i -E \
+            -e "s|(archive/refs/tags/v)[^\"]+(\.tar\.gz)|\1${version}\2|" \
+            -e "s|^(  sha256 \")[0-9a-f]{64}(\")|\1${SHA256}\2|" \
+            Formula/pfadi.rb
+          git diff --stat
+          grep -E "url |sha256 " Formula/pfadi.rb
+      - name: open a pull request with the bump
+        # Never a straight push to main, even where nothing would stop it. The
+        # formula bump takes the same road a person would.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The repository owner rather than the bot: GitHub counts a commit
+          # author as a contributor, and this is the project committing to
+          # itself, not a second person turning up.
+          git config user.name "sapn95"
+          git config user.email "sapn95@users.noreply.github.com"
+          branch="formula/${GITHUB_REF_NAME}"
+          git checkout -b "$branch"
+          git add Formula/pfadi.rb
+          git commit -m "chore: point the Homebrew formula at ${GITHUB_REF_NAME}" || exit 0
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "chore: point the Homebrew formula at ${GITHUB_REF_NAME}" \
+            --body "Checksum of the source tarball published for ${GITHUB_REF_NAME}."
+
+  tap:
+    name: copy the formula into the tap
+    needs: [publish, formula]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: push it to sapn95/homebrew-tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          SHA256: ${{ needs.publish.outputs.sha256 }}
+        run: |
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "::warning::TAP_TOKEN is not set, so sapn95/homebrew-tap still" \
+                 "points at whatever it pointed at before this release."
+            exit 0
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          sed -i -E \
+            -e "s|(archive/refs/tags/v)[^\"]+(\.tar\.gz)|\1${version}\2|" \
+            -e "s|^(  sha256 \")[0-9a-f]{64}(\")|\1${SHA256}\2|" \
+            Formula/pfadi.rb
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/sapn95/homebrew-tap.git" tap
+          cp Formula/pfadi.rb tap/Formula/pfadi.rb
+          cd tap
+          git config user.name "sapn95"
+          git config user.email "sapn95@users.noreply.github.com"
+          git add Formula/pfadi.rb
+          git commit -m "pfadi ${version}" || exit 0
+          git push origin HEAD

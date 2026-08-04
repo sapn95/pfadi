@@ -4,6 +4,14 @@ import AppKit
 // is a compile error, and this is the shortest path to a running NSApplication.
 let application = NSApplication.shared
 let delegate = AppDelegate()
+
+// `pfadi ~/git` from a shell. Launching through LaunchServices delivers the
+// folder to application(_:open:) instead, so this is the direct-execution path
+// that the Homebrew shim and `swift run` take.
+if let argument = CommandLine.arguments.dropFirst().first(where: { !$0.hasPrefix("-") }) {
+    delegate.openOnLaunch(URL(fileURLWithPath: (argument as NSString).expandingTildeInPath))
+}
+
 application.delegate = delegate
 application.setActivationPolicy(.regular)
 application.run()

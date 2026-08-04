@@ -9,7 +9,9 @@ cd "$(dirname "$0")/.."
 
 CONFIGURATION="${1:-release}"
 BUNDLE="build/Pfadi.app"
-VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0")"
+# The VERSION file is the single source of truth: a release tag is checked
+# against it, and a source tarball has no git history to describe.
+VERSION="$(tr -d '[:space:]' < VERSION)"
 
 swift build -c "$CONFIGURATION"
 BINARY="$(swift build -c "$CONFIGURATION" --show-bin-path)/pfadi"
