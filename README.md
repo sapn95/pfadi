@@ -244,8 +244,23 @@ Hardened runtime, a trusted timestamp, an empty entitlements file because a
 file browser needs no exceptions, then notarise and staple so it opens on a
 machine that is offline. The release workflow runs the same script when
 `SIGNING_CERTIFICATE_P12` is set as a repository secret, and warns and carries
-on when it is not. What is missing is an Apple Developer Program membership,
-which is not something a script can arrange.
+on when it is not.
+
+**None of that is needed to install pfadi, and it is deliberately not being
+bought.** A Developer ID certificate requires an Apple Developer Program
+membership at 99 USD a year, and there is no free route to one: a personal
+Apple ID gets you an Apple Development certificate, which cannot sign anything
+for distribution.
+
+What signing would buy is the ability to hand somebody a prebuilt `.app` that
+opens on a double click. Nothing else. The Homebrew formula compiles on the
+machine it will run on, and a binary built locally is never quarantined in the
+first place, so there is nothing for Gatekeeper to object to. That is why the
+formula builds from source rather than downloading a release, and it is the
+reason this project can be installed by anyone today, for nothing.
+
+The script and the workflow job stay because they cost nothing to keep and
+turn a certificate into a signed release the day one exists.
 
 Releases are cut by tagging. `VERSION` is the single source of truth and the
 release workflow refuses to run when the tag disagrees with it.
@@ -295,7 +310,7 @@ on Linux because they do not need to.
 
 Roughly in the order it hurts.
 
-- [ ] A signed, notarised build.
+- [x] ~~A signed, notarised build.~~ Not planned. See below.
 
 ## Licence
 
