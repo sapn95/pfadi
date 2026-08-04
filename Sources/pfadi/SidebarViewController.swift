@@ -8,7 +8,19 @@ final class SidebarViewController: NSViewController {
     private let favourites: Favourites
     private let home = FileManager.default.homeDirectoryForCurrentUser
     private let tableView = NSTableView()
-    private var rows: [URL] = []
+    private var rows: [Row] = []
+
+    /// A sidebar is a list of headings and things under them, and AppKit's
+    /// table wants one flat array, so the two are spelled out as one type.
+    private enum Row {
+        case heading(String)
+        case place(URL, title: String)
+
+        var url: URL? {
+            if case .place(let url, _) = self { return url }
+            return nil
+        }
+    }
 
     init(favourites: Favourites) {
         self.favourites = favourites
@@ -64,7 +76,30 @@ final class SidebarViewController: NSViewController {
     }
 
     func reload() {
-        rows = favourites.visible
+        var built: [Row] = []
+
+        let favouriteRows = favourites.visible
+        if !favouriteRows.isEmpty {
+            built.append(.heading("Favourites"))
+            built += favouriteRows.map { .place($0, title: Favourites.title(for: $0, home: home)) }
+        }
+
+        // Discovered, not configured, and rebuilt on every reload: a share can
+        // be mounted and a cloud folder can be signed out of while the window
+        // is open.
+        let cloud = favourites.cloudLocations()
+        if !cloud.isEmpty {
+            built.append(.heading("Cloud"))
+            built += cloud.map { .place($0, title: Favourites.cloudTitle(for: $0)) }
+        }
+
+        let volumes = favourites.volumes()
+        if !volumes.isEmpty {
+            built.append(.heading("Locations"))
+            built += volumes.map { .place($0, title: $0.lastPathComponent) }
+        }
+
+        rows = built
         tableView.reloadData()
     }
 
@@ -72,8 +107,14 @@ final class SidebarViewController: NSViewController {
         // clickedRow, not selectedRow: a right-click does not move the
         // selection, so removing the selected row would delete the wrong one.
         let row = tableView.clickedRow
-        guard rows.indices.contains(row) else { return }
-        favourites.remove(rows[row])
+        guard rows.indices.contains(row), let url = rows[row].url else { return }
+        // Only favourites can be removed. Cloud folders and volumes are facts
+        // about the machine, not a list somebody curates.
+        guard favourites.contains(url) else {
+            NSSound.beep()
+            return
+        }
+        favourites.remove(url)
         reload()
     }
 }
@@ -81,24 +122,65 @@ final class SidebarViewController: NSViewController {
 extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        if case .heading = rows[row] { return 22 }
+        return 26
+    }
+
     func tableView(_ tableView: NSTableView, viewFor column: NSTableColumn?, row: Int) -> NSView? {
         guard rows.indices.contains(row) else { return nil }
-        let url = rows[row]
 
-        let id = NSUserInterfaceItemIdentifier("favouriteCell")
-        let cell =
-            tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
-            ?? Self.makeCell(id: id)
+        switch rows[row] {
+        case .heading(let title):
+            let id = NSUserInterfaceItemIdentifier("headingCell")
+            let cell =
+                tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
+                ?? Self.makeHeadingCell(id: id)
+            cell.textField?.stringValue = title
+            return cell
 
-        cell.imageView?.image = NSWorkspace.shared.icon(forFile: url.path)
-        cell.textField?.stringValue = Favourites.title(for: url, home: home)
-        return cell
+        case .place(let url, let title):
+            let id = NSUserInterfaceItemIdentifier("favouriteCell")
+            let cell =
+                tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
+                ?? Self.makeCell(id: id)
+            cell.imageView?.image = NSWorkspace.shared.icon(forFile: url.path)
+            cell.textField?.stringValue = title
+            return cell
+        }
+    }
+
+    func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
+        if case .heading = rows[row] { return true }
+        return false
+    }
+
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+        rows.indices.contains(row) && rows[row].url != nil
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
         let row = tableView.selectedRow
-        guard rows.indices.contains(row) else { return }
-        onSelect?(rows[row])
+        guard rows.indices.contains(row), let url = rows[row].url else { return }
+        onSelect?(url)
+    }
+
+    private static func makeHeadingCell(id: NSUserInterfaceItemIdentifier) -> NSTableCellView {
+        let cell = NSTableCellView()
+        cell.identifier = id
+
+        let label = NSTextField(labelWithString: "")
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+
+        cell.addSubview(label)
+        cell.textField = label
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
     }
 
     private static func makeCell(id: NSUserInterfaceItemIdentifier) -> NSTableCellView {
