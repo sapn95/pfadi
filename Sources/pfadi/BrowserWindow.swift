@@ -50,6 +50,7 @@ final class BrowserWindow {
         window.isReleasedWhenClosed = false
 
         wire()
+        observeActivation()
         Self.all.append(self)
     }
 
@@ -84,6 +85,17 @@ final class BrowserWindow {
             }
             guard let self else { return }
             Self.all.removeAll { $0 === self }
+        }
+    }
+
+    /// Volumes and cloud accounts are looked for again when the window comes
+    /// forward, which is when something is likely to have been mounted or
+    /// signed out of, rather than on every navigation.
+    private func observeActivation() {
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            self?.sidebar.reload(rediscover: true)
         }
     }
 

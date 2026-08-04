@@ -167,6 +167,61 @@ enum TransferSuites {
             }
         }
 
+        Harness.suite("transfer: moving a folder takes the folder, not just its files") {
+            try withSandbox(["source", "target"], directories: ["source", "target"]) { root in
+                let source = root.appendingPathComponent("source")
+                let target = root.appendingPathComponent("target")
+                let nested = source.appendingPathComponent("deep")
+                try FileManager.default.createDirectory(
+                    at: nested, withIntermediateDirectories: true)
+                try Data("x".utf8).write(to: nested.appendingPathComponent("file.txt"))
+
+                let outcome = runSynchronously(Transfer.plan([source], into: target, kind: .move))
+                Harness.expect(outcome.failed.isEmpty, "nothing failed")
+
+                Harness.expect(
+                    FileManager.default.fileExists(
+                        atPath: target.appendingPathComponent("source/deep/file.txt").path),
+                    "the file arrived")
+                // The bug: files were moved out one at a time and the folders
+                // they came from were left behind, empty.
+                Harness.expect(
+                    !FileManager.default.fileExists(atPath: nested.path),
+                    "the folder it came from went with it")
+                Harness.expect(
+                    !FileManager.default.fileExists(atPath: source.path),
+                    "and so did the one above that")
+                Harness.expectEqual(
+                    outcome.emptiedSources.count, 2, "both are reported, so undo can put them back")
+            }
+        }
+
+        Harness.suite("transfer: a move can be undone") {
+            try withSandbox(["source", "target"], directories: ["source", "target"]) { root in
+                let source = root.appendingPathComponent("source")
+                let target = root.appendingPathComponent("target")
+                try Data("precious".utf8).write(to: source.appendingPathComponent("file.txt"))
+
+                let outcome = runSynchronously(Transfer.plan([source], into: target, kind: .move))
+
+                // Undoing a move used to trash everything first and then try to
+                // move it back out of the trash, which always failed.
+                for folder in outcome.emptiedSources.reversed() {
+                    try? FileManager.default.createDirectory(
+                        at: folder, withIntermediateDirectories: true)
+                }
+                for move in outcome.moved {
+                    try? FileManager.default.moveItem(at: move.to, to: move.from)
+                }
+
+                Harness.expectEqual(
+                    try? String(
+                        contentsOf: source.appendingPathComponent("file.txt"), encoding: .utf8),
+                    "precious",
+                    "the file is back where it started, not in the trash")
+            }
+        }
+
         Harness.suite("transfer: replacing trashes rather than destroys") {
             try withSandbox(["a.txt", "target"], directories: ["target"]) { root in
                 let target = root.appendingPathComponent("target")
@@ -191,6 +246,25 @@ enum TransferSuites {
                         "it is intact in the trash, which is what makes this undoable")
                     try? FileManager.default.removeItem(at: displaced.inTrash)
                 }
+            }
+        }
+
+        Harness.suite("transfer: replacing a file with itself keeps both instead") {
+            try withSandbox(["only.txt"]) { root in
+                let file = root.appendingPathComponent("only.txt")
+                let plan = Transfer.plan([file], into: root, kind: .copy)
+                // Duplicating into the same folder collides with the original.
+                // Replace would trash the source and then copy from the trash.
+                let outcome = runSynchronously(plan, resolutions: [file: .replace])
+
+                Harness.expect(outcome.failed.isEmpty, "it did not fail")
+                Harness.expect(
+                    FileManager.default.fileExists(atPath: file.path),
+                    "the original is still there")
+                Harness.expect(
+                    FileManager.default.fileExists(
+                        atPath: root.appendingPathComponent("only copy.txt").path),
+                    "and there is a copy next to it")
             }
         }
 

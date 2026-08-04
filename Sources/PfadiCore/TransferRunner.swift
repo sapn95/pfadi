@@ -17,6 +17,9 @@ public final class TransferRunner {
         public let created: [URL]
         /// Sources that were moved, and where they came from.
         public let moved: [(from: URL, to: URL)]
+        /// Source folders removed once their contents had gone, deepest first.
+        /// Undo puts these back before moving anything into them.
+        public let emptiedSources: [URL]
         /// Anything already at a destination that was trashed to make room.
         public let displaced: [(original: URL, inTrash: URL)]
         public let skipped: Int
@@ -47,6 +50,8 @@ public final class TransferRunner {
             var moved: [(from: URL, to: URL)] = []
             var displaced: [(original: URL, inTrash: URL)] = []
             var failed: [(URL, String)] = []
+            var movedDirectories: [URL] = []
+            var emptied: [URL] = []
             var skipped = 0
             var done: Int64 = 0
 
@@ -74,6 +79,16 @@ public final class TransferRunner {
                         destination = folder.appendingPathComponent(
                             Transfer.keepBothName(
                                 for: item.destination, in: folder, fileManager: fileManager))
+                    case .replace where item.source.path == item.destination.path:
+                        // Duplicating a file into the folder it is already in
+                        // collides with itself. Replace would trash the source
+                        // and then copy from the trash, so it becomes the only
+                        // answer that makes sense.
+                        let folder = item.destination.deletingLastPathComponent()
+                        destination = folder.appendingPathComponent(
+                            Transfer.keepBothName(
+                                for: item.destination, in: folder, fileManager: fileManager))
+
                     case .replace:
                         // To the trash, never removeItem. A wrong answer in a
                         // replace dialog is then still recoverable.
@@ -98,7 +113,13 @@ public final class TransferRunner {
                         item, to: destination, kind: plan.kind, fileManager: fileManager)
                     created.append(destination)
                     if plan.kind == .move {
-                        moved.append((item.source, destination))
+                        // A folder is recreated rather than moved, so its
+                        // source is dealt with at the end once it is empty.
+                        if item.isDirectory {
+                            movedDirectories.append(item.source)
+                        } else {
+                            moved.append((item.source, destination))
+                        }
                     }
                 } catch {
                     failed.append((item.source, error.localizedDescription))
@@ -106,9 +127,24 @@ public final class TransferRunner {
                 done += item.size
             }
 
+            // A move that recreates folders and moves the files out of them
+            // leaves the folders behind, empty. Deepest first, and only when
+            // really empty: a skipped or failed file inside one means it is
+            // still somebody's data and removeItem would take it with it.
+            for folder in movedDirectories.sorted(by: {
+                $0.pathComponents.count > $1.pathComponents.count
+            }) {
+                let contents = (try? fileManager.contentsOfDirectory(atPath: folder.path)) ?? []
+                guard contents.isEmpty else { continue }
+                if (try? fileManager.removeItem(at: folder)) != nil {
+                    emptied.append(folder)
+                }
+            }
+
             let outcome = Outcome(
                 created: created,
                 moved: moved,
+                emptiedSources: emptied,
                 displaced: displaced,
                 skipped: skipped,
                 failed: failed,

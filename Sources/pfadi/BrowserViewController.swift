@@ -714,16 +714,39 @@ final class BrowserViewController: NSViewController {
 
     private func finished(_ outcome: TransferRunner.Outcome, kind: Transfer.Kind) {
         registerUndo(kind == .copy ? "Copy" : "Move") { controller in
-            // Backwards: the deepest thing was created last, and a folder
-            // cannot go to the trash while its contents are still arriving.
-            for url in outcome.created.reversed() {
-                _ = try? FileOperations.trash(url)
+            let manager = FileManager.default
+
+            switch kind {
+            case .copy:
+                // Backwards: the deepest thing was created last, and a folder
+                // cannot go to the trash while its contents are still there.
+                for url in outcome.created.reversed() {
+                    _ = try? FileOperations.trash(url)
+                }
+
+            case .move:
+                // Order matters and used to be wrong. Trashing the
+                // destinations first and then moving them back out of the
+                // trash fails every time, which turned undoing a move into
+                // trashing everything that was moved.
+                //
+                // Put the folders back first, so there is somewhere to move
+                // into; then the files; then take away the folders that were
+                // made at the far end.
+                for folder in outcome.emptiedSources.reversed() {
+                    try? manager.createDirectory(at: folder, withIntermediateDirectories: true)
+                }
+                for move in outcome.moved.reversed() {
+                    try? manager.moveItem(at: move.to, to: move.from)
+                }
+                for url in outcome.created.reversed()
+                where (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                    _ = try? FileOperations.trash(url)
+                }
             }
-            for move in outcome.moved.reversed() {
-                try? FileManager.default.moveItem(at: move.to, to: move.from)
-            }
+
             for displaced in outcome.displaced {
-                try? FileManager.default.moveItem(at: displaced.inTrash, to: displaced.original)
+                try? manager.moveItem(at: displaced.inTrash, to: displaced.original)
             }
             controller.reload(keepingSelection: true)
         }

@@ -99,7 +99,18 @@ final class SidebarViewController: NSViewController {
         reload()
     }
 
-    func reload() {
+    /// Cloud folders and volumes, kept between reloads.
+    ///
+    /// Finding them means listing a directory and asking the kernel for every
+    /// mounted filesystem, and the second of those can block for a long time on
+    /// a share whose server has gone away. Doing it on every navigation would
+    /// put that hang in the middle of walking around a folder tree.
+    private var discovered: (cloud: [URL], volumes: [URL])?
+
+    func reload(rediscover: Bool = false) {
+        if rediscover || discovered == nil {
+            discovered = (favourites.cloudLocations(), favourites.volumes())
+        }
         var built: [Row] = []
 
         let recents = favourites.recents()
@@ -121,7 +132,7 @@ final class SidebarViewController: NSViewController {
         // Discovered, not configured, and rebuilt on every reload: a share can
         // be mounted and a cloud folder can be signed out of while the window
         // is open.
-        let cloud = favourites.cloudLocations()
+        let cloud = discovered?.cloud ?? []
         if !cloud.isEmpty {
             built.append(.heading("Cloud"))
             built += cloud.map {
@@ -129,7 +140,7 @@ final class SidebarViewController: NSViewController {
             }
         }
 
-        let volumes = favourites.volumes()
+        let volumes = discovered?.volumes ?? []
         if !volumes.isEmpty {
             built.append(.heading("Locations"))
             built += volumes.map { .place($0, title: $0.lastPathComponent, section: .locations) }
