@@ -39,6 +39,17 @@ final class PathField: NSTextField, NSTextFieldDelegate {
         bezelStyle = .roundedBezel
         focusRingType = .default
         isAutomaticTextCompletionEnabled = false
+
+        // A path is one line however long it gets. Left alone the field wraps,
+        // grows to two lines and then clips the first one, which hides the
+        // start of the path behind the top edge of its own box.
+        usesSingleLineMode = true
+        cell?.wraps = false
+        cell?.isScrollable = true
+        // Truncating the head rather than the tail: with a long path it is the
+        // end that says where you are, and the start is nearly always
+        // /Users/<you>/ and worth nothing.
+        cell?.lineBreakMode = .byTruncatingHead
     }
 
     /// True while tab has left a suggestion in the field that has not been

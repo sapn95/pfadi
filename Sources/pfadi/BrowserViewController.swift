@@ -284,6 +284,9 @@ final class BrowserViewController: NSViewController {
         // update immediately rather than when the listing arrives.
         onHistoryChanged?(history.canGoBack, history.canGoForward)
         pathField.stringValue = directory.path
+        // Truncation hides the start, and the start is what you want when you
+        // are checking which of two similar folders this is.
+        pathField.toolTip = directory.path
         pathField.showHidden = showHidden
         pathField.currentDirectory = directory
         view.window?.title = directory.lastPathComponent.isEmpty ? "/" : directory.lastPathComponent
