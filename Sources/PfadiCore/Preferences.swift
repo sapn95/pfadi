@@ -61,8 +61,15 @@ public final class Preferences {
         set { store.set(newValue, forKey: Key.favourites) }
     }
 
+    /// Folders visited recently, newest first.
+    public var recents: [String] {
+        get { store.object(forKey: Key.recents) as? [String] ?? [] }
+        set { store.set(newValue, forKey: Key.recents) }
+    }
+
     enum Key {
         static let favourites = "favourites"
+        static let recents = "recents"
         static let lastDirectory = "lastDirectory"
         static let showHidden = "showHidden"
         static let sortKey = "sortKey"

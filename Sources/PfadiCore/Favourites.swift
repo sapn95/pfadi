@@ -69,6 +69,33 @@ public final class Favourites {
         paths.contains(url.standardizedFileURL.path)
     }
 
+    /// How many folders to remember. Long enough to cover a working day,
+    /// short enough that the sidebar stays a sidebar.
+    public static let recentsLimit = 8
+
+    /// Records arriving somewhere, newest first and without repeats.
+    public func remember(_ url: URL) {
+        let path = url.standardizedFileURL.path
+        // Home is where a window opens when nothing else is known, so listing
+        // it as somewhere you recently chose to go is noise.
+        guard path != fileManager.homeDirectoryForCurrentUser.path else { return }
+
+        var updated = preferences.recents.filter { $0 != path }
+        updated.insert(path, at: 0)
+        preferences.recents = Array(updated.prefix(Self.recentsLimit))
+    }
+
+    /// Recently visited folders that are still there.
+    public func recents() -> [URL] {
+        preferences.recents.compactMap { path in
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory),
+                isDirectory.boolValue
+            else { return nil }
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+    }
+
     /// Cloud folders, discovered rather than configured.
     ///
     /// OneDrive, Dropbox and the rest all live in `~/Library/CloudStorage`,

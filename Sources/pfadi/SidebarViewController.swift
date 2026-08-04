@@ -78,6 +78,12 @@ final class SidebarViewController: NSViewController {
     func reload() {
         var built: [Row] = []
 
+        let recents = favourites.recents()
+        if !recents.isEmpty {
+            built.append(.heading("Recents"))
+            built += recents.map { .place($0, title: Favourites.title(for: $0, home: home)) }
+        }
+
         let favouriteRows = favourites.visible
         if !favouriteRows.isEmpty {
             built.append(.heading("Favourites"))

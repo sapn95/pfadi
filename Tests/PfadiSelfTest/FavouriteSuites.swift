@@ -111,6 +111,50 @@ enum FavouriteSuites {
                 "and local snapshots are not a place")
         }
 
+        Harness.suite("recents: newest first, no repeats, and bounded") {
+            let store = MemoryFavouriteStore()
+            let favourites = Favourites(preferences: Preferences(store: store))
+
+            try withSandbox(["a", "b", "c"], directories: ["a", "b", "c"]) { root in
+                favourites.remember(root.appendingPathComponent("a"))
+                favourites.remember(root.appendingPathComponent("b"))
+                favourites.remember(root.appendingPathComponent("a"))
+
+                Harness.expectEqual(
+                    favourites.recents().map(\.lastPathComponent), ["a", "b"],
+                    "going back to a moves it to the top rather than adding it twice")
+
+                for index in 0..<Favourites.recentsLimit {
+                    let folder = root.appendingPathComponent("many-\(index)")
+                    try FileManager.default.createDirectory(
+                        at: folder, withIntermediateDirectories: true)
+                    favourites.remember(folder)
+                }
+                Harness.expectEqual(
+                    favourites.recents().count, Favourites.recentsLimit,
+                    "and the list stays the length it says it is")
+            }
+        }
+
+        Harness.suite("recents: home and folders that are gone are left out") {
+            let store = MemoryFavouriteStore()
+            let favourites = Favourites(preferences: Preferences(store: store))
+
+            // Home is where a window opens when nothing else is known, so it is
+            // not somewhere you recently chose to go.
+            favourites.remember(FileManager.default.homeDirectoryForCurrentUser)
+            Harness.expect(favourites.recents().isEmpty, "home is not a recent")
+
+            try withSandbox(["temp"], directories: ["temp"]) { root in
+                favourites.remember(root.appendingPathComponent("temp"))
+                Harness.expectEqual(favourites.recents().count, 1, "a real folder is remembered")
+                try FileManager.default.removeItem(at: root.appendingPathComponent("temp"))
+                Harness.expect(
+                    favourites.recents().isEmpty,
+                    "and once it is gone it stops being offered")
+            }
+        }
+
         Harness.suite("favourites: home is called Home") {
             let home = URL(fileURLWithPath: "/Users/someone", isDirectory: true)
             Harness.expectEqual(

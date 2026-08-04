@@ -21,7 +21,11 @@ final class BrowserViewController: NSViewController {
     var onFavouritesChanged: (() -> Void)?
 
     private var directory: URL
+    /// Everything in the folder, and the part of it currently on screen. The
+    /// filter narrows the second without re-reading the first.
+    private var allEntries: [Entry] = []
     private var entries: [Entry] = []
+    private var filter = ""
     private var showHidden: Bool {
         didSet { preferences.showHidden = showHidden }
     }
@@ -48,6 +52,7 @@ final class BrowserViewController: NSViewController {
         label: "io.github.sapn95.pfadi.listing", qos: .userInitiated)
 
     private let pathField = PathField()
+    private let searchField = NSSearchField()
     private let tableView = FileTableView()
     private let statusLabel = NSTextField(labelWithString: "")
 
@@ -92,6 +97,13 @@ final class BrowserViewController: NSViewController {
         pathField.translatesAutoresizingMaskIntoConstraints = false
         pathField.target = self
         pathField.action = #selector(pathFieldCommitted(_:))
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchField.placeholderString = "Filter"
+        searchField.sendsSearchStringImmediately = true
+        searchField.sendsWholeSearchString = false
+        searchField.target = self
+        searchField.action = #selector(searchChanged(_:))
+
         pathField.onCompletionChanged = { [weak self] progress in
             guard let self else { return }
             statusLabel.stringValue = progress ?? statusText()
@@ -111,6 +123,7 @@ final class BrowserViewController: NSViewController {
         configureTable()
 
         view.addSubview(pathField)
+        view.addSubview(searchField)
         view.addSubview(scrollView)
         view.addSubview(statusLabel)
         view.addSubview(transfers.view)
@@ -122,7 +135,12 @@ final class BrowserViewController: NSViewController {
             pathField.topAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
             pathField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            pathField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            pathField.trailingAnchor.constraint(
+                equalTo: searchField.leadingAnchor, constant: -8),
+
+            searchField.centerYAnchor.constraint(equalTo: pathField.centerYAnchor),
+            searchField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            searchField.widthAnchor.constraint(equalToConstant: 170),
 
             scrollView.topAnchor.constraint(equalTo: pathField.bottomAnchor, constant: 10),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -230,12 +248,18 @@ final class BrowserViewController: NSViewController {
 
     /// Moves to a folder: list it, watch it, remember it, select the top row.
     private func enter(_ url: URL, recordingHistory: Bool = true) {
+        // The filter described the folder being left. Carrying it into the next
+        // one shows an empty list and no explanation.
+        filter = ""
+        searchField.stringValue = ""
         if recordingHistory {
             history.visit(url)
         }
         directory = url
         reload(keepingSelection: false)
         preferences.lastDirectory = url.path
+        favourites.remember(url)
+        onFavouritesChanged?()
 
         watcher?.stop()
         watcher = DirectoryWatcher(url: url) { [weak self] in
@@ -290,14 +314,15 @@ final class BrowserViewController: NSViewController {
         var failure: String?
         switch result {
         case .success(let listed):
-            entries = listed
+            allEntries = listed
         case .failure(let error):
             // An unreadable directory is a normal event, not a crash: think
             // /Library/Caches, or anything behind a TCC prompt not yet granted.
-            entries = []
+            allEntries = []
             failure = "cannot read \(directory.path): \(error.localizedDescription)"
         }
 
+        entries = Self.filtered(allEntries, by: filter)
         tableView.reloadData()
 
         guard !entries.isEmpty else {
@@ -321,9 +346,33 @@ final class BrowserViewController: NSViewController {
     }
 
     private func statusText() -> String {
+        if !filter.isEmpty {
+            return "\(entries.count) of \(allEntries.count) match \u{201C}\(filter)\u{201D}"
+        }
         guard !entries.isEmpty else { return "empty folder" }
         let folders = entries.filter(\.isDirectory).count
         return "\(entries.count) items, \(folders) folders" + (showHidden ? ", hidden shown" : "")
+    }
+
+    /// Substring rather than prefix, and blind to case and accents. Looking for
+    /// `config` should find `.eslintrc.config.js`, which a prefix match misses.
+    private static func filtered(_ entries: [Entry], by text: String) -> [Entry] {
+        guard !text.isEmpty else { return entries }
+        return entries.filter {
+            $0.name.range(of: text, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+
+    @objc func focusSearch(_ sender: Any?) {
+        view.window?.makeFirstResponder(searchField)
+    }
+
+    @objc private func searchChanged(_ sender: NSSearchField) {
+        filter = sender.stringValue.trimmingCharacters(in: .whitespaces)
+        entries = Self.filtered(allEntries, by: filter)
+        tableView.reloadData()
+        if !entries.isEmpty { select(row: 0) }
+        statusLabel.stringValue = statusText()
     }
 
     private func select(row: Int) {
