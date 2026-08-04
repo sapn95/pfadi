@@ -6,9 +6,9 @@
 A small macOS file browser with the one thing macOS has never had: an address
 bar you can click into and type, with tab completion.
 
-> **Work in progress.** It builds, it runs, it navigates. It cannot copy, move,
-> rename or delete anything yet. Treat it as a browser, not a file manager, and
-> keep Finder around.
+> **Work in progress.** It browses, and it can now make a folder, rename one
+> thing and trash one thing, each of which ⌘Z takes back. It cannot copy or
+> move anything yet. Keep Finder around.
 
 ## The problem
 
@@ -41,6 +41,10 @@ space   Quick Look, and again to close it
 ⇧⌘.     show hidden files
 ⌘R      refresh
 ⌘D      add this folder to the sidebar, or take it back out
+⇧⌘N     new folder, with the cursor already in its name
+F2      rename the selection
+⌘⌫      move the selection to the trash
+⌘Z      undo any of those three
 ⇧⌘C     copy the path of the selection
 ⌃⌘T     open a terminal in this folder
 ⇧⌘R     reveal the selection in Finder
@@ -82,6 +86,11 @@ no size to sort by and having them scatter through the list helps nobody.
 
 Space opens Quick Look and space closes it. It stays open while you walk the
 list with the arrow keys, which is the point of having it.
+
+The three operations that change anything are all reversible, which is why they
+are the ones that exist. ⌘Z puts back a trashed file, undoes a rename, and
+trashes a folder that was just created. A rename that would land on a file that
+already exists is refused rather than replacing it.
 
 The sidebar holds the folders you keep going back to. ⌘D puts the one you are
 in there and ⌘D takes it out again, right-click removes a row, and a favourite
@@ -218,7 +227,11 @@ on Linux because they do not need to.
 
 Roughly in the order it hurts.
 
-- [ ] Copy, move, rename, delete. Nothing writes to disk yet.
+- [ ] Copy and move, with progress and a conflict story.
+- [ ] Back and forward.
+- [ ] An info panel.
+- [ ] Cloud files marked as such, and not downloaded by being looked at.
+- [ ] SMB and NFS shares, mounted by typing one in the path field.
 - [ ] Drag and drop.
 - [ ] Tabs.
 - [ ] A signed, notarised build.

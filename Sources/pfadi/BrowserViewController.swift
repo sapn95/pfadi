@@ -28,6 +28,11 @@ final class BrowserViewController: NSViewController {
     /// left can be recognised and dropped.
     private var generation = 0
 
+    /// The row being renamed, and a folder that was just created and should be
+    /// renamed as soon as the watcher shows it.
+    private var renaming: URL?
+    private var pendingRename: URL?
+
     private let listingQueue = DispatchQueue(
         label: "io.github.sapn95.pfadi.listing", qos: .userInitiated)
 
@@ -253,6 +258,12 @@ final class BrowserViewController: NSViewController {
         select(row: row)
 
         statusLabel.stringValue = statusText()
+
+        if let pending = pendingRename, let row = entries.firstIndex(where: { $0.url == pending }) {
+            pendingRename = nil
+            select(row: row)
+            beginRename(row: row)
+        }
     }
 
     private func statusText() -> String {
@@ -265,6 +276,12 @@ final class BrowserViewController: NSViewController {
         guard entries.indices.contains(row) else { return }
         tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         tableView.scrollRowToVisible(row)
+    }
+
+    private func beginRename(row: Int) {
+        guard entries.indices.contains(row) else { return }
+        renaming = entries[row].url
+        tableView.editColumn(0, row: row, with: nil, select: true)
     }
 
     private func selectedEntry() -> Entry? {
@@ -357,6 +374,63 @@ final class BrowserViewController: NSViewController {
             added
             ? "added \(target.lastPathComponent) to favourites"
             : "removed \(target.lastPathComponent) from favourites"
+    }
+
+    // MARK: - Writing to disk
+
+    @objc func newFolder(_ sender: Any?) {
+        let name = FileOperations.availableName("untitled folder", in: directory)
+        do {
+            let created = try FileOperations.createFolder(named: name, in: directory)
+            registerUndo("New Folder") { controller in
+                try? FileOperations.trash(created)
+                controller.reload(keepingSelection: true)
+            }
+            statusLabel.stringValue = "created \(name)"
+            // The listing is watched, so the row will arrive on its own. Wait
+            // for it, then put the cursor straight into its name: nobody wants
+            // a folder called "untitled folder".
+            pendingRename = created
+        } catch {
+            report(error, doing: "create a folder")
+        }
+    }
+
+    @objc func renameSelection(_ sender: Any?) {
+        guard let entry = selectedEntry(), let row = entries.firstIndex(of: entry) else { return }
+        beginRename(row: row)
+    }
+
+    @objc func moveToTrash(_ sender: Any?) {
+        guard let entry = selectedEntry() else { return }
+        do {
+            let trashed = try FileOperations.trash(entry.url)
+            if let trashed {
+                registerUndo("Move to Trash") { controller in
+                    try? FileManager.default.moveItem(at: trashed, to: entry.url)
+                    controller.reload(keepingSelection: true)
+                }
+            }
+            statusLabel.stringValue = "moved \(entry.name) to the trash"
+        } catch {
+            report(error, doing: "move \(entry.name) to the trash")
+        }
+    }
+
+    /// Undo is worth the small amount of bookkeeping precisely because these
+    /// are the first operations that change anything: ⌘Z should work from the
+    /// first version that can lose you something.
+    private func registerUndo(_ name: String, _ undo: @escaping (BrowserViewController) -> Void) {
+        guard let manager = undoManager else { return }
+        manager.setActionName(name)
+        manager.registerUndo(withTarget: self) { controller in
+            undo(controller)
+        }
+    }
+
+    private func report(_ error: any Error, doing what: String) {
+        NSSound.beep()
+        statusLabel.stringValue = "could not \(what): \(error.localizedDescription)"
     }
 
     @objc func copyPath(_ sender: Any?) {
@@ -452,6 +526,8 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
 
         cell.imageView?.image = NSWorkspace.shared.icon(forFile: entry.url.path)
         cell.textField?.stringValue = entry.name
+        cell.textField?.delegate = self
+        cell.textField?.isEditable = (renaming == entry.url)
         return cell
     }
 
@@ -464,6 +540,12 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         let label = NSTextField(labelWithString: "")
         label.translatesAutoresizingMaskIntoConstraints = false
         label.lineBreakMode = .byTruncatingMiddle
+        // Not editable until a rename starts, but it has to be a field rather
+        // than a label or there is nothing to type into when one does.
+        label.isEditable = false
+        label.isBordered = false
+        label.drawsBackground = false
+        label.focusRingType = .none
 
         cell.addSubview(icon)
         cell.addSubview(label)
@@ -564,4 +646,49 @@ extension BrowserViewController: QLPreviewPanelDataSource, QLPreviewPanelDelegat
         tableView.keyDown(with: event)
         return true
     }
+}
+
+// MARK: - Renaming
+
+extension BrowserViewController: NSTextFieldDelegate {
+    /// The rename is committed when the field gives up focus, which covers
+    /// return, tab and clicking somewhere else. Escape never gets here: AppKit
+    /// puts the old text back and ends editing without telling the delegate a
+    /// new value.
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField, field !== pathField else { return }
+        defer {
+            field.isEditable = false
+            renaming = nil
+        }
+
+        guard let original = renaming else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard name != original.lastPathComponent else { return }
+
+        if let problem = FileOperations.problem(with: name) {
+            field.stringValue = original.lastPathComponent
+            report(RenameRefused(problem: problem), doing: "rename \(original.lastPathComponent)")
+            return
+        }
+
+        do {
+            let renamed = try FileOperations.rename(original, to: name)
+            registerUndo("Rename") { controller in
+                try? FileOperations.rename(renamed, to: original.lastPathComponent)
+                controller.reload(keepingSelection: true)
+            }
+            statusLabel.stringValue = "renamed to \(name)"
+        } catch {
+            // Put the old name back on screen: the row still says the new one,
+            // and a list that disagrees with the disk is worse than an error.
+            field.stringValue = original.lastPathComponent
+            report(error, doing: "rename \(original.lastPathComponent)")
+        }
+    }
+}
+
+private struct RenameRefused: LocalizedError {
+    let problem: FileOperations.NameProblem
+    var errorDescription: String? { problem.message }
 }
