@@ -1,0 +1,10 @@
+{
+  "config": {
+    // A line limit fights hard-wrapped prose for no benefit in a README.
+    "MD013": false,
+    // The badge-free heading style used here starts at h1 and stays there.
+    "MD033": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [".build/**", "build/**"]
+}

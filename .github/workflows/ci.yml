@@ -1,0 +1,75 @@
+---
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, so a new Swift or macOS release breaking an assumption is caught
+    # without anyone having to push a commit first.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build and self-test
+    # AppKit means macOS, there is no cross-compiling out of this one.
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: swift version
+        run: swift --version
+      - name: build
+        run: swift build -v
+      - name: self-test
+        run: swift run pfadi-selftest
+      - name: assemble the .app bundle
+        run: ./scripts/make-app.sh
+      - name: the bundle is actually launchable
+        run: |
+          test -x build/Pfadi.app/Contents/MacOS/pfadi
+          plutil -lint build/Pfadi.app/Contents/Info.plist
+
+  format:
+    name: swift-format
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: lint
+        run: swift format lint --recursive --strict Sources Tests Package.swift
+
+  workflows:
+    name: lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: actionlint
+        uses: raven-actions/actionlint@v2.2.0
+      - name: yamllint
+        run: pipx run yamllint .
+      - name: markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v24
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
