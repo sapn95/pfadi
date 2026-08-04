@@ -65,8 +65,21 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signing is enough to run it locally. Anything shipped to another Mac
-# needs a Developer ID and notarisation, which this project does not have yet.
+# The entitlements the hardened runtime needs, written next to the bundle so
+# scripts/sign-and-notarise.sh can hand them to codesign. A file browser needs
+# no exceptions at all: it reads and writes files as the person running it, and
+# every one of these switches would only widen that.
+cat > build/pfadi.entitlements <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+</dict>
+</plist>
+PLIST
+
+# Ad-hoc signing is enough to run it on this machine. A copy for anybody else
+# needs a Developer ID and notarisation: scripts/sign-and-notarise.sh.
 codesign --force --sign - "$BUNDLE" >/dev/null 2>&1 ||
 	echo "note: could not ad-hoc sign, the app will still run locally"
 
