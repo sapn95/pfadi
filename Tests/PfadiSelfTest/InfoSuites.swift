@@ -100,6 +100,9 @@ enum InfoSuites {
                 Harness.expectEqual(
                     info.owner, NSUserName(), "owned by whoever is running the tests")
                 Harness.expect(!info.cloud.isCloud, "and not in a cloud")
+                // For an ordinary file these agree. They part company only for
+                // a cloud placeholder, which reports a size it does not occupy.
+                Harness.expect(info.onDisk != nil, "and it says how much it occupies here")
             }
         }
 

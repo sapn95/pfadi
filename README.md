@@ -114,9 +114,15 @@ with keychain handling in it.
 Dropbox, Google Drive and iCloud all leave placeholder files that have a name,
 a size and no bytes. They look completely ordinary to a directory listing,
 which is how copying "everything" quietly pulls a hundred gigabytes down a
-metered connection. A placeholder shows a cloud in the size column, and ⌘I says
-which provider and which account. The check is `lstat` against the dataless
+metered connection. A placeholder shows a cloud in the size column, the status line counts how many
+of them are in the folder, and ⌘I says which provider, which account, and how
+much of the file is actually on this Mac, which for a placeholder is nothing. The check is `lstat` against the dataless
 flag plus the path, so describing a file never asks its provider anything.
+
+Downloading a placeholder on demand, or evicting one to free space, is not
+here. Both need the File Provider domain APIs rather than a filesystem call,
+which is a different kind of work from reading a flag. Opening a file
+downloads it, because that is what the provider does when something reads it.
 
 Tabs are macOS's own window tabs rather than a tab bar drawn by hand, so ⌘⇧[
 and ⌘⇧], Merge All Windows and Move Tab to New Window all work the way they do

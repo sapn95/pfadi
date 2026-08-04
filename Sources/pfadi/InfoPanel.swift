@@ -94,6 +94,11 @@ final class InfoPanel {
             // asking about every placeholder inside. Not for a panel that
             // opens on a keystroke.
             rows.append(("Size", info.size.map(Self.sizeFormatter.string) ?? "unknown"))
+            // Only worth a line when the two disagree, which is exactly when
+            // the file is somewhere else and only looks like it is here.
+            if info.cloud.isCloud, let onDisk = info.onDisk, onDisk != info.size {
+                rows.append(("On this Mac", Self.sizeFormatter.string(fromByteCount: onDisk)))
+            }
         }
         if let created = info.created {
             rows.append(("Created", Self.dateFormatter.string(from: created)))
