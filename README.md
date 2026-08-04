@@ -33,6 +33,7 @@ So: one pane, one path field, keyboard first.
 
 ```text
 click    a path component: everything beside it, with a filter
+›        the arrow after the last one: everything inside it
 2×click  the path bar: type a path instead
 ⇧⌘G     the same, from the keyboard
 button   at the end of the path row, switching between the two
@@ -186,7 +187,13 @@ components, and clicking `git` offers everything in `~` — including `git`
 itself, ticked, so the menu says where you are as well as where you could go.
 Past eight entries the menu grows a filter field at the top, already focused,
 because a filter you have to click into first is slower than scrolling past the
-thing you wanted. The button at the end of the path row switches between the two, and says which
+thing you wanted.
+
+The arrow sitting right after the last component goes the other way: it lists
+what is **inside** the folder you are in, so stepping down is a click rather
+than a scroll through the list. Clicking a component says what is beside it,
+clicking the arrow says what is under it, and both of those are things people
+want from a path. The button at the end of the path row switches between the two, and says which
 one it will give you next rather than which one you are looking at.
 Double-clicking the bar or pressing ⇧⌘G does the same. Both directions go
 through giving up focus, so there is one route back rather than two that can

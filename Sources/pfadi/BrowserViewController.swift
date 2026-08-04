@@ -56,6 +56,8 @@ final class BrowserViewController: NSViewController {
     /// button, because a keystroke and a double click are both things you have
     /// to be told about and a visible control is not.
     private let pathToggle = NSButton()
+    /// The arrow after the last component: what is inside this folder.
+    private let pathDescend = NSButton()
     private let pathField = PathField()
     private let searchField = NSSearchField()
     private let tableView = FileTableView()
@@ -103,6 +105,9 @@ final class BrowserViewController: NSViewController {
         pathField.target = self
         pathField.action = #selector(pathFieldCommitted(_:))
         pathBar.translatesAutoresizingMaskIntoConstraints = false
+        pathBar.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        pathBar.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        pathDescend.setContentHuggingPriority(.required, for: .horizontal)
         pathBar.onChoose = { [weak self] url in self?.navigate(to: url) }
         pathBar.onEdit = { [weak self] in self?.focusPathField(nil) }
         pathField.onEndEditing = { [weak self] in
@@ -138,6 +143,15 @@ final class BrowserViewController: NSViewController {
 
         configureTable()
 
+        pathDescend.translatesAutoresizingMaskIntoConstraints = false
+        pathDescend.bezelStyle = .accessoryBar
+        pathDescend.isBordered = false
+        pathDescend.image = NSImage(
+            systemSymbolName: "chevron.right", accessibilityDescription: "Go into a folder")
+        pathDescend.toolTip = "What is inside this folder"
+        pathDescend.target = self
+        pathDescend.action = #selector(descendFromPath(_:))
+
         pathToggle.translatesAutoresizingMaskIntoConstraints = false
         pathToggle.bezelStyle = .accessoryBar
         pathToggle.isBordered = false
@@ -145,6 +159,7 @@ final class BrowserViewController: NSViewController {
         pathToggle.action = #selector(togglePathEditing(_:))
 
         view.addSubview(pathToggle)
+        view.addSubview(pathDescend)
         view.addSubview(pathBar)
         view.addSubview(pathField)
         view.addSubview(searchField)
@@ -158,8 +173,16 @@ final class BrowserViewController: NSViewController {
             // the content pane starts underneath the title bar.
             pathBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
             pathBar.leadingAnchor.constraint(equalTo: pathField.leadingAnchor),
-            pathBar.trailingAnchor.constraint(equalTo: pathField.trailingAnchor),
             pathBar.heightAnchor.constraint(equalTo: pathField.heightAnchor),
+            // The bar hugs its components so the arrow sits right after the
+            // last one, which is where somebody reaches for "and then into".
+            pathBar.trailingAnchor.constraint(
+                lessThanOrEqualTo: pathDescend.leadingAnchor, constant: -2),
+
+            pathDescend.centerYAnchor.constraint(equalTo: pathBar.centerYAnchor),
+            pathDescend.widthAnchor.constraint(equalToConstant: 22),
+            pathDescend.trailingAnchor.constraint(
+                lessThanOrEqualTo: pathToggle.leadingAnchor, constant: -4),
 
             pathField.topAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
@@ -322,7 +345,7 @@ final class BrowserViewController: NSViewController {
         // Truncation hides the start, and the start is what you want when you
         // are checking which of two similar folders this is.
         pathField.toolTip = directory.path
-        pathBar.url = directory
+        pathBar.directory = directory
         pathBar.showHidden = showHidden
         showPathField(false)
         pathField.showHidden = showHidden
@@ -417,6 +440,7 @@ final class BrowserViewController: NSViewController {
     /// click; the field is what you type into, and it appears when you ask.
     private func showPathField(_ editing: Bool) {
         pathBar.isHidden = editing
+        pathDescend.isHidden = editing
         pathField.isHidden = !editing
 
         // The button says what pressing it will do next, not what is on screen.
@@ -425,6 +449,10 @@ final class BrowserViewController: NSViewController {
             accessibilityDescription: editing ? "Show the path as components" : "Type a path")
         pathToggle.toolTip =
             editing ? "Back to the clickable path" : "Type a path instead (⇧⌘G)"
+    }
+
+    @objc private func descendFromPath(_ sender: Any?) {
+        pathBar.presentContents(from: pathDescend)
     }
 
     @objc private func togglePathEditing(_ sender: Any?) {
