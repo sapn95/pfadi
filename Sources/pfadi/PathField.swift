@@ -128,15 +128,26 @@ final class PathField: NSTextField, NSTextFieldDelegate {
         }
     }
 
+    /// What is on screen right now.
+    ///
+    /// While the field is being edited that is the field editor, not
+    /// `stringValue`: the cell only catches up when editing ends through the
+    /// usual route. Anything acting on "what the person sees" has to ask here.
+    var typedText: String {
+        currentEditor()?.string ?? stringValue
+    }
+
     private func apply(_ text: String) {
         isApplyingCompletion = true
         defer { isApplyingCompletion = false }
 
+        // Both, and in this order. Writing only to the field editor leaves the
+        // cell holding whatever was there before, so committing navigates to
+        // the old text and the field redraws empty the moment focus leaves.
+        stringValue = text
         if let editor = currentEditor() {
             editor.string = text
             editor.selectedRange = NSRange(location: (text as NSString).length, length: 0)
-        } else {
-            stringValue = text
         }
     }
 }

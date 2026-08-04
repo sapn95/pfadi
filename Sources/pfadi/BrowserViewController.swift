@@ -99,7 +99,11 @@ final class BrowserViewController: NSViewController {
         view.addSubview(statusLabel)
 
         NSLayoutConstraint.activate([
-            pathField.topAnchor.constraint(equalTo: view.topAnchor, constant: 10),
+            // The safe area, not the view: the window is fullSizeContentView so
+            // that the sidebar's translucency can reach the top, which means
+            // the content pane starts underneath the title bar.
+            pathField.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
             pathField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             pathField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
 
@@ -298,13 +302,18 @@ final class BrowserViewController: NSViewController {
     }
 
     @objc private func pathFieldCommitted(_ sender: NSTextField) {
+        // typedText, not stringValue: while the field is being edited the cell
+        // can be a step behind what is on screen, and going somewhere other
+        // than the path the person is looking at is the worst kind of wrong.
+        let typed = pathField.typedText
         pathField.endCompletion()
-        switch PathCompletion.resolve(sender.stringValue, relativeTo: directory) {
+        switch PathCompletion.resolve(typed, relativeTo: directory) {
         case .directory(let url):
             navigate(to: url)
         case .file(let url):
             NSWorkspace.shared.open(url)
             pathField.stringValue = directory.path
+            view.window?.makeFirstResponder(tableView)
         case nil:
             NSSound.beep()
         }
