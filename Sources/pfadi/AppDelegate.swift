@@ -71,8 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         StartDirectory.choose(
             explicit: explicit,
             workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
-            remembered: UserDefaults.standard.string(
-                forKey: BrowserViewController.lastDirectoryKey),
+            remembered: Preferences().lastDirectory,
             home: FileManager.default.homeDirectoryForCurrentUser
         )
     }
