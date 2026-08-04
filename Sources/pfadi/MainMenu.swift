@@ -98,7 +98,7 @@ enum MainMenu {
 
         menu.addItem(
             withTitle: "Copy",
-            action: #selector(BrowserViewController.copyToPasteboard(_:)),
+            action: #selector(BrowserViewController.copy(_:)),
             keyEquivalent: "c"
         )
         menu.addItem(

@@ -181,7 +181,9 @@ final class BrowserViewController: NSViewController {
         menu.addItem(.separator())
         for (title, action) in [
             ("Get Info", #selector(showInfo(_:))),
-            ("Copy", #selector(copyToPasteboard(_:))),
+            ("Copy", #selector(copy(_:))),
+            ("Paste", #selector(paste(_:))),
+            ("Move Item Here", #selector(pasteAsMove(_:))),
             ("Copy Path", #selector(copyPath(_:))),
             ("Reveal in Finder", #selector(revealInFinder(_:))),
         ] {
@@ -546,7 +548,10 @@ final class BrowserViewController: NSViewController {
 
     // MARK: - Copy and paste
 
-    @objc func copyToPasteboard(_ sender: Any?) {
+    /// Deliberately the standard `copy:` selector. When the path field has
+    /// focus its field editor answers first and copies the text; only when the
+    /// list has focus does this run and copy the file.
+    @objc func copy(_ sender: Any?) {
         guard let entry = selectedEntry() else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -564,14 +569,18 @@ final class BrowserViewController: NSViewController {
         transfer(kind: .move)
     }
 
+    /// File URLs on the clipboard, from this application or any other.
+    private func pasteboardURLs() -> [URL] {
+        NSPasteboard.general.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
+    }
+
     private func transfer(kind: Transfer.Kind) {
         guard !transfers.isRunning else {
             statusLabel.stringValue = "one transfer at a time, for now"
             return
         }
 
-        let sources =
-            NSPasteboard.general.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
+        let sources = pasteboardURLs()
         guard !sources.isEmpty else {
             statusLabel.stringValue = "nothing on the clipboard to paste"
             return
@@ -706,6 +715,20 @@ extension BrowserViewController: NSMenuItemValidation {
         }
         if menuItem.action == #selector(goBack(_:)) { return history.canGoBack }
         if menuItem.action == #selector(goForward(_:)) { return history.canGoForward }
+
+        // Greyed out rather than beeping. A paste with an empty clipboard and a
+        // rename with nothing selected are both questions with no answer.
+        if menuItem.action == #selector(paste(_:))
+            || menuItem.action == #selector(pasteAsMove(_:))
+        {
+            return !transfers.isRunning && !pasteboardURLs().isEmpty
+        }
+        if menuItem.action == #selector(copy(_:))
+            || menuItem.action == #selector(renameSelection(_:))
+            || menuItem.action == #selector(moveToTrash(_:))
+        {
+            return selectedEntry() != nil
+        }
         if menuItem.action == #selector(toggleFavourite(_:)) {
             menuItem.title =
                 favourites.contains(directory)
