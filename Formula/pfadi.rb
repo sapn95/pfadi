@@ -10,8 +10,8 @@ class Pfadi < Formula
   # url and sha256 point at the last release, not at VERSION. They trail it by
   # design: the checksum of a tag's tarball cannot be known before the tag
   # exists, so the release workflow rewrites both once it does.
-  url "https://github.com/sapn95/pfadi/archive/refs/tags/v0.7.0.tar.gz"
-  sha256 "e9e2d8b3b368a94ddd20f1118c54135f1a334260c624440f34417677ddf59c70"
+  url "https://github.com/sapn95/pfadi/archive/refs/tags/v0.8.0.tar.gz"
+  sha256 "72dad7a7d4213e8c34e0500d4b1f1fa93c9a0944ea514d05fee6c7bb2276be06"
   license "MIT"
   head "https://github.com/sapn95/pfadi.git", branch: "main"
 
