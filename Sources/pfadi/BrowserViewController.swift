@@ -170,6 +170,13 @@ final class BrowserViewController: NSViewController {
             searchField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             searchField.widthAnchor.constraint(equalToConstant: 170),
 
+            // A floor under the list. Without one the whole view's fitting
+            // size is the path row plus the status line, AppKit sizes the
+            // window to that, and the frame autosave then remembers a window
+            // sixty points tall for every launch after.
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240),
+            view.widthAnchor.constraint(greaterThanOrEqualToConstant: 480),
+
             scrollView.topAnchor.constraint(equalTo: pathRow.bottomAnchor, constant: 10),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
