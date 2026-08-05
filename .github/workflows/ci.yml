@@ -32,6 +32,11 @@ jobs:
         run: swift build -v
       - name: self-test
         run: swift run pfadi-selftest
+      - name: layout check
+        # Builds the real window off-screen and measures it. A layout mistake is
+        # invisible to a build and to the tests: the application launches, and
+        # the window is sixty points tall with the filter off the edge.
+        run: swift run pfadi --layout-check
       - name: assemble the .app bundle
         run: ./scripts/make-app.sh
       - name: the bundle is actually launchable

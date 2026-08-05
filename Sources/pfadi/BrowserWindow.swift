@@ -38,6 +38,10 @@ final class BrowserWindow {
             backing: .buffered,
             defer: false
         )
+        // A browser has no business being sixty points tall. Without a floor
+        // the window can be dragged, or laid out, down to nothing, and the
+        // frame autosave then restores that nothing on every launch after.
+        window.contentMinSize = NSSize(width: 520, height: 320)
         window.contentViewController = split
         window.toolbar = toolbar.makeToolbar()
         window.toolbarStyle = .unified

@@ -44,7 +44,7 @@ space   Quick Look, and again to close it
 ⌘[ ⌘]   back and forward, with arrows in the toolbar to match
 ⌘↑      enclosing folder
 ⇧⌘H     home
-⇧⌘.     show hidden files
+⇧⌘.     hide the dotfiles, which are shown by default
 ⌘R      refresh
 ⌘D      add this folder to the sidebar, or take it back out
 ⇧⌘N     new folder, with the cursor already in its name
@@ -194,9 +194,11 @@ what is **inside** the folder you are in, so stepping down is a click rather
 than a scroll through the list. Clicking a component says what is beside it,
 clicking the arrow says what is under it, and both of those are things people
 want from a path. Double-clicking a component goes there, which is what a double click means
-everywhere else. Typing is the button at the end of the path row and ⇧⌘G, both
-deliberate acts rather than the second half of a click somebody was already
-making. The button says which of the two it will give you next rather than
+everywhere else. Typing is a double click on the bar itself rather than on a folder, the button
+at the end of the path row, or ⇧⌘G. The bar is drawn with the same fill and
+edge as the text field it swaps with, so the two read as one slot that changes
+rather than as two different things, and so that it looks like something you
+can click at all. The button says which of the two it will give you next rather than
 which one you are looking at, and both directions go through giving up focus,
 so there is one route back rather than two that can disagree. A single click that misses a component does nothing: swapping on a
 stray click is a one-way door, because only editing ending puts the bar back
@@ -316,8 +318,18 @@ required, which is the whole reason the test target looks the way it does.
 ```bash
 swift build                  # the binary
 swift run pfadi-selftest     # the tests
+swift run pfadi --layout-check   # the window, measured
 ./scripts/make-app.sh        # build/Pfadi.app
 ```
+
+The layout check exists because a layout mistake is invisible to everything
+else. The build is green, the tests pass, the application launches, and the
+window is sixty points tall with the filter pushed off the edge. It builds the
+real window off-screen at two sizes, forces a layout pass, and asserts that
+every control has a size, sits inside the view, and does not overlap the next
+one. It also fails on an **ambiguous** layout, which is the one that let a
+button drift to the far side of the row: a view free to be in two places will
+eventually pick the wrong one.
 
 There is no Developer ID signature and no notarisation, which is why the
 Homebrew formula compiles instead of downloading. A prebuilt copy handed to
@@ -363,6 +375,7 @@ release workflow refuses to run when the tag disagrees with it.
 | `Sources/PfadiCore` | Directory listing, sorting, path completion, type-ahead, the watcher, the favourites, the preferences, the start-folder rules. No AppKit, so it can be tested. |
 | `Sources/pfadi` | The window, the table, the path field, the menu bar. AppKit, built in code, no nib files. |
 | `Tests/PfadiSelfTest` | The tests, as a plain executable. |
+| `Sources/pfadi/LayoutCheck.swift` | `pfadi --layout-check`: builds the window off-screen and measures it. |
 | `scripts/make-app.sh` | Wraps the SwiftPM binary in a `.app` bundle. |
 | `scripts/make-icon.swift` | Draws the icon at every size macOS asks for. |
 | `Formula/pfadi.rb` | The Homebrew formula, copied into the tap on release. |
