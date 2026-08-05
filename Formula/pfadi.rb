@@ -57,7 +57,7 @@ class Pfadi < Formula
 
         pfadi-instead-of-finder --apply
 
-      It links the app into ~/Applications so Spotlight finds it, and makes
+      It puts a small launcher in ~/Applications so Spotlight finds it, and makes
       `open .` in a terminal go to pfadi. `pfadi-instead-of-finder --undo` puts
       everything back.
 
