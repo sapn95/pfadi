@@ -183,11 +183,12 @@ halfway through a long copy, with no idea what has already happened, is what
 makes people stop trusting a file manager.
 
 The path along the top is clickable. `/Users/sapn/git/pfadi` is four
-components, and clicking `git` offers everything in `~` — including `git`
-itself, ticked, so the menu says where you are as well as where you could go.
-Past eight entries the menu grows a filter field at the top, already focused,
-because a filter you have to click into first is slower than scrolling past the
-thing you wanted.
+components, and clicking `git` offers everything in `~`.
+Every one of those menus has the filter at the top, already focused, whichever
+part of the path was clicked and however few folders are in it. A menu that is
+sometimes a plain list and sometimes a searchable one means looking first and
+reacting second, every single time; the same shape every time means typing
+straight away without checking what you got.
 
 The arrow sitting right after the last component goes the other way: it lists
 what is **inside** the folder you are in, so stepping down is a click rather

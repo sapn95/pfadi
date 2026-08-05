@@ -184,40 +184,42 @@ final class PathBar: NSView {
             onChoose?(url)
             return
         }
-        present(folders(in: url.deletingLastPathComponent()), ticking: url, below: sender)
+        present(folders(in: url.deletingLastPathComponent()), below: sender)
     }
 
     @objc private func descendClicked() {
         guard let directory else { return }
-        present(folders(in: directory), ticking: nil, below: descend)
+        present(folders(in: directory), below: descend)
     }
 
     @objc private func overflowClicked() {
         let urls = componentButtons.filter(\.isHidden)
             .compactMap { $0.identifier?.rawValue }
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
-        present(urls, ticking: nil, below: overflow)
+        present(urls, below: overflow)
     }
 
     // MARK: - Menus
 
-    private func present(_ folders: [URL], ticking: URL?, below anchor: NSView) {
+    /// One menu, whichever part of the path was clicked.
+    ///
+    /// Always with the filter, never with a tick. A menu that is sometimes a
+    /// plain list and sometimes a searchable one means looking first and
+    /// reacting second, every time. The same shape every time means typing
+    /// straight away without checking what you got.
+    private func present(_ folders: [URL], below anchor: NSView) {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        // Only worth a filter when there is something to filter. A search box
-        // above four items is furniture.
-        let filter = folders.count > 8 ? FilterView() : nil
-        if let filter {
-            let item = NSMenuItem()
-            item.view = filter
-            menu.addItem(item)
-            menu.addItem(.separator())
-        }
+        let filter = FilterView()
+        let filterItem = NSMenuItem()
+        filterItem.view = filter
+        menu.addItem(filterItem)
+        menu.addItem(.separator())
 
         let build: (String) -> Void = { [weak self] text in
             guard let self else { return }
-            let keep = filter == nil ? 0 : 2
+            let keep = 2
             while menu.numberOfItems > keep { menu.removeItem(at: keep) }
 
             let matching =
@@ -245,13 +247,10 @@ final class PathBar: NSView {
                 item.representedObject = folder
                 item.image = NSWorkspace.shared.icon(forFile: folder.path)
                 item.image?.size = NSSize(width: 16, height: 16)
-                // The one that was clicked is ticked, so the menu says where
-                // you are as well as where you could go.
-                item.state = folder.path == ticking?.path ? .on : .off
             }
         }
 
-        filter?.onChange = build
+        filter.onChange = build
         build("")
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
     }
