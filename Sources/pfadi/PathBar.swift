@@ -100,14 +100,15 @@ final class PathBar: NSView {
 
         guard let directory else { return }
 
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        // All the way to the root. Stopping at home hides the folders above
+        // it, and a path that quietly begins in the middle is a path you have
+        // to think about before you can trust it. When it does not fit, the
+        // leading folders fold into the ellipsis, which still opens them.
         var chain: [URL] = []
         var current = directory.standardizedFileURL
         while true {
             chain.append(current)
-            // Stop at home: nobody thinks of their own folder as three levels
-            // down, and the rest of the chain from the volume is noise.
-            if current.path == home.path || current.path == "/" { break }
+            if current.path == "/" { break }
             let parent = current.deletingLastPathComponent()
             if parent.path == current.path { break }
             current = parent
