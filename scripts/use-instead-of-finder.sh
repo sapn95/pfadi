@@ -28,6 +28,10 @@ if [ ! -d "${BUNDLE:-}" ]; then
 	exit 1
 fi
 
+# The command rather than the bundle: it is what stays correct across an
+# upgrade, because brew rewrites it to point at whatever it just installed.
+COMMAND="$(command -v pfadi || echo "/usr/bin/open -a $BUNDLE")"
+
 MODE="${1:---dry-run}"
 MARKER_START="# >>> pfadi instead of finder >>>"
 MARKER_END="# <<< pfadi instead of finder <<<"
@@ -58,12 +62,60 @@ profile_for_shell() {
 
 PROFILE="$(profile_for_shell)"
 
+# A tiny bundle in ~/Applications whose only job is to start the real one.
+#
+# A symlink here is not indexed: Spotlight indexes ~/Applications but not
+# Homebrew's Cellar, and a link gives it nothing of its own to look at. A copy
+# is indexed and then goes stale the next time brew upgrades the real thing,
+# which is worse, because it keeps launching a version that is no longer there.
+#
+# A launcher is neither. It is found because it lives here, and it can never be
+# out of date because it does not contain the application, only the command
+# that starts whichever one is installed.
+make_launcher() {
+	rm -rf "$LINK"
+	mkdir -p "$LINK/Contents/MacOS" "$LINK/Contents/Resources"
+
+	printf '#!/bin/sh\nexec %s "$@"\n' "$COMMAND" >"$LINK/Contents/MacOS/launch"
+	chmod +x "$LINK/Contents/MacOS/launch"
+
+	if [ -f "$BUNDLE/Contents/Resources/Icon.icns" ]; then
+		cp "$BUNDLE/Contents/Resources/Icon.icns" "$LINK/Contents/Resources/Icon.icns"
+	fi
+
+	cat >"$LINK/Contents/Info.plist" <<-PLIST
+		<?xml version="1.0" encoding="UTF-8"?>
+		<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+		<plist version="1.0">
+		<dict>
+			<key>CFBundleExecutable</key>
+			<string>launch</string>
+			<key>CFBundleIdentifier</key>
+			<string>io.github.sapn95.pfadi.launcher</string>
+			<key>CFBundleName</key>
+			<string>pfadi</string>
+			<key>CFBundleIconFile</key>
+			<string>Icon</string>
+			<key>CFBundlePackageType</key>
+			<string>APPL</string>
+			<key>LSUIElement</key>
+			<true/>
+		</dict>
+		</plist>
+	PLIST
+
+	# Tell Launch Services about it now rather than whenever it notices.
+	local lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+	[ -x "$lsregister" ] && "$lsregister" -f "$LINK" >/dev/null 2>&1
+	return 0
+}
+
 report() {
 	echo "pfadi:   $BUNDLE"
 	echo "shell:   $PROFILE"
 	echo
 	echo "It will:"
-	echo "  1. link it into ~/Applications, so Spotlight and ⌘Tab find it"
+	echo "  1. put a small launcher in ~/Applications, so Spotlight finds it"
 	echo "  2. make \`open .\` in a terminal open pfadi instead of Finder"
 	echo "  3. leave everything else alone"
 	echo
@@ -79,8 +131,8 @@ case "$MODE" in
 		report
 		echo
 		mkdir -p "$HOME/Applications"
-		ln -sfn "$BUNDLE" "$LINK"
-		echo "==> linked $LINK"
+		make_launcher
+		echo "==> put $LINK where Spotlight looks"
 
 		if grep -qF "$MARKER_START" "$PROFILE" 2>/dev/null; then
 			echo "==> $PROFILE already has the shell function"

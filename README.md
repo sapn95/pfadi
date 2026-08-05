@@ -257,7 +257,7 @@ pfadi-instead-of-finder --apply
 ```
 
 The second command is the way off Finder, and it says what it cannot do rather
-than quietly doing half the job. It links the app into `~/Applications` so
+than quietly doing half the job. It puts a small launcher in `~/Applications` so
 Spotlight and ⌘Tab find it, and makes `open .` in a terminal open pfadi.
 `open report.pdf` is untouched and still goes to whatever owns a PDF.
 `pfadi-instead-of-finder --undo` puts both back. Run it with no arguments to
@@ -286,32 +286,13 @@ pfadi ~/git     # somewhere else
 The command returns immediately rather than holding the terminal, and a window
 that is already open is reused instead of a second one appearing.
 
-To have it appear in Spotlight, Launchpad and `open -a`, link the bundle into
-your applications folder:
-
-```bash
-ln -sfn "$(brew --prefix pfadi)/Pfadi.app" ~/Applications/Pfadi.app
-```
-
-## The mark
-
-<img src="assets/logo.svg" alt="" width="88" align="left">
-
-Two characters, side by side. The white shape is a **forward slash**, the one
-character every path on this system is made of. The amber block is a **text
-cursor**, the kind that sits blinking in a terminal waiting for you to type.
-
-Put together they read `/▮`: a path, and the place you type one. That is the
-entire application in two shapes, and it is the thing macOS itself refuses to
-give you.
-
-Nothing alpine in it. No cross, no edelweiss, no mountain.
-
-The icon is drawn by [`scripts/make-icon.swift`](scripts/make-icon.swift)
-rather than checked in as a bitmap, so it stays diffable, the palette lives in
-one enum, and every size macOS asks for is drawn rather than resampled.
-[`assets/logo.svg`](assets/logo.svg) is the same geometry as a vector, for
-places like this one that want to scale it.
+The launcher in `~/Applications` is a bundle whose only job is to run
+`pfadi`. A symlink there is not indexed, because Spotlight indexes
+`~/Applications` but not Homebrew's Cellar and a link gives it nothing of its
+own to look at. A copy is indexed and then goes stale the next time brew
+upgrades the real thing, which is worse: it keeps launching a version that is
+no longer there. A launcher is neither, because it does not contain the
+application, only the command that starts whichever one is installed.
 
 ## Build
 
