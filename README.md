@@ -35,8 +35,7 @@ So: one pane, one path field, keyboard first.
 click    a path component: everything beside it, with a filter
 2×click  a path component: go there
 ›        the arrow right after the last one: everything inside it
-2×click  the bar itself, not a folder: type a path instead
-⇧⌘G     the same, from the keyboard
+⇧⌘G     type a path instead
 button   at the end of the path row, switching between the two
 tab     walk to the next match, ⇧tab back, escape to undo
 return  accept the match, then return again to go there
@@ -45,7 +44,7 @@ space   Quick Look, and again to close it
 ⌘[ ⌘]   back and forward, with arrows in the toolbar to match
 ⌘↑      enclosing folder
 ⇧⌘H     home
-⇧⌘.     show hidden files
+⇧⌘.     hide the dotfiles, which are shown by default
 ⌘R      refresh
 ⌘D      add this folder to the sidebar, or take it back out
 ⇧⌘N     new folder, with the cursor already in its name
@@ -195,11 +194,11 @@ what is **inside** the folder you are in, so stepping down is a click rather
 than a scroll through the list. Clicking a component says what is beside it,
 clicking the arrow says what is under it, and both of those are things people
 want from a path. Double-clicking a component goes there, which is what a double click means
-everywhere else. Typing is a double click on the empty part of the row, the button at its right
-end, or ⇧⌘G. All of it lives in one box: the folders and the arrow on the left,
-the button always in the same place on the right, and the box itself staying
-put while its contents change. It is drawn like the text field it used to be,
-because it is the same slot doing a different job rather than a new thing. The button says which of the two it will give you next rather than
+everywhere else. Typing is a double click on the bar itself rather than on a folder, the button
+at the end of the path row, or ⇧⌘G. The bar is drawn with the same fill and
+edge as the text field it swaps with, so the two read as one slot that changes
+rather than as two different things, and so that it looks like something you
+can click at all. The button says which of the two it will give you next rather than
 which one you are looking at, and both directions go through giving up focus,
 so there is one route back rather than two that can disagree. A single click that misses a component does nothing: swapping on a
 stray click is a one-way door, because only editing ending puts the bar back

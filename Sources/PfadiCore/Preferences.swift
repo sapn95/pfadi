@@ -30,11 +30,18 @@ public final class Preferences {
         set { store.set(newValue, forKey: Key.lastDirectory) }
     }
 
-    /// Whether dotfiles are shown. Read through `object` rather than `bool`,
-    /// because a missing value and an explicit `false` are the same to
-    /// `bool(forKey:)` and only one of them should be overridable by a default.
+    /// Whether dotfiles are shown, and they are unless somebody says otherwise.
+    ///
+    /// This is a tool for people with opinions about .gitignore and .zshrc.
+    /// Hiding those by default means the first thing everybody does is find
+    /// the switch.
+    ///
+    /// Read through `object` rather than `bool`, because a missing value and an
+    /// explicit `false` are the same to `bool(forKey:)`, and with the default
+    /// now true that difference is the whole point: turning it off has to
+    /// survive a relaunch.
     public var showHidden: Bool {
-        get { store.object(forKey: Key.showHidden) as? Bool ?? false }
+        get { store.object(forKey: Key.showHidden) as? Bool ?? true }
         set { store.set(newValue, forKey: Key.showHidden) }
     }
 

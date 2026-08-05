@@ -22,7 +22,7 @@ enum PreferenceSuites {
         Harness.suite("preferences: nothing set yet") {
             let preferences = Preferences(store: MemoryStore())
             Harness.expect(preferences.lastDirectory == nil, "no folder remembered")
-            Harness.expect(!preferences.showHidden, "dotfiles stay hidden by default")
+            Harness.expect(preferences.showHidden, "dotfiles are shown by default")
         }
 
         Harness.suite("preferences: a choice survives") {
@@ -42,12 +42,12 @@ enum PreferenceSuites {
         Harness.suite("preferences: turning a choice back off sticks too") {
             let store = MemoryStore()
             let preferences = Preferences(store: store)
-            preferences.showHidden = true
             preferences.showHidden = false
 
-            // The bug this guards: reading through bool(forKey:) cannot tell an
-            // explicit false from a value that was never written, so a default
-            // of true would silently undo the person's choice on every launch.
+            // The bug this guards, and it is live now that the default is true:
+            // bool(forKey:) cannot tell an explicit false from a value that was
+            // never written, so turning dotfiles off would be undone on every
+            // single launch.
             Harness.expect(
                 store.object(forKey: "showHidden") as? Bool == false,
                 "false is written down, not just left absent")

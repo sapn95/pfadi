@@ -55,10 +55,9 @@ final class BrowserViewController: NSViewController {
     /// Switches the path row between the clickable bar and the text field. A
     /// button, because a keystroke and a double click are both things you have
     /// to be told about and a visible control is not.
+    private let pathToggle = NSButton()
     /// The arrow after the last component: what is inside this folder.
     private let pathDescend = NSButton()
-    /// The box the three of them live in.
-    private lazy var pathRow = PathRow(bar: pathBar, descend: pathDescend, field: pathField)
     private let pathField = PathField()
     private let searchField = NSSearchField()
     private let tableView = FileTableView()
@@ -102,14 +101,15 @@ final class BrowserViewController: NSViewController {
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 860, height: 560))
 
+        pathField.translatesAutoresizingMaskIntoConstraints = false
         pathField.target = self
         pathField.action = #selector(pathFieldCommitted(_:))
+        pathBar.translatesAutoresizingMaskIntoConstraints = false
         pathBar.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         pathBar.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         pathDescend.setContentHuggingPriority(.required, for: .horizontal)
         pathBar.onChoose = { [weak self] url in self?.navigate(to: url) }
-        pathBar.onEdit = { [weak self] in self?.togglePathEditing(nil) }
-        pathRow.onEdit = { [weak self] in self?.togglePathEditing(nil) }
+        pathBar.onEdit = { [weak self] in self?.focusPathField(nil) }
         pathField.onEndEditing = { [weak self] in
             guard let self else { return }
             // Whatever half-typed path is in there described a place nobody
@@ -143,6 +143,7 @@ final class BrowserViewController: NSViewController {
 
         configureTable()
 
+        pathDescend.translatesAutoresizingMaskIntoConstraints = false
         pathDescend.bezelStyle = .accessoryBar
         pathDescend.isBordered = false
         pathDescend.image = NSImage(
@@ -151,7 +152,16 @@ final class BrowserViewController: NSViewController {
         pathDescend.target = self
         pathDescend.action = #selector(descendFromPath(_:))
 
-        view.addSubview(pathRow)
+        pathToggle.translatesAutoresizingMaskIntoConstraints = false
+        pathToggle.bezelStyle = .accessoryBar
+        pathToggle.isBordered = false
+        pathToggle.target = self
+        pathToggle.action = #selector(togglePathEditing(_:))
+
+        view.addSubview(pathToggle)
+        view.addSubview(pathDescend)
+        view.addSubview(pathBar)
+        view.addSubview(pathField)
         view.addSubview(searchField)
         view.addSubview(scrollView)
         view.addSubview(statusLabel)
@@ -161,12 +171,32 @@ final class BrowserViewController: NSViewController {
             // The safe area, not the view: the window is fullSizeContentView so
             // that the sidebar's translucency can reach the top, which means
             // the content pane starts underneath the title bar.
-            pathRow.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
-            pathRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            pathRow.trailingAnchor.constraint(equalTo: searchField.leadingAnchor, constant: -8),
+            pathBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            pathBar.leadingAnchor.constraint(equalTo: pathField.leadingAnchor),
+            pathBar.heightAnchor.constraint(equalTo: pathField.heightAnchor),
+            // Pinned to the bar, not merely kept left of the next thing. With
+            // only an upper bound the arrow drifted to the far right, which is
+            // nowhere near the folder it belongs to.
+            pathDescend.leadingAnchor.constraint(
+                equalTo: pathBar.trailingAnchor, constant: 2),
 
-            searchField.centerYAnchor.constraint(equalTo: pathRow.centerYAnchor),
+            pathDescend.centerYAnchor.constraint(equalTo: pathBar.centerYAnchor),
+            pathDescend.widthAnchor.constraint(equalToConstant: 22),
+            pathDescend.trailingAnchor.constraint(
+                lessThanOrEqualTo: pathToggle.leadingAnchor, constant: -4),
+
+            pathField.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            pathField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            pathField.trailingAnchor.constraint(
+                equalTo: pathToggle.leadingAnchor, constant: -4),
+
+            pathToggle.centerYAnchor.constraint(equalTo: pathField.centerYAnchor),
+            pathToggle.trailingAnchor.constraint(
+                equalTo: searchField.leadingAnchor, constant: -8),
+            pathToggle.widthAnchor.constraint(equalToConstant: 24),
+
+            searchField.centerYAnchor.constraint(equalTo: pathField.centerYAnchor),
             searchField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             searchField.widthAnchor.constraint(equalToConstant: 170),
 
@@ -177,7 +207,7 @@ final class BrowserViewController: NSViewController {
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240),
             view.widthAnchor.constraint(greaterThanOrEqualToConstant: 480),
 
-            scrollView.topAnchor.constraint(equalTo: pathRow.bottomAnchor, constant: 10),
+            scrollView.topAnchor.constraint(equalTo: pathField.bottomAnchor, constant: 10),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -6),
@@ -417,7 +447,16 @@ final class BrowserViewController: NSViewController {
     /// The bar and the field share a slot. The bar is what you look at and
     /// click; the field is what you type into, and it appears when you ask.
     private func showPathField(_ editing: Bool) {
-        pathRow.showEditing(editing)
+        pathBar.isHidden = editing
+        pathDescend.isHidden = editing
+        pathField.isHidden = !editing
+
+        // The button says what pressing it will do next, not what is on screen.
+        pathToggle.image = NSImage(
+            systemSymbolName: editing ? "list.bullet.indent" : "character.cursor.ibeam",
+            accessibilityDescription: editing ? "Show the path as components" : "Type a path")
+        pathToggle.toolTip =
+            editing ? "Back to the clickable path" : "Type a path instead (⇧⌘G)"
     }
 
     @objc private func descendFromPath(_ sender: Any?) {
@@ -425,7 +464,7 @@ final class BrowserViewController: NSViewController {
     }
 
     @objc private func togglePathEditing(_ sender: Any?) {
-        if !pathRow.isEditing {
+        if pathField.isHidden {
             focusPathField(nil)
         } else {
             // Giving up focus is what ends editing, and ending editing is what
