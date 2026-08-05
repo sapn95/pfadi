@@ -182,8 +182,10 @@ inside a black box. Conflicts are all asked about up front: being interrupted
 halfway through a long copy, with no idea what has already happened, is what
 makes people stop trusting a file manager.
 
-The path along the top is clickable. `/Users/sapn/git/pfadi` is four
-components, and clicking `git` offers everything in `~`.
+The path along the top is clickable, all the way to the root: a path that
+quietly begins in the middle is one you have to think about before you can
+trust it. `/Users/sapn/git/pfadi` is five folders, and clicking `git` offers
+everything in `/Users/sapn`.
 Every one of those menus has the filter at the top, already focused, whichever
 part of the path was clicked and however few folders are in it. A menu that is
 sometimes a plain list and sometimes a searchable one means looking first and
