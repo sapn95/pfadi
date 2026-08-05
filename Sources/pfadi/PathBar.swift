@@ -36,13 +36,6 @@ final class PathBar: NSPathControl {
             "Click a folder for what is beside it, double-click to go there. "
             + "Double-click the bar itself to type a path."
 
-        // Drawn as a control rather than as loose text. Before this it read as
-        // a label somebody had left above the list, and nothing about it said
-        // it could be clicked.
-        wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.borderWidth = 1
-        applyControlColours()
         target = self
         action = #selector(componentClicked)
         // Nothing is dropped on the bar itself; the list and the sidebar take
@@ -58,6 +51,14 @@ final class PathBar: NSPathControl {
     /// Double click on a component goes there. Typing is the button at the end
     /// of the row and ⇧⌘G, which are both deliberate acts rather than the
     /// second half of a click somebody was already making.
+    /// A single click on a folder: what else is at that level.
+    @objc private func componentClicked() {
+        // A click that landed on the control but not on a folder does nothing.
+        // The box around this takes those, and turns a double one into typing.
+        guard let item = clickedPathItem, let url = item.url else { return }
+        presentSiblings(of: url)
+    }
+
     @objc private func componentOpened() {
         // A double click that missed every folder is a double click on the bar,
         // and the bar is the thing that turns into a text field.
@@ -66,30 +67,6 @@ final class PathBar: NSPathControl {
             return
         }
         onChoose?(url)
-    }
-
-    /// The same fill and edge the text field has, so the two read as one slot
-    /// that switches rather than as two different things.
-    private func applyControlColours() {
-        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
-        layer?.borderColor = NSColor.separatorColor.cgColor
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        // CGColor does not follow a change between light and dark, so the
-        // colours are taken again rather than left as whatever they were.
-        effectiveAppearance.performAsCurrentDrawingAppearance { [weak self] in
-            self?.applyControlColours()
-        }
-    }
-
-    @objc private func componentClicked() {
-        // A click that landed on the control but not on a component does
-        // nothing. It used to swap in the text field, which is a one-way door
-        // if the field never takes focus.
-        guard let item = clickedPathItem, let url = item.url else { return }
-        presentSiblings(of: url)
     }
 
     /// What is inside the folder on screen, rather than what is beside it.

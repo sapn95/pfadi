@@ -195,11 +195,11 @@ what is **inside** the folder you are in, so stepping down is a click rather
 than a scroll through the list. Clicking a component says what is beside it,
 clicking the arrow says what is under it, and both of those are things people
 want from a path. Double-clicking a component goes there, which is what a double click means
-everywhere else. Typing is a double click on the bar itself rather than on a folder, the button
-at the end of the path row, or ⇧⌘G. The bar is drawn with the same fill and
-edge as the text field it swaps with, so the two read as one slot that changes
-rather than as two different things, and so that it looks like something you
-can click at all. The button says which of the two it will give you next rather than
+everywhere else. Typing is a double click on the empty part of the row, the button at its right
+end, or ⇧⌘G. All of it lives in one box: the folders and the arrow on the left,
+the button always in the same place on the right, and the box itself staying
+put while its contents change. It is drawn like the text field it used to be,
+because it is the same slot doing a different job rather than a new thing. The button says which of the two it will give you next rather than
 which one you are looking at, and both directions go through giving up focus,
 so there is one route back rather than two that can disagree. A single click that misses a component does nothing: swapping on a
 stray click is a one-way door, because only editing ending puts the bar back
