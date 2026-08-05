@@ -14,6 +14,10 @@ final class PathBar: NSPathControl {
     /// Whether hidden folders appear in the menus. Follows the list.
     var showHidden = false
 
+    /// Asked for by a double click on the bar itself rather than on a folder:
+    /// somebody who wants to type a path.
+    var onEdit: (() -> Void)?
+
     /// The folder being shown.
     ///
     /// NSPathControlItem carries a read-only URL, so items cannot be built by
@@ -28,7 +32,17 @@ final class PathBar: NSPathControl {
         pathStyle = .standard
         focusRingType = .none
         doubleAction = #selector(componentOpened)
-        toolTip = "Click a folder to see what is beside it. Double-click to go there."
+        toolTip =
+            "Click a folder for what is beside it, double-click to go there. "
+            + "Double-click the bar itself to type a path."
+
+        // Drawn as a control rather than as loose text. Before this it read as
+        // a label somebody had left above the list, and nothing about it said
+        // it could be clicked.
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.borderWidth = 1
+        applyControlColours()
         target = self
         action = #selector(componentClicked)
         // Nothing is dropped on the bar itself; the list and the sidebar take
@@ -45,8 +59,29 @@ final class PathBar: NSPathControl {
     /// of the row and ⇧⌘G, which are both deliberate acts rather than the
     /// second half of a click somebody was already making.
     @objc private func componentOpened() {
-        guard let url = clickedPathItem?.url else { return }
+        // A double click that missed every folder is a double click on the bar,
+        // and the bar is the thing that turns into a text field.
+        guard let url = clickedPathItem?.url else {
+            onEdit?()
+            return
+        }
         onChoose?(url)
+    }
+
+    /// The same fill and edge the text field has, so the two read as one slot
+    /// that switches rather than as two different things.
+    private func applyControlColours() {
+        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        layer?.borderColor = NSColor.separatorColor.cgColor
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        // CGColor does not follow a change between light and dark, so the
+        // colours are taken again rather than left as whatever they were.
+        effectiveAppearance.performAsCurrentDrawingAppearance { [weak self] in
+            self?.applyControlColours()
+        }
     }
 
     @objc private func componentClicked() {

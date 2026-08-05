@@ -109,6 +109,7 @@ final class BrowserViewController: NSViewController {
         pathBar.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         pathDescend.setContentHuggingPriority(.required, for: .horizontal)
         pathBar.onChoose = { [weak self] url in self?.navigate(to: url) }
+        pathBar.onEdit = { [weak self] in self?.focusPathField(nil) }
         pathField.onEndEditing = { [weak self] in
             guard let self else { return }
             // Whatever half-typed path is in there described a place nobody

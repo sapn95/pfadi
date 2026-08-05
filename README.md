@@ -35,7 +35,8 @@ So: one pane, one path field, keyboard first.
 click    a path component: everything beside it, with a filter
 2×click  a path component: go there
 ›        the arrow right after the last one: everything inside it
-⇧⌘G     type a path instead
+2×click  the bar itself, not a folder: type a path instead
+⇧⌘G     the same, from the keyboard
 button   at the end of the path row, switching between the two
 tab     walk to the next match, ⇧tab back, escape to undo
 return  accept the match, then return again to go there
@@ -194,9 +195,11 @@ what is **inside** the folder you are in, so stepping down is a click rather
 than a scroll through the list. Clicking a component says what is beside it,
 clicking the arrow says what is under it, and both of those are things people
 want from a path. Double-clicking a component goes there, which is what a double click means
-everywhere else. Typing is the button at the end of the path row and ⇧⌘G, both
-deliberate acts rather than the second half of a click somebody was already
-making. The button says which of the two it will give you next rather than
+everywhere else. Typing is a double click on the bar itself rather than on a folder, the button
+at the end of the path row, or ⇧⌘G. The bar is drawn with the same fill and
+edge as the text field it swaps with, so the two read as one slot that changes
+rather than as two different things, and so that it looks like something you
+can click at all. The button says which of the two it will give you next rather than
 which one you are looking at, and both directions go through giving up focus,
 so there is one route back rather than two that can disagree. A single click that misses a component does nothing: swapping on a
 stray click is a one-way door, because only editing ending puts the bar back
