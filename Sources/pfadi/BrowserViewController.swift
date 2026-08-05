@@ -56,8 +56,6 @@ final class BrowserViewController: NSViewController {
     /// button, because a keystroke and a double click are both things you have
     /// to be told about and a visible control is not.
     private let pathToggle = NSButton()
-    /// The arrow after the last component: what is inside this folder.
-    private let pathDescend = NSButton()
     private let pathField = PathField()
     private let searchField = NSSearchField()
     private let tableView = FileTableView()
@@ -96,6 +94,29 @@ final class BrowserViewController: NSViewController {
         fatalError("pfadi builds its views in code")
     }
 
+    /// Where everything ended up, for the layout check.
+    ///
+    /// Named rather than returned as a list of views, so a failure says "the
+    /// filter ends outside the view" instead of naming a class.
+    struct LayoutReport {
+        let bounds: NSRect
+        let frames: [String: NSRect]
+    }
+
+    func layoutReport() -> LayoutReport {
+        view.layoutSubtreeIfNeeded()
+        var frames: [String: NSRect] = [
+            "path row": pathBar.isHidden ? pathField.frame : pathBar.frame,
+            "path toggle": pathToggle.frame,
+            "filter": searchField.frame,
+            "status": statusLabel.frame,
+        ]
+        if let scrollView = tableView.enclosingScrollView {
+            frames["list"] = scrollView.frame
+        }
+        return LayoutReport(bounds: view.bounds, frames: frames)
+    }
+
     // MARK: - View
 
     override func loadView() {
@@ -105,9 +126,6 @@ final class BrowserViewController: NSViewController {
         pathField.target = self
         pathField.action = #selector(pathFieldCommitted(_:))
         pathBar.translatesAutoresizingMaskIntoConstraints = false
-        pathBar.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        pathBar.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        pathDescend.setContentHuggingPriority(.required, for: .horizontal)
         pathBar.onChoose = { [weak self] url in self?.navigate(to: url) }
         pathBar.onEdit = { [weak self] in self?.focusPathField(nil) }
         pathField.onEndEditing = { [weak self] in
@@ -143,15 +161,6 @@ final class BrowserViewController: NSViewController {
 
         configureTable()
 
-        pathDescend.translatesAutoresizingMaskIntoConstraints = false
-        pathDescend.bezelStyle = .accessoryBar
-        pathDescend.isBordered = false
-        pathDescend.image = NSImage(
-            systemSymbolName: "chevron.right", accessibilityDescription: "Go into a folder")
-        pathDescend.toolTip = "What is inside this folder"
-        pathDescend.target = self
-        pathDescend.action = #selector(descendFromPath(_:))
-
         pathToggle.translatesAutoresizingMaskIntoConstraints = false
         pathToggle.bezelStyle = .accessoryBar
         pathToggle.isBordered = false
@@ -159,7 +168,6 @@ final class BrowserViewController: NSViewController {
         pathToggle.action = #selector(togglePathEditing(_:))
 
         view.addSubview(pathToggle)
-        view.addSubview(pathDescend)
         view.addSubview(pathBar)
         view.addSubview(pathField)
         view.addSubview(searchField)
@@ -173,17 +181,12 @@ final class BrowserViewController: NSViewController {
             // the content pane starts underneath the title bar.
             pathBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
             pathBar.leadingAnchor.constraint(equalTo: pathField.leadingAnchor),
+            // The bar fills the same slot as the field it swaps with. Its
+            // folders and its arrow sit at the left of it and the empty part is
+            // what takes a double click, so it needs the whole width rather
+            // than only as much as the folders happen to want.
+            pathBar.trailingAnchor.constraint(equalTo: pathField.trailingAnchor),
             pathBar.heightAnchor.constraint(equalTo: pathField.heightAnchor),
-            // Pinned to the bar, not merely kept left of the next thing. With
-            // only an upper bound the arrow drifted to the far right, which is
-            // nowhere near the folder it belongs to.
-            pathDescend.leadingAnchor.constraint(
-                equalTo: pathBar.trailingAnchor, constant: 2),
-
-            pathDescend.centerYAnchor.constraint(equalTo: pathBar.centerYAnchor),
-            pathDescend.widthAnchor.constraint(equalToConstant: 22),
-            pathDescend.trailingAnchor.constraint(
-                lessThanOrEqualTo: pathToggle.leadingAnchor, constant: -4),
 
             pathField.topAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
@@ -205,7 +208,11 @@ final class BrowserViewController: NSViewController {
             // window to that, and the frame autosave then remembers a window
             // sixty points tall for every launch after.
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 240),
-            view.widthAnchor.constraint(greaterThanOrEqualToConstant: 480),
+            // Low enough to fit inside the window's own minimum once the
+            // sidebar has taken its share. A floor that cannot be met is a
+            // constraint conflict, and AppKit resolves those by breaking
+            // something and carrying on quietly.
+            view.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
 
             scrollView.topAnchor.constraint(equalTo: pathField.bottomAnchor, constant: 10),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -448,7 +455,6 @@ final class BrowserViewController: NSViewController {
     /// click; the field is what you type into, and it appears when you ask.
     private func showPathField(_ editing: Bool) {
         pathBar.isHidden = editing
-        pathDescend.isHidden = editing
         pathField.isHidden = !editing
 
         // The button says what pressing it will do next, not what is on screen.
@@ -457,10 +463,6 @@ final class BrowserViewController: NSViewController {
             accessibilityDescription: editing ? "Show the path as components" : "Type a path")
         pathToggle.toolTip =
             editing ? "Back to the clickable path" : "Type a path instead (⇧⌘G)"
-    }
-
-    @objc private func descendFromPath(_ sender: Any?) {
-        pathBar.presentContents(from: pathDescend)
     }
 
     @objc private func togglePathEditing(_ sender: Any?) {

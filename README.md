@@ -318,8 +318,18 @@ required, which is the whole reason the test target looks the way it does.
 ```bash
 swift build                  # the binary
 swift run pfadi-selftest     # the tests
+swift run pfadi --layout-check   # the window, measured
 ./scripts/make-app.sh        # build/Pfadi.app
 ```
+
+The layout check exists because a layout mistake is invisible to everything
+else. The build is green, the tests pass, the application launches, and the
+window is sixty points tall with the filter pushed off the edge. It builds the
+real window off-screen at two sizes, forces a layout pass, and asserts that
+every control has a size, sits inside the view, and does not overlap the next
+one. It also fails on an **ambiguous** layout, which is the one that let a
+button drift to the far side of the row: a view free to be in two places will
+eventually pick the wrong one.
 
 There is no Developer ID signature and no notarisation, which is why the
 Homebrew formula compiles instead of downloading. A prebuilt copy handed to
@@ -365,6 +375,7 @@ release workflow refuses to run when the tag disagrees with it.
 | `Sources/PfadiCore` | Directory listing, sorting, path completion, type-ahead, the watcher, the favourites, the preferences, the start-folder rules. No AppKit, so it can be tested. |
 | `Sources/pfadi` | The window, the table, the path field, the menu bar. AppKit, built in code, no nib files. |
 | `Tests/PfadiSelfTest` | The tests, as a plain executable. |
+| `Sources/pfadi/LayoutCheck.swift` | `pfadi --layout-check`: builds the window off-screen and measures it. |
 | `scripts/make-app.sh` | Wraps the SwiftPM binary in a `.app` bundle. |
 | `scripts/make-icon.swift` | Draws the icon at every size macOS asks for. |
 | `Formula/pfadi.rb` | The Homebrew formula, copied into the tap on release. |
