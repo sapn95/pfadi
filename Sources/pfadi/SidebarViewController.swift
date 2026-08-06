@@ -124,6 +124,24 @@ final class SidebarViewController: NSViewController {
         }
     }
 
+    /// Selects the row for a folder, for the checks.
+    ///
+    /// By URL rather than by title: the same folder can appear under Recents
+    /// and under Favourites, and two rows with one name is exactly the case a
+    /// check should not be ambiguous about.
+    ///
+    /// Selecting is all it does. AppKit posts the selection notification for a
+    /// programmatic change too, so calling the delegate here as well would run
+    /// the navigation twice.
+    @discardableResult
+    func clickRow(at url: URL) -> Bool {
+        guard let index = rows.firstIndex(where: { $0.url?.path == url.path }) else {
+            return false
+        }
+        tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+        return true
+    }
+
     func reload(rediscover: Bool = false) {
         if rediscover || discovered == nil {
             discovered = (favourites.cloudLocations(), favourites.volumes())

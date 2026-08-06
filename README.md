@@ -258,12 +258,19 @@ both ship inside the full Xcode install, so `swift test` cannot run on a machine
 with only the Command Line Tools. A 15 GB download is a steep price for three
 hundred assertions.
 
-**There is a layout check.** A layout mistake is invisible to a build, to the
+**There is a window check.** A layout mistake is invisible to a build, to the
 tests and to a launch: the application starts, and the window is sixty points
 tall with the filter off the edge. `--layout-check` builds the real window
 off-screen at two sizes, measures every control, and fails on an **ambiguous**
 layout, because a view free to be in two places will eventually pick the wrong
 one.
+
+It then clicks through it. The root was unreachable for three versions while
+the model that knew about it was correct the whole time, so reading the model
+proved nothing. These go through the same code a click runs: the path bar's own
+button action, the sidebar's own selection handler. They also wait for the
+listing, because reading a folder happens on a worker and arrives on the main
+queue, and a check with no run loop turning sees an empty folder every time.
 
 **The path bar is buttons, not `NSPathControl`.** That control reports the same
 intrinsic width whatever it shows, sixty points for one folder or for ten, so

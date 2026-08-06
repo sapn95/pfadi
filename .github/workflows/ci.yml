@@ -32,10 +32,12 @@ jobs:
         run: swift build -v
       - name: self-test
         run: swift run pfadi-selftest
-      - name: layout check
-        # Builds the real window off-screen and measures it. A layout mistake is
-        # invisible to a build and to the tests: the application launches, and
-        # the window is sixty points tall with the filter off the edge.
+      - name: window and behaviour check
+        # Builds the real window off-screen, measures it, and then clicks
+        # through it. A layout mistake is invisible to a build and to the
+        # tests: the application launches, and the window is sixty points tall
+        # with the filter off the edge. So is a behaviour one: the model can be
+        # right the whole time the thing on screen is unreachable.
         run: swift run pfadi --layout-check
       - name: assemble the .app bundle
         run: ./scripts/make-app.sh

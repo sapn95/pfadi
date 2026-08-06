@@ -125,6 +125,12 @@ final class BrowserWindow {
         return tab
     }
 
+    /// For the checks: selects the sidebar row for a folder.
+    @discardableResult
+    func clickSidebarRow(_ url: URL) -> Bool {
+        sidebar.clickRow(at: url)
+    }
+
     static var frontmost: BrowserWindow? {
         if let key = NSApp.keyWindow, let found = all.first(where: { $0.window === key }) {
             return found

@@ -37,6 +37,8 @@ final class BrowserViewController: NSViewController {
     /// Counts reload requests so a slow listing for a folder we have since
     /// left can be recognised and dropped.
     private var generation = 0
+    /// The folder the current rows were read from.
+    private var loadedDirectory: URL?
 
     private var history = NavigationHistory()
     private let infoPanel = InfoPanel()
@@ -104,6 +106,29 @@ final class BrowserViewController: NSViewController {
     }
 
     func pathComponents() -> [String] { pathBar.drawnComponents() }
+
+    // What the checks need to see, kept together and named for what they mean
+    // rather than for the views behind them.
+    var rowCount: Int { entries.count }
+    /// Which folder the rows on screen actually came from.
+    ///
+    /// Not the same as currentDirectory: that changes the moment you navigate,
+    /// and the rows arrive later. A check that waits for "some rows" is
+    /// satisfied by the folder it just left.
+    var listedDirectory: URL? { loadedDirectory }
+    var showsHiddenFiles: Bool { showHidden }
+    var isFavourite: Bool { favourites.contains(favouriteTarget()) }
+
+    func setFilter(_ text: String) {
+        searchField.stringValue = text
+        searchChanged(searchField)
+    }
+
+    /// Clicks a folder in the path bar, for the checks.
+    @discardableResult
+    func clickPathComponent(_ path: String) -> Bool {
+        pathBar.clickComponent(path: path)
+    }
 
     func layoutReport() -> LayoutReport {
         view.layoutSubtreeIfNeeded()
@@ -405,6 +430,7 @@ final class BrowserViewController: NSViewController {
         }
 
         entries = Self.filtered(allEntries, by: filter)
+        loadedDirectory = directory
         tableView.reloadData()
 
         guard !entries.isEmpty else {
@@ -481,7 +507,7 @@ final class BrowserViewController: NSViewController {
         view.window?.makeFirstResponder(searchField)
     }
 
-    @objc private func searchChanged(_ sender: NSSearchField) {
+    @objc fileprivate func searchChanged(_ sender: NSSearchField) {
         filter = sender.stringValue.trimmingCharacters(in: .whitespaces)
         entries = Self.filtered(allEntries, by: filter)
         tableView.reloadData()

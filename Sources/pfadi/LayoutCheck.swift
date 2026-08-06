@@ -19,7 +19,8 @@ enum LayoutCheck {
             check(at: size)
         }
 
-        print(failures == 0 ? "\nlayout ok" : "\n\(failures) layout problems")
+        behaviour()
+        print(failures == 0 ? "\nall checks ok" : "\n\(failures) problems")
         exit(failures == 0 ? 0 : 1)
     }
 
@@ -81,6 +82,96 @@ enum LayoutCheck {
                 : "these have no fixed position: \(ambiguous.joined(separator: ", "))")
     }
 
+    /// What happens when somebody clicks, rather than what is on screen.
+    ///
+    /// The model was right the whole time the root was unreachable, so reading
+    /// the model proved nothing. These go through the same code a click does.
+    private static func behaviour() {
+        print("\nbehaviour")
+
+        // A folder this check made, rather than whatever happens to be in the
+        // home directory of whoever is running it. On another machine, and on
+        // a CI runner in particular, the real one holds something else
+        // entirely and the counts below would mean nothing.
+        guard let start = makeFixture() else {
+            failures += 1
+            print("  FAIL could not make a folder to check against")
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: start) }
+
+        let window = BrowserWindow(directory: start)
+        window.window.setContentSize(NSSize(width: 1058, height: 560))
+        window.window.layoutIfNeeded()
+
+        expect(
+            window.browser.currentDirectory.path == start.path,
+            "it opens where it was told, got \(window.browser.currentDirectory.path)")
+
+        // The one that was broken twice: the leftmost folder in the path.
+        settle(until: { window.browser.listedDirectory?.path == start.path })
+        expect(window.browser.clickPathComponent("/"), "the root is there to click")
+        expect(
+            window.browser.currentDirectory.path == "/",
+            "clicking it goes to /, got \(window.browser.currentDirectory.path)")
+
+        // And back down again, so this is not passing because everything
+        // happens to be "/".
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        expect(window.clickSidebarRow(home), "Home is in the sidebar and can be clicked")
+        settle(seconds: 0.3)
+        expect(
+            window.browser.currentDirectory.path
+                == FileManager.default
+                .homeDirectoryForCurrentUser.path,
+            "clicking Home goes home, got \(window.browser.currentDirectory.path)")
+
+        // The rest of the window, exercised the same way: through the code a
+        // key or a click runs, not around it.
+        let browser = window.browser
+        browser.navigate(to: start)
+        // For this folder's rows, not merely for some. Waiting on "any rows"
+        // is satisfied by the ones already there from the folder just left.
+        settle(until: { browser.listedDirectory?.path == start.path })
+        let all = browser.rowCount
+        expect(all == 4, "the folder lists what was put in it, got \(all) of 4")
+        expect(
+            browser.showsHiddenFiles,
+            "dotfiles are shown unless somebody said otherwise")
+
+        browser.setFilter("report")
+        settle(seconds: 0.2)
+        expect(
+            browser.rowCount == 2,
+            "the filter finds both reports and nothing else, got \(browser.rowCount)")
+        browser.setFilter("")
+        settle(seconds: 0.2)
+        expect(browser.rowCount == all, "and clearing it puts everything back")
+
+        let above = start.deletingLastPathComponent()
+        browser.goToParent(nil)
+        settle(until: { browser.listedDirectory?.path == above.path })
+        expect(
+            browser.currentDirectory.path == above.path,
+            "the enclosing folder is up one, got \(browser.currentDirectory.path)")
+        browser.goBack(nil)
+        expect(
+            browser.currentDirectory.path == start.path,
+            "back returns to where it was, got \(browser.currentDirectory.path)")
+        browser.goForward(nil)
+        expect(
+            browser.currentDirectory.path == above.path,
+            "and forward goes on again, got \(browser.currentDirectory.path)")
+
+        browser.navigate(to: start)
+        settle(until: { browser.listedDirectory?.path == start.path })
+        let wasFavourite = browser.isFavourite
+        browser.toggleFavourite(nil)
+        expect(browser.isFavourite != wasFavourite, "⌘D changes whether it is a favourite")
+        browser.toggleFavourite(nil)
+        expect(browser.isFavourite == wasFavourite, "and ⌘D again puts it back")
+    }
+
     private static func ambiguousViews(in view: NSView?) -> [String] {
         guard let view else { return [] }
         var found: [String] = []
@@ -91,6 +182,39 @@ enum LayoutCheck {
             found += ambiguousViews(in: subview)
         }
         return found
+    }
+
+    /// A folder with known contents, so the counts below mean something
+    /// wherever this runs.
+    private static func makeFixture() -> URL? {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("pfadi-check-\(ProcessInfo.processInfo.processIdentifier)")
+        let manager = FileManager.default
+        try? manager.removeItem(at: root)
+        guard (try? manager.createDirectory(at: root, withIntermediateDirectories: true)) != nil
+        else { return nil }
+
+        // Two that the filter should find, one it should not, and a dotfile
+        // that is only there at all because dotfiles are shown by default.
+        for name in ["report.txt", "report-2.txt", "notes.txt", ".hidden"] {
+            manager.createFile(
+                atPath: root.appendingPathComponent(name).path, contents: Data("x".utf8))
+        }
+        return URL(fileURLWithPath: root.path, isDirectory: true)
+    }
+
+    /// Lets the listing arrive.
+    ///
+    /// Reading a folder happens on a worker and is applied on the main queue,
+    /// which is the whole point: a slow mount must not freeze the window. That
+    /// also means nothing arrives unless the main queue is turning, and in a
+    /// check there is no run loop doing it.
+    private static func settle(until ready: () -> Bool = { false }, seconds: Double = 2) {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            if ready() { return }
+        }
     }
 
     private static func expect(_ condition: Bool, _ what: String) {
