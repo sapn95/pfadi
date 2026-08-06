@@ -68,14 +68,23 @@ func findBundle() -> URL? {
         .map { URL(fileURLWithPath: $0) }
 }
 
+/// A string safe to drop into shell source.
+///
+/// Single quotes, with any single quote in the value closed, escaped and
+/// reopened. A path is somebody else's data: it can hold a quote, a dollar or a
+/// backtick, and this text becomes a function in their profile.
+func shellQuoted(_ value: String) -> String {
+    "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+}
+
 /// The command, not the bundle: it is what stays correct across an upgrade,
 /// because brew rewrites it to point at whatever it just installed.
 func launchCommand() -> String {
     for candidate in ["/opt/homebrew/bin/pfadi", "/usr/local/bin/pfadi"]
     where FileManager.default.isExecutableFile(atPath: candidate) {
-        return candidate
+        return shellQuoted(candidate)
     }
-    return findBundle().map { "/usr/bin/open -a \"\($0.path)\"" } ?? "pfadi"
+    return findBundle().map { "/usr/bin/open -a \(shellQuoted($0.path))" } ?? "pfadi"
 }
 
 // MARK: - The shell function
@@ -143,10 +152,36 @@ func launcherURL() -> URL {
         .appendingPathComponent("Applications/Pfadi.app")
 }
 
+/// Whether what is at the launcher path is one of ours.
+///
+/// Somebody may have a real Pfadi.app there, or something else entirely under
+/// that name. Removing it because it is in the way would be this tool deleting
+/// an application it did not put there.
+func launcherIsOurs() -> Bool {
+    let plist = launcherURL().appendingPathComponent("Contents/Info.plist")
+    guard let data = try? Data(contentsOf: plist),
+        let parsed = try? PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil) as? [String: Any],
+        let identifier = parsed["CFBundleIdentifier"] as? String
+    else { return false }
+    return identifier == "io.github.sapn95.pfadi.launcher"
+}
+
+struct NotOurs: LocalizedError {
+    let path: String
+    var errorDescription: String? {
+        "\(path) is already something else. Move it aside and try again."
+    }
+}
+
 func writeLauncher(iconFrom bundle: URL?) throws {
     let root = launcherURL()
     let manager = FileManager.default
-    try? manager.removeItem(at: root)
+
+    if manager.fileExists(atPath: root.path) {
+        guard launcherIsOurs() else { throw NotOurs(path: root.path) }
+        try manager.removeItem(at: root)
+    }
     try manager.createDirectory(
         at: root.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
     try manager.createDirectory(
@@ -253,8 +288,14 @@ func apply() throws {
 }
 
 func undo() throws {
-    try? FileManager.default.removeItem(at: launcherURL())
-    print("==> removed \(launcherURL().path)")
+    if FileManager.default.fileExists(atPath: launcherURL().path) {
+        if launcherIsOurs() {
+            try FileManager.default.removeItem(at: launcherURL())
+            print("==> removed \(launcherURL().path)")
+        } else {
+            print("==> left \(launcherURL().path) alone, it is not ours")
+        }
+    }
 
     let url = profileURL()
     if let text = try? String(contentsOf: url, encoding: .utf8), text.contains(markerStart) {
@@ -276,6 +317,12 @@ func undo() throws {
 // MARK: - Entry
 
 let arguments = CommandLine.arguments.dropFirst()
+if arguments.count > 1 {
+    // Silently ignoring the rest is how `apply --dry-run` quietly applies.
+    print("one command at a time: \(arguments.joined(separator: " "))")
+    exit(1)
+}
+
 switch arguments.first {
 case "apply":
     try apply()
