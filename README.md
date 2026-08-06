@@ -240,6 +240,12 @@ exists.
 Releases are cut by tagging. `VERSION` is the single source of truth and the
 release workflow refuses a tag that disagrees with it.
 
+It can also be run for a tag that already exists, from the Actions tab. A tag
+push is a webhook, and GitHub throttles webhooks when Actions is having a bad
+day: on 6 August 2026 a pushed tag produced no run at all and three releases
+had to be cut by hand. One trigger is not enough for the one workflow that has
+to happen.
+
 ## How it is put together
 
 | Path | What lives there |
