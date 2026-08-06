@@ -91,6 +91,12 @@ final class PathBar: NSView {
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
     }
 
+    /// The folders the bar is showing, for the checks. A root that is in the
+    /// model and missing from the row is the failure this catches.
+    func drawnComponents() -> [String] {
+        componentButtons.compactMap { $0.identifier?.rawValue }
+    }
+
     private func rebuild() {
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)
@@ -188,6 +194,15 @@ final class PathBar: NSView {
         // A double click goes there, a single one asks what else is at that
         // level. Both are useful and neither should need a modifier.
         if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
+            onChoose?(url)
+            return
+        }
+
+        // The root has no siblings: it is where the path begins, and its
+        // parent is itself. A menu of what is inside it is the arrow's job, so
+        // clicking it goes there instead. Without this the leftmost folder is
+        // the one thing in the bar you cannot click your way to.
+        guard !PathCompletion.isRoot(url) else {
             onChoose?(url)
             return
         }

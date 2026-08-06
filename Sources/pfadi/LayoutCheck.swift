@@ -27,9 +27,19 @@ enum LayoutCheck {
         print("\n\(Int(size.width))x\(Int(size.height))")
 
         let window = BrowserWindow(
-            directory: FileManager.default.homeDirectoryForCurrentUser)
+            directory: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library"))
         window.window.setContentSize(size)
         window.window.layoutIfNeeded()
+
+        let drawn = window.sidebar.drawnRows()
+        print("  sidebar: \(drawn.joined(separator: ", "))")
+        expect(drawn.contains("Computer"), "the root is in the sidebar")
+
+        let components = window.browser.pathComponents()
+        expect(
+            components.contains("/"),
+            "the path starts at the root, got \(components.joined(separator: " "))")
 
         let report = window.browser.layoutReport()
         let bounds = report.bounds

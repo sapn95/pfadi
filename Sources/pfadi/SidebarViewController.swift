@@ -112,6 +112,18 @@ final class SidebarViewController: NSViewController {
     /// put that hang in the middle of walking around a folder tree.
     private var discovered: (cloud: [URL], volumes: [URL])?
 
+    /// What is actually drawn, for the checks. A sidebar that is right in the
+    /// model and wrong on screen is the failure this exists to catch.
+    func drawnRows() -> [String] {
+        rows.map { row in
+            switch row {
+            case .heading(let title): return "[\(title)]"
+            case .place(_, let title, _): return title
+            case .connect: return "(connect)"
+            }
+        }
+    }
+
     func reload(rediscover: Bool = false) {
         if rediscover || discovered == nil {
             discovered = (favourites.cloudLocations(), favourites.volumes())

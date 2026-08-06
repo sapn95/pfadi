@@ -107,6 +107,17 @@ Harness.suite("resolve: a directory always comes back in one spelling") {
 P1Suites.run()
 ReviewSuites.run()
 CycleSuites.run()
+
+Harness.suite("root: the top has no parent, so it has no siblings") {
+    // The rule the path bar leans on: clicking the leftmost folder cannot
+    // offer a menu of what is beside it, because nothing is.
+    Harness.expect(PathCompletion.isRoot(URL(fileURLWithPath: "/")), "/ is the top")
+    Harness.expect(
+        !PathCompletion.isRoot(URL(fileURLWithPath: "/Users")), "/Users is not")
+    Harness.expect(
+        !PathCompletion.isRoot(FileManager.default.homeDirectoryForCurrentUser),
+        "and neither is home, however much it feels like it")
+}
 PreferenceSuites.run()
 SortingSuites.run()
 FavouriteSuites.run()
