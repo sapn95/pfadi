@@ -12,7 +12,7 @@ final class BrowserWindow {
     let window: NSWindow
     let browser: BrowserViewController
 
-    private let sidebar: SidebarViewController
+    let sidebar: SidebarViewController
     private let toolbar = NavigationToolbar()
 
     /// Everything currently open, so the delegate can find the front one.

@@ -103,6 +103,8 @@ final class BrowserViewController: NSViewController {
         let frames: [String: NSRect]
     }
 
+    func pathComponents() -> [String] { pathBar.drawnComponents() }
+
     func layoutReport() -> LayoutReport {
         view.layoutSubtreeIfNeeded()
         var frames: [String: NSRect] = [

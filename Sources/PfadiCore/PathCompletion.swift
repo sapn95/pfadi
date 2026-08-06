@@ -44,6 +44,16 @@ public enum PathCompletion {
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    /// Whether this is the top: its parent is itself.
+    ///
+    /// A folder with no parent has no siblings either, which is why the
+    /// leftmost part of a path cannot offer a menu of them and has to simply
+    /// go there instead.
+    public static func isRoot(_ url: URL) -> Bool {
+        let path = directoryURL(url).path
+        return path == directoryURL(url.deletingLastPathComponent()).path
+    }
+
     /// One spelling for a directory URL.
     ///
     /// `URL(fileURLWithPath:)` asks the filesystem and appends a trailing slash
