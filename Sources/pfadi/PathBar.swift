@@ -159,17 +159,23 @@ final class PathBar: NSView {
         }
         overflow.isHidden = true
 
-        var dropped = 0
-        while stack.fittingSize.width > available, dropped < componentButtons.count - 1 {
+        // The order folders give way in: the ones just after the root first,
+        // then the root itself, and never the last one. The root is how you
+        // get to /etc and /Volumes, so it is the last thing worth losing, and
+        // the far end is where you actually are.
+        let count = componentButtons.count
+        let order = Array(1..<max(1, count - 1)) + (count > 1 ? [0] : [])
+
+        for index in order {
+            guard stack.fittingSize.width > available else { break }
             overflow.isHidden = false
-            let button = componentButtons[dropped]
+            let button = componentButtons[index]
             button.isHidden = true
-            if let index = stack.arrangedSubviews.firstIndex(of: button), index > 1 {
+            if let position = stack.arrangedSubviews.firstIndex(of: button), position > 1 {
                 // The separator in front of it goes too, or the row keeps a
                 // chevron pointing at nothing.
-                stack.arrangedSubviews[index - 1].isHidden = true
+                stack.arrangedSubviews[position - 1].isHidden = true
             }
-            dropped += 1
         }
     }
 
@@ -194,6 +200,8 @@ final class PathBar: NSView {
     }
 
     @objc private func overflowClicked() {
+        // In path order rather than the order they were dropped, so the menu
+        // reads the way the bar would have.
         let urls = componentButtons.filter(\.isHidden)
             .compactMap { $0.identifier?.rawValue }
             .map { URL(fileURLWithPath: $0, isDirectory: true) }

@@ -20,7 +20,10 @@ public final class Favourites {
         ["Desktop", "Documents", "Downloads"]
             .map { home.appendingPathComponent($0).path }
             .reduce(into: [home.path]) { $0.append($1) }
-            + ["/Applications"]
+            // The root, because a file browser that cannot get to / is a
+            // browser for one folder tree. Everything outside home lives up
+            // there: /etc, /opt, /Volumes, and whatever a share was mounted on.
+            + ["/Applications", "/"]
     }
 
     /// The stored list, seeded on first use.
@@ -169,8 +172,11 @@ public final class Favourites {
     /// The label for a row. Home gets a name rather than the account's short
     /// username, which is what the last path component would give.
     public static func title(for url: URL, home: URL) -> String {
-        url.standardizedFileURL.path == home.standardizedFileURL.path
-            ? "Home"
-            : url.lastPathComponent
+        let path = url.standardizedFileURL.path
+        if path == home.standardizedFileURL.path { return "Home" }
+        // lastPathComponent of "/" is "/", which is correct and reads as
+        // nothing at all in a list of names.
+        if path == "/" { return "Computer" }
+        return url.lastPathComponent
     }
 }
