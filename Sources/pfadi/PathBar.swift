@@ -97,6 +97,17 @@ final class PathBar: NSView {
         componentButtons.compactMap { $0.identifier?.rawValue }
     }
 
+    /// Clicks a folder in the bar as a person would, for the checks.
+    ///
+    /// Through the button's own action rather than around it, so what is being
+    /// checked is the thing that actually runs when somebody clicks.
+    func clickComponent(path: String) -> Bool {
+        guard let button = componentButtons.first(where: { $0.identifier?.rawValue == path })
+        else { return false }
+        componentClicked(button)
+        return true
+    }
+
     private func rebuild() {
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)
@@ -187,7 +198,7 @@ final class PathBar: NSView {
 
     // MARK: - Clicks
 
-    @objc private func componentClicked(_ sender: NSButton) {
+    @objc fileprivate func componentClicked(_ sender: NSButton) {
         guard let path = sender.identifier?.rawValue else { return }
         let url = URL(fileURLWithPath: path, isDirectory: true)
 

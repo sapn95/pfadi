@@ -125,6 +125,12 @@ final class BrowserWindow {
         return tab
     }
 
+    /// For the checks: clicks a sidebar row by its title.
+    @discardableResult
+    func clickSidebarRow(_ title: String) -> Bool {
+        sidebar.clickRow(titled: title)
+    }
+
     static var frontmost: BrowserWindow? {
         if let key = NSApp.keyWindow, let found = all.first(where: { $0.window === key }) {
             return found

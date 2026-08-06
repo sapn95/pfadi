@@ -19,7 +19,8 @@ enum LayoutCheck {
             check(at: size)
         }
 
-        print(failures == 0 ? "\nlayout ok" : "\n\(failures) layout problems")
+        behaviour()
+        print(failures == 0 ? "\nall checks ok" : "\n\(failures) problems")
         exit(failures == 0 ? 0 : 1)
     }
 
@@ -81,6 +82,89 @@ enum LayoutCheck {
                 : "these have no fixed position: \(ambiguous.joined(separator: ", "))")
     }
 
+    /// What happens when somebody clicks, rather than what is on screen.
+    ///
+    /// The model was right the whole time the root was unreachable, so reading
+    /// the model proved nothing. These go through the same code a click does.
+    private static func behaviour() {
+        print("\nbehaviour")
+
+        let start = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library")
+        let window = BrowserWindow(directory: start)
+        window.window.setContentSize(NSSize(width: 1058, height: 560))
+        window.window.layoutIfNeeded()
+
+        expect(
+            window.browser.currentDirectory.path == start.path,
+            "it opens where it was told, got \(window.browser.currentDirectory.path)")
+
+        // The one that was broken twice: the leftmost folder in the path.
+        settle(until: { window.browser.rowCount > 0 })
+        expect(window.browser.clickPathComponent("/"), "the root is there to click")
+        expect(
+            window.browser.currentDirectory.path == "/",
+            "clicking it goes to /, got \(window.browser.currentDirectory.path)")
+
+        // And back down again, so this is not passing because everything
+        // happens to be "/".
+        expect(
+            window.clickSidebarRow("Home"),
+            "Home is in the sidebar and can be clicked")
+        expect(
+            window.browser.currentDirectory.path
+                == FileManager.default
+                .homeDirectoryForCurrentUser.path,
+            "clicking Home goes home, got \(window.browser.currentDirectory.path)")
+
+        // The rest of the window, exercised the same way: through the code a
+        // key or a click runs, not around it.
+        let browser = window.browser
+        browser.navigate(to: start)
+
+        settle(until: { browser.rowCount > 0 })
+        let all = browser.rowCount
+        expect(all > 0, "the folder lists something, got \(all)")
+        expect(
+            browser.showsHiddenFiles,
+            "dotfiles are shown unless somebody said otherwise")
+
+        browser.setFilter("preferences")
+        settle(seconds: 0.2)
+        expect(
+            browser.rowCount < all && browser.rowCount > 0,
+            "the filter narrows without emptying, \(browser.rowCount) of \(all)")
+        browser.setFilter("")
+        settle(seconds: 0.2)
+        expect(browser.rowCount == all, "and clearing it puts everything back")
+
+        browser.goToParent(nil)
+        settle(seconds: 0.3)
+        expect(
+            browser.currentDirectory.path
+                == FileManager.default
+                .homeDirectoryForCurrentUser.path,
+            "the enclosing folder is up one, got \(browser.currentDirectory.path)")
+        browser.goBack(nil)
+        expect(
+            browser.currentDirectory.path == start.path,
+            "back returns to where it was, got \(browser.currentDirectory.path)")
+        browser.goForward(nil)
+        expect(
+            browser.currentDirectory.path
+                == FileManager.default
+                .homeDirectoryForCurrentUser.path,
+            "and forward goes on again, got \(browser.currentDirectory.path)")
+
+        browser.navigate(to: start)
+        settle(seconds: 0.3)
+        let wasFavourite = browser.isFavourite
+        browser.toggleFavourite(nil)
+        expect(browser.isFavourite != wasFavourite, "⌘D changes whether it is a favourite")
+        browser.toggleFavourite(nil)
+        expect(browser.isFavourite == wasFavourite, "and ⌘D again puts it back")
+    }
+
     private static func ambiguousViews(in view: NSView?) -> [String] {
         guard let view else { return [] }
         var found: [String] = []
@@ -91,6 +175,20 @@ enum LayoutCheck {
             found += ambiguousViews(in: subview)
         }
         return found
+    }
+
+    /// Lets the listing arrive.
+    ///
+    /// Reading a folder happens on a worker and is applied on the main queue,
+    /// which is the whole point: a slow mount must not freeze the window. That
+    /// also means nothing arrives unless the main queue is turning, and in a
+    /// check there is no run loop doing it.
+    private static func settle(until ready: () -> Bool = { false }, seconds: Double = 2) {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            if ready() { return }
+        }
     }
 
     private static func expect(_ condition: Bool, _ what: String) {

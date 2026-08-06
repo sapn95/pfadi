@@ -105,6 +105,23 @@ final class BrowserViewController: NSViewController {
 
     func pathComponents() -> [String] { pathBar.drawnComponents() }
 
+    // What the checks need to see, kept together and named for what they mean
+    // rather than for the views behind them.
+    var rowCount: Int { entries.count }
+    var showsHiddenFiles: Bool { showHidden }
+    var isFavourite: Bool { favourites.contains(favouriteTarget()) }
+
+    func setFilter(_ text: String) {
+        searchField.stringValue = text
+        searchChanged(searchField)
+    }
+
+    /// Clicks a folder in the path bar, for the checks.
+    @discardableResult
+    func clickPathComponent(_ path: String) -> Bool {
+        pathBar.clickComponent(path: path)
+    }
+
     func layoutReport() -> LayoutReport {
         view.layoutSubtreeIfNeeded()
         var frames: [String: NSRect] = [
@@ -481,7 +498,7 @@ final class BrowserViewController: NSViewController {
         view.window?.makeFirstResponder(searchField)
     }
 
-    @objc private func searchChanged(_ sender: NSSearchField) {
+    @objc fileprivate func searchChanged(_ sender: NSSearchField) {
         filter = sender.stringValue.trimmingCharacters(in: .whitespaces)
         entries = Self.filtered(allEntries, by: filter)
         tableView.reloadData()

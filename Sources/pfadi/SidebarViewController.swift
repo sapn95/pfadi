@@ -124,6 +124,21 @@ final class SidebarViewController: NSViewController {
         }
     }
 
+    /// Selects a row by its title, for the checks. Through the same path a
+    /// click takes, so what is checked is what actually runs.
+    @discardableResult
+    func clickRow(titled title: String) -> Bool {
+        guard
+            let index = rows.firstIndex(where: {
+                if case .place(_, let rowTitle, _) = $0 { return rowTitle == title }
+                return false
+            })
+        else { return false }
+        tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+        tableViewSelectionDidChange(Notification(name: NSTableView.selectionDidChangeNotification))
+        return true
+    }
+
     func reload(rediscover: Bool = false) {
         if rediscover || discovered == nil {
             discovered = (favourites.cloudLocations(), favourites.volumes())
