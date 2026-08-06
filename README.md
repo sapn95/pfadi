@@ -258,23 +258,30 @@ open -a build/Pfadi.app file.txt # opens the folder holding it
 
 ```bash
 brew install sapn95/tap/pfadi
-pfadi-instead-of-finder --apply
+pfadi-default apply
 ```
 
-The second command is the way off Finder, and it says what it cannot do rather
-than quietly doing half the job. It puts a small launcher in `~/Applications` so
-Spotlight and ⌘Tab find it, and makes `open .` in a terminal open pfadi.
-`open report.pdf` is untouched and still goes to whatever owns a PDF.
-`pfadi-instead-of-finder --undo` puts both back. Run it with no arguments to
-see what it would do and change nothing.
+The second command is the way off Finder, and every claim it makes is measured
+rather than assumed. It puts a launcher in `~/Applications` so Spotlight and
+⌘Tab find it, points `open .` in a terminal at pfadi, and asks LaunchServices
+for every content type it will actually hand over. `open report.pdf` is
+untouched and still goes to whatever owns a PDF. `pfadi-default` on its own
+reports what the system has now and changes nothing; `pfadi-default undo` puts
+it all back.
 
-Two things it will not pretend to do:
+What macOS grants, asked at run time rather than taken on trust:
 
-- **Finder cannot be removed from the Dock.** macOS reserves that tile and
-  there is no supported way to give it up.
-- **pfadi cannot become the system-wide handler for folders.** LaunchServices
-  refuses to reassign `public.folder`, which is the entire reason the shell
-  function above exists.
+| | |
+| --- | --- |
+| Volumes | Handed over |
+| Folders | **Refused**, `paramErr` from `LSSetDefaultRoleHandlerForContentType` |
+| Directories | **Refused**, the same |
+| The `file://` scheme | **Refused**, the same |
+
+Declaring `public.folder` in the bundle's `CFBundleDocumentTypes` does not
+change the answer; it was tried. **Nothing but Finder can be the default for a
+folder on this system**, which is the entire reason the shell function exists.
+Finder cannot be taken out of the Dock either: macOS reserves that tile.
 
 The formula compiles from source rather than downloading a bundle. pfadi has no
 Developer ID signature and is not notarised, so a prebuilt `.app` fetched from a

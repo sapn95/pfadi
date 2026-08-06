@@ -61,6 +61,23 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 	<true/>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folder</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+				<string>public.directory</string>
+				<string>public.volume</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
 PLIST
