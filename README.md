@@ -81,8 +81,13 @@ below the root first, then the root, and never the last one.
 
 `⇧⌘G` or the button at the right end of the row swaps the whole thing for a
 text field. Tab walks the matches inline, shift-tab goes back, both wrap, and
-the status line counts along: `2 of 7`. Escape puts back exactly what you
-typed.
+the status line counts along: `2 of 7`.
+
+Escape does one of two things, and which one depends on whether tab has been
+pressed. Part way through walking the matches it puts back exactly what you
+typed before the first tab and leaves you in the field. Otherwise it gives up
+on the field altogether: the path goes back to where you actually are and the
+clickable bar returns.
 
 Return has two jobs, in the order you need them. The first accepts the match
 showing and leaves you in the field, so the next tab carries straight on into
