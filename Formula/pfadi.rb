@@ -46,20 +46,21 @@ class Pfadi < Formula
 
     # The one-command way off Finder. Installed rather than left in the repo,
     # because somebody who installed a binary should not have to clone to find
-    # the script that makes it usable.
-    bin.install "scripts/use-instead-of-finder.sh" => "pfadi-instead-of-finder"
+    # the tool that makes it usable.
+    bin.install "#{buildpath}/.build/release/pfadi-default" => "pfadi-default"
   end
 
   def caveats
     <<~CAVEATS
-      To use pfadi instead of Finder, one command does the lot and says what it
-      cannot do:
+      To use pfadi instead of Finder, one command does the lot and says what
+      macOS refuses rather than pretending:
 
-        pfadi-instead-of-finder --apply
+        pfadi-default apply
 
-      It puts a small launcher in ~/Applications so Spotlight finds it, and makes
-      `open .` in a terminal go to pfadi. `pfadi-instead-of-finder --undo` puts
-      everything back.
+      It puts a launcher in ~/Applications so Spotlight finds it, points
+      `open .` in a terminal at pfadi, and asks LaunchServices for every content
+      type it will actually hand over. `pfadi-default` on its own reports what
+      the system has now and changes nothing; `pfadi-default undo` puts it back.
 
       From a terminal it works without any of that:
 
@@ -76,9 +77,9 @@ class Pfadi < Formula
     # The launcher must hand over to LaunchServices rather than exec the
     # binary, or `pfadi ~/git` holds the terminal it was typed into.
     assert_match "/usr/bin/open", (bin/"pfadi").read
-    # The switch script must refuse to touch anything without --apply.
+    # The switch tool must report and change nothing when asked for neither.
     assert_match "Nothing has been changed",
-      shell_output("PFADI_APP=#{prefix}/Pfadi.app #{bin}/pfadi-instead-of-finder")
+      shell_output("PFADI_APP=#{prefix}/Pfadi.app #{bin}/pfadi-default")
     system "plutil", "-lint", prefix/"Pfadi.app/Contents/Info.plist"
     assert_match version.to_s,
       shell_output("/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' " \

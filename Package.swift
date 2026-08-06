@@ -23,6 +23,10 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
+            name: "pfadi-default",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
             name: "pfadi-selftest",
             dependencies: ["PfadiCore"],
             path: "Tests/PfadiSelfTest",
