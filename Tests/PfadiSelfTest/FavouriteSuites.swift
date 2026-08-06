@@ -11,6 +11,9 @@ enum FavouriteSuites {
             Harness.expect(
                 favourites.paths.contains(home.appendingPathComponent("Downloads").path),
                 "and Downloads")
+            // A file browser that cannot get to / is a browser for one folder
+            // tree. Everything outside home lives up there.
+            Harness.expect(favourites.paths.contains("/"), "and the root")
         }
 
         Harness.suite("favourites: adding, refusing a duplicate, removing") {
@@ -160,6 +163,11 @@ enum FavouriteSuites {
             Harness.expectEqual(
                 Favourites.title(for: home, home: home), "Home",
                 "not the account's short name")
+            // lastPathComponent of "/" is "/", which reads as nothing at all
+            // in a list of names.
+            Harness.expectEqual(
+                Favourites.title(for: URL(fileURLWithPath: "/"), home: home), "Computer",
+                "and the root has a name rather than a slash")
             Harness.expectEqual(
                 Favourites.title(for: home.appendingPathComponent("git"), home: home), "git",
                 "anything else is its own name")

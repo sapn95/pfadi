@@ -219,6 +219,11 @@ favourite whose folder has been deleted or unmounted is skipped rather than
 drawn as a row that beeps when clicked, and it stays in the list in case the
 volume comes back.
 
+**Favourites** starts with Home, Desktop, Documents, Downloads, Applications
+and the root. The root is in there because a file browser that cannot reach `/`
+is a browser for one folder tree, and everything interesting outside home lives
+up there: `/etc`, `/opt`, `/Volumes`, and whatever a share was mounted on.
+
 **Recents** is the last ten folders you went to, newest first, with home left
 out because that is where a window opens when nothing else is known rather than
 somewhere you chose.
