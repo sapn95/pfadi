@@ -125,10 +125,10 @@ final class BrowserWindow {
         return tab
     }
 
-    /// For the checks: clicks a sidebar row by its title.
+    /// For the checks: selects the sidebar row for a folder.
     @discardableResult
-    func clickSidebarRow(_ title: String) -> Bool {
-        sidebar.clickRow(titled: title)
+    func clickSidebarRow(_ url: URL) -> Bool {
+        sidebar.clickRow(at: url)
     }
 
     static var frontmost: BrowserWindow? {

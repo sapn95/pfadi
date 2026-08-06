@@ -89,8 +89,17 @@ enum LayoutCheck {
     private static func behaviour() {
         print("\nbehaviour")
 
-        let start = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library")
+        // A folder this check made, rather than whatever happens to be in the
+        // home directory of whoever is running it. On another machine, and on
+        // a CI runner in particular, the real one holds something else
+        // entirely and the counts below would mean nothing.
+        guard let start = makeFixture() else {
+            failures += 1
+            print("  FAIL could not make a folder to check against")
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: start) }
+
         let window = BrowserWindow(directory: start)
         window.window.setContentSize(NSSize(width: 1058, height: 560))
         window.window.layoutIfNeeded()
@@ -100,7 +109,7 @@ enum LayoutCheck {
             "it opens where it was told, got \(window.browser.currentDirectory.path)")
 
         // The one that was broken twice: the leftmost folder in the path.
-        settle(until: { window.browser.rowCount > 0 })
+        settle(until: { window.browser.listedDirectory?.path == start.path })
         expect(window.browser.clickPathComponent("/"), "the root is there to click")
         expect(
             window.browser.currentDirectory.path == "/",
@@ -108,9 +117,9 @@ enum LayoutCheck {
 
         // And back down again, so this is not passing because everything
         // happens to be "/".
-        expect(
-            window.clickSidebarRow("Home"),
-            "Home is in the sidebar and can be clicked")
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        expect(window.clickSidebarRow(home), "Home is in the sidebar and can be clicked")
+        settle(seconds: 0.3)
         expect(
             window.browser.currentDirectory.path
                 == FileManager.default
@@ -121,29 +130,29 @@ enum LayoutCheck {
         // key or a click runs, not around it.
         let browser = window.browser
         browser.navigate(to: start)
-
-        settle(until: { browser.rowCount > 0 })
+        // For this folder's rows, not merely for some. Waiting on "any rows"
+        // is satisfied by the ones already there from the folder just left.
+        settle(until: { browser.listedDirectory?.path == start.path })
         let all = browser.rowCount
-        expect(all > 0, "the folder lists something, got \(all)")
+        expect(all == 4, "the folder lists what was put in it, got \(all) of 4")
         expect(
             browser.showsHiddenFiles,
             "dotfiles are shown unless somebody said otherwise")
 
-        browser.setFilter("preferences")
+        browser.setFilter("report")
         settle(seconds: 0.2)
         expect(
-            browser.rowCount < all && browser.rowCount > 0,
-            "the filter narrows without emptying, \(browser.rowCount) of \(all)")
+            browser.rowCount == 2,
+            "the filter finds both reports and nothing else, got \(browser.rowCount)")
         browser.setFilter("")
         settle(seconds: 0.2)
         expect(browser.rowCount == all, "and clearing it puts everything back")
 
+        let above = start.deletingLastPathComponent()
         browser.goToParent(nil)
-        settle(seconds: 0.3)
+        settle(until: { browser.listedDirectory?.path == above.path })
         expect(
-            browser.currentDirectory.path
-                == FileManager.default
-                .homeDirectoryForCurrentUser.path,
+            browser.currentDirectory.path == above.path,
             "the enclosing folder is up one, got \(browser.currentDirectory.path)")
         browser.goBack(nil)
         expect(
@@ -151,13 +160,11 @@ enum LayoutCheck {
             "back returns to where it was, got \(browser.currentDirectory.path)")
         browser.goForward(nil)
         expect(
-            browser.currentDirectory.path
-                == FileManager.default
-                .homeDirectoryForCurrentUser.path,
+            browser.currentDirectory.path == above.path,
             "and forward goes on again, got \(browser.currentDirectory.path)")
 
         browser.navigate(to: start)
-        settle(seconds: 0.3)
+        settle(until: { browser.listedDirectory?.path == start.path })
         let wasFavourite = browser.isFavourite
         browser.toggleFavourite(nil)
         expect(browser.isFavourite != wasFavourite, "⌘D changes whether it is a favourite")
@@ -175,6 +182,25 @@ enum LayoutCheck {
             found += ambiguousViews(in: subview)
         }
         return found
+    }
+
+    /// A folder with known contents, so the counts below mean something
+    /// wherever this runs.
+    private static func makeFixture() -> URL? {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("pfadi-check-\(ProcessInfo.processInfo.processIdentifier)")
+        let manager = FileManager.default
+        try? manager.removeItem(at: root)
+        guard (try? manager.createDirectory(at: root, withIntermediateDirectories: true)) != nil
+        else { return nil }
+
+        // Two that the filter should find, one it should not, and a dotfile
+        // that is only there at all because dotfiles are shown by default.
+        for name in ["report.txt", "report-2.txt", "notes.txt", ".hidden"] {
+            manager.createFile(
+                atPath: root.appendingPathComponent(name).path, contents: Data("x".utf8))
+        }
+        return URL(fileURLWithPath: root.path, isDirectory: true)
     }
 
     /// Lets the listing arrive.

@@ -37,6 +37,8 @@ final class BrowserViewController: NSViewController {
     /// Counts reload requests so a slow listing for a folder we have since
     /// left can be recognised and dropped.
     private var generation = 0
+    /// The folder the current rows were read from.
+    private var loadedDirectory: URL?
 
     private var history = NavigationHistory()
     private let infoPanel = InfoPanel()
@@ -108,6 +110,12 @@ final class BrowserViewController: NSViewController {
     // What the checks need to see, kept together and named for what they mean
     // rather than for the views behind them.
     var rowCount: Int { entries.count }
+    /// Which folder the rows on screen actually came from.
+    ///
+    /// Not the same as currentDirectory: that changes the moment you navigate,
+    /// and the rows arrive later. A check that waits for "some rows" is
+    /// satisfied by the folder it just left.
+    var listedDirectory: URL? { loadedDirectory }
     var showsHiddenFiles: Bool { showHidden }
     var isFavourite: Bool { favourites.contains(favouriteTarget()) }
 
@@ -422,6 +430,7 @@ final class BrowserViewController: NSViewController {
         }
 
         entries = Self.filtered(allEntries, by: filter)
+        loadedDirectory = directory
         tableView.reloadData()
 
         guard !entries.isEmpty else {

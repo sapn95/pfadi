@@ -124,18 +124,21 @@ final class SidebarViewController: NSViewController {
         }
     }
 
-    /// Selects a row by its title, for the checks. Through the same path a
-    /// click takes, so what is checked is what actually runs.
+    /// Selects the row for a folder, for the checks.
+    ///
+    /// By URL rather than by title: the same folder can appear under Recents
+    /// and under Favourites, and two rows with one name is exactly the case a
+    /// check should not be ambiguous about.
+    ///
+    /// Selecting is all it does. AppKit posts the selection notification for a
+    /// programmatic change too, so calling the delegate here as well would run
+    /// the navigation twice.
     @discardableResult
-    func clickRow(titled title: String) -> Bool {
-        guard
-            let index = rows.firstIndex(where: {
-                if case .place(_, let rowTitle, _) = $0 { return rowTitle == title }
-                return false
-            })
-        else { return false }
+    func clickRow(at url: URL) -> Bool {
+        guard let index = rows.firstIndex(where: { $0.url?.path == url.path }) else {
+            return false
+        }
         tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
-        tableViewSelectionDidChange(Notification(name: NSTableView.selectionDidChangeNotification))
         return true
     }
 
