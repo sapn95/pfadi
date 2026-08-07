@@ -58,6 +58,7 @@ a-z      type-ahead: jump to the row whose name starts like that
 ⇧⌘H      home
 ⇧⌘.      hide the dotfiles, which are shown by default
 ⇧⌘K      the Created column, on and off
+⌃⌘A      dark, light, match system
 right-click the column headers: which columns to show
 drag     a column header to move it
 ⌘R       refresh
@@ -254,6 +255,21 @@ on screen is not an order. Rows settle as the answers arrive, and a folder not
 measured yet sits at the bottom of the folder block either way up: unknown is
 not zero, and treating it as zero would put it on top of a smallest-first list
 and then move it.
+
+## Dark by default
+
+Not "dark if your system is dark" — **dark**. This is a tool for people who
+spend the day in a terminal, and a file list is the one window that would
+otherwise be a sheet of white in the middle of that.
+
+⌃⌘A cycles dark, light and Match System, and Match System is a third answer
+rather than a synonym for light: it hands the decision back to macOS, which is
+the only one of the three that follows a schedule.
+
+The appearance is set on the application, not on each window, so panels, menus,
+the Open With dialog and every window opened later agree with each other.
+Setting it per window is the half-done version that looks worse than not doing
+it at all.
 
 ## Columns
 

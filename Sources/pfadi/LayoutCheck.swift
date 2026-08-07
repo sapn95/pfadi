@@ -20,9 +20,51 @@ enum LayoutCheck {
             check(at: size)
         }
 
+        appearance()
         behaviour()
         print(failures == 0 ? "\nall checks ok" : "\n\(failures) problems")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    /// Dark, and dark by default.
+    ///
+    /// Checked on NSApp rather than on a window: a window can be told to be
+    /// dark while every panel and menu around it stays light, which is the
+    /// half-done version of this that looks worse than not doing it.
+    private static func appearance() {
+        print("\nappearance")
+
+        expect(
+            Preferences(store: MemoryDefaults()).appearance == .dark,
+            "dark for somebody who has never touched it")
+
+        for wanted in Appearance.allCases {
+            AppDelegate.applyAppearance(wanted)
+            switch wanted {
+            case .system:
+                expect(NSApp.appearance == nil, "Match System hands the choice back")
+            case .dark, .light:
+                expect(
+                    NSApp.appearance?.name.rawValue == wanted.appearanceName,
+                    "\(wanted.title) is applied to the whole application, got "
+                        + (NSApp.appearance?.name.rawValue ?? "nothing"))
+            }
+        }
+
+        // Back to what it will actually run as, so the windows the checks below
+        // build are the ones a person would see.
+        AppDelegate.applyAppearance(Preferences().appearance)
+        expect(
+            NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
+            "and the effective appearance really is dark, got "
+                + NSApp.effectiveAppearance.name.rawValue)
+    }
+
+    /// A defaults store that touches nothing, so asking what the default is
+    /// cannot be answered by whatever this machine happens to have saved.
+    private final class MemoryDefaults: KeyValueStore {
+        func object(forKey key: String) -> Any? { nil }
+        func set(_ value: Any?, forKey key: String) {}
     }
 
     private static func check(at size: NSSize) {

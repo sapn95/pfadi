@@ -162,3 +162,50 @@ extension PreferenceSuites {
         }
     }
 }
+
+extension PreferenceSuites {
+    /// The appearance, which is the one preference with an opinionated default.
+    static func runAppearance() {
+        Harness.suite("appearance: dark unless somebody says otherwise") {
+            let store = MemoryStore()
+            Harness.expectEqual(
+                Preferences(store: store).appearance, .dark,
+                "a tool for people who spend the day in a terminal")
+
+            Preferences(store: store).appearance = .light
+            Harness.expectEqual(
+                Preferences(store: store).appearance, .light,
+                "and the choice survives a relaunch")
+        }
+
+        Harness.suite("appearance: Match System is not the same as light") {
+            // nil hands the decision back to macOS, which is the only answer
+            // that follows a schedule. Treating it as light would pin somebody
+            // to light at midnight.
+            Harness.expect(
+                Appearance.system.appearanceName == nil,
+                "it overrides nothing")
+            Harness.expect(
+                Appearance.light.appearanceName != nil,
+                "while light is an override like any other")
+        }
+
+        Harness.suite("appearance: the names are the ones AppKit knows") {
+            // Spelled out because a typo is silent: NSAppearance(named:)
+            // returns nil for a name it does not know, which reads as
+            // "match the system" and looks like the setting doing nothing.
+            Harness.expectEqual(
+                Appearance.dark.appearanceName, "NSAppearanceNameDarkAqua", "dark")
+            Harness.expectEqual(
+                Appearance.light.appearanceName, "NSAppearanceNameAqua", "light")
+        }
+
+        Harness.suite("appearance: a value from somewhere else falls back to dark") {
+            let store = MemoryStore()
+            store.set("solarized", forKey: "appearance")
+            Harness.expectEqual(
+                Preferences(store: store).appearance, .dark,
+                "rather than crashing on a name from a future version")
+        }
+    }
+}

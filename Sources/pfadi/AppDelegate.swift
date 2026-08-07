@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
+        Self.applyAppearance(Preferences().appearance)
 
         let queued = pending
         pending = []
@@ -47,6 +48,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             front.openTab(showing: target)
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// ⌃⌘A, and the View menu.
+    @objc func cycleAppearance(_ sender: Any?) {
+        let preferences = Preferences()
+        let all = Appearance.allCases
+        let next = all[(all.firstIndex(of: preferences.appearance).map { $0 + 1 } ?? 0) % all.count]
+        preferences.appearance = next
+        Self.applyAppearance(next)
+        BrowserWindow.frontmost?.browser.announceAppearance(next)
+    }
+
+    /// Puts the whole application into one appearance.
+    ///
+    /// On `NSApp` rather than per window, so panels, menus, the Open With
+    /// dialog and every window opened later agree with each other. Setting it
+    /// per window leaves the ones you have not opened yet in whatever the
+    /// system felt like.
+    static func applyAppearance(_ appearance: Appearance) {
+        NSApp.appearance = appearance.appearanceName.map { NSAppearance(named: .init($0)) } ?? nil
     }
 
     /// Paths given on the command line, before the application starts.

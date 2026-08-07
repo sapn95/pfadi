@@ -212,6 +212,13 @@ enum MainMenu {
         )
         created.keyEquivalentModifierMask = [.command, .shift]
 
+        let appearance = menu.addItem(
+            withTitle: "Appearance",
+            action: #selector(AppDelegate.cycleAppearance(_:)),
+            keyEquivalent: "a"
+        )
+        appearance.keyEquivalentModifierMask = [.command, .control]
+
         // The same list the headers offer behind a right-click, put where it
         // can be found by somebody who does not know to right-click a header.
         let columns = menu.addItem(withTitle: "Columns", action: nil, keyEquivalent: "")
