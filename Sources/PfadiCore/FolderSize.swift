@@ -9,8 +9,14 @@ import Foundation
 /// run where a person is waiting for it.
 public enum FolderSize {
     public struct Measurement: Equatable, Sendable {
-        /// Bytes on disk, allocated rather than logical: a thousand one-byte
-        /// files take a lot more room than a thousand bytes.
+        /// How much is in it, logical rather than allocated.
+        ///
+        /// Allocated was the first answer, and it was wrong twice over. A
+        /// cloud placeholder has no blocks on disk at all, so a OneDrive
+        /// folder holding 253 KB across four files measured as zero — true,
+        /// and no use to anybody. And the file rows have always shown the
+        /// logical size, so the same column meant two different things
+        /// depending on which kind of row you were looking at.
         public let bytes: Int64
         /// How many files went into it.
         public let files: Int
@@ -50,7 +56,7 @@ public enum FolderSize {
         else { return Measurement(bytes: 0, files: 0, complete: false) }
 
         let keys: Set<URLResourceKey> = [
-            .totalFileAllocatedSizeKey, .fileAllocatedSizeKey, .isRegularFileKey,
+            .totalFileSizeKey, .fileSizeKey, .isRegularFileKey,
         ]
         // Symbolic links are not followed by default, which is what keeps a
         // link back up the tree from making this run forever. Package contents
@@ -66,6 +72,10 @@ public enum FolderSize {
         var bytes: Int64 = 0
         var files = 0
         var visited = 0
+        // A file whose size could not be read counts as nothing, which
+        // understates the total. Saying so turns the answer into "over", which
+        // is the honest shape for a floor.
+        var unreadable = false
 
         for case let child as URL in enumerator {
             visited += 1
@@ -81,12 +91,20 @@ public enum FolderSize {
             guard let values = try? child.resourceValues(forKeys: keys),
                 values.isRegularFile == true
             else { continue }
-            // totalFileAllocatedSize includes resource forks and compression;
-            // fileAllocatedSize is the fallback when the volume cannot say.
-            bytes += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
+            // totalFileSize includes resource forks; fileSize is the fallback
+            // when the volume cannot say. Both are what the file *is*, which
+            // is the number a cloud provider can still answer for something it
+            // has not downloaded.
+            guard let size = values.totalFileSize ?? values.fileSize else {
+                unreadable = true
+                files += 1
+                continue
+            }
+            bytes += Int64(size)
             files += 1
         }
-        return Measurement(bytes: bytes, files: files, complete: !isCancelled())
+        return Measurement(
+            bytes: bytes, files: files, complete: !unreadable && !isCancelled())
     }
 }
 
