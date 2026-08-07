@@ -187,6 +187,31 @@ final class BrowserViewController: NSViewController {
         tableView.deselectAll(nil)
     }
 
+    /// Double-clicks a row the way a mouse does, for the checks.
+    ///
+    /// A real event through the table's own `mouseDown`, not a call to the
+    /// action behind it. What was broken was the path between the two, and a check
+    /// that steps over it proves nothing.
+    @discardableResult
+    func doubleClickRow(_ row: Int) -> Bool {
+        guard entries.indices.contains(row) else { return false }
+        let rect = tableView.rect(ofRow: row)
+        let point = NSPoint(x: rect.midX, y: rect.midY)
+        let event = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: tableView.convert(point, to: nil),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: tableView.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 2,
+            pressure: 1)
+        guard let event else { return false }
+        tableView.mouseDown(with: event)
+        return true
+    }
+
     /// A reload of the kind the watcher asks for, for the checks.
     ///
     /// Not `refresh`, which also throws the measured folder sizes away on
@@ -462,7 +487,17 @@ final class BrowserViewController: NSViewController {
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
-        tableView.doubleAction = #selector(openSelection)
+        tableView.onDoubleClick = { [weak self] row in
+            guard let self else { return }
+            // Double-clicking one of several selected rows opens all of them,
+            // the way it does everywhere else. Only a click outside the
+            // selection narrows it to the row under the pointer — which also
+            // covers a reload having moved the selection between the clicks.
+            if !tableView.selectedRowIndexes.contains(row) {
+                select(row: row)
+            }
+            openSelection()
+        }
         tableView.onReturn = { [weak self] in self?.openSelection() }
         tableView.onTypeAhead = { [weak self] prefix in self?.typeAhead(prefix) }
         tableView.onSpace = { [weak self] in self?.toggleQuickLook() }
