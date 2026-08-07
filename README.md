@@ -216,6 +216,12 @@ anything:
   thing that throws them away, because re-walking a tree every time the watcher
   fires would make the column cost far more than it is worth.
 
+The number is the **logical** size, the same thing the file rows show. It was
+the allocated size at first, which is defensible right up until a cloud folder
+is measured: a placeholder has no blocks on disk, so a OneDrive folder holding
+253 KB across four files read as `Zero KB`. True, useless, and it meant the one
+column said two different things depending on which kind of row it was on.
+
 An en dash means not measured yet. `over 4.2 GB` means the walk hit its limit
 and the number is a floor rather than a total — a guess dressed as an answer is
 worse than an honest bound.

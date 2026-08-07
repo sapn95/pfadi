@@ -124,6 +124,8 @@ whose number arrives after the listing does.
 .Sh CAVEATS
 Folder sizes in the size column are measured by walking the folder, because the
 filesystem does not record them.
+The total is the logical size, matching the file rows: the allocated size of a
+cloud placeholder is zero, and a folder of them measured as empty.
 Only the rows on screen are measured, and a walk that reaches its limit is shown
 as
 .Dq over
