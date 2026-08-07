@@ -5,16 +5,32 @@ import AppKit
 enum Actions {
     /// Puts a path on the general pasteboard.
     static func copyPath(_ url: URL) {
+        copyPaths([url])
+    }
+
+    /// Puts several on, one per line.
+    ///
+    /// A line each is what a shell loop, an editor and a chat message all
+    /// want. Anything cleverer — quoting, commas, a JSON array — is a guess
+    /// about where they are going next.
+    static func copyPaths(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        // Both flavours: the string for a shell, the URL for anything that
-        // would rather have a file reference than eleven characters of text.
-        pasteboard.writeObjects([url as NSURL])
-        pasteboard.setString(url.path, forType: .string)
+        // Both flavours: the string for a shell, the URLs for anything that
+        // would rather have file references than a few lines of text.
+        pasteboard.writeObjects(urls.map { $0 as NSURL })
+        pasteboard.setString(urls.map(\.path).joined(separator: "\n"), forType: .string)
     }
 
     static func revealInFinder(_ url: URL) {
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        revealInFinder([url])
+    }
+
+    /// Hands a selection to Finder, in one window rather than one each.
+    static func revealInFinder(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
     /// Opens a shell in `directory`, in whichever terminal is installed.

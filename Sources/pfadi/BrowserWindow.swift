@@ -119,10 +119,34 @@ final class BrowserWindow {
     /// A new tab on this window, showing `url`.
     @discardableResult
     func openTab(at url: URL) -> BrowserWindow {
-        let tab = BrowserWindow(directory: url)
+        openTab(showing: .directory(url))
+    }
+
+    /// A new tab showing a folder, or a folder with one of its files selected.
+    @discardableResult
+    func openTab(showing target: PathCompletion.Target) -> BrowserWindow {
+        let tab = BrowserWindow(directory: AppDelegate.folder(of: target))
         window.addTabbedWindow(tab.window, ordered: .above)
         tab.window.makeKeyAndOrderFront(nil)
+        tab.show(target)
         return tab
+    }
+
+    /// Finishes off a window that was just made at the right folder.
+    ///
+    /// A folder needs nothing more; a file still has to be selected.
+    func show(_ target: PathCompletion.Target) {
+        if case .file(let url) = target {
+            browser.reveal(url)
+        }
+    }
+
+    /// Takes a window that is somewhere else to a target.
+    func go(to target: PathCompletion.Target) {
+        switch target {
+        case .directory(let url): browser.navigate(to: url)
+        case .file(let url): browser.reveal(url)
+        }
     }
 
     /// For the checks: selects the sidebar row for a folder.

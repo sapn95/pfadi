@@ -1,0 +1,89 @@
+.\" Manual page for pfadi.
+.\" Checked against Invocation.helpText by the self-test: every option named in
+.\" one has to appear in the other, so this cannot quietly go out of date.
+.Dd August 7, 2026
+.Dt PFADI 1
+.Os
+.Sh NAME
+.Nm pfadi
+.Nd a file browser with an address bar you can click into and type
+.Sh SYNOPSIS
+.Nm
+.Op Ar folder ...
+.Nm
+.Fl R Ar path
+.Nm
+.Op Fl h | Fl -help | Fl v | Fl -version
+.Sh DESCRIPTION
+.Nm
+opens a window on a folder.
+It exists because macOS has no address bar you can click into and type: the
+nearest thing is a dialog behind
+.Ic \(**\(uAG ,
+which forgets what you typed the moment it closes.
+.Pp
+With no arguments it opens the folder the shell is in.
+The command returns as soon as the window has been asked for, so it can be put
+at the end of a line without holding the terminal.
+.Pp
+The arguments are as follows:
+.Bl -tag -width Ds
+.It Ar folder
+Open it.
+Several folders open as tabs of one window rather than as separate windows.
+.It Ar file
+Open the folder holding it, with the file selected.
+.It Fl R , Fl -reveal Ar path
+Select
+.Ar path
+in the folder holding it, even when
+.Ar path
+is itself a folder.
+Without this, a folder given as an argument is opened rather than pointed at.
+.It Fl -
+Everything after this is a path, not an option.
+A folder really can be called
+.Pa --help .
+.It Fl h , Fl -help
+Print the usage and exit.
+.It Fl v , Fl -version
+Print the version and exit.
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width Ds
+.It Ev PFADI_APP
+The application bundle to open.
+Set this when running from a build directory rather than an install.
+.El
+.Sh EXIT STATUS
+.Ex -std
+A path that does not exist, an unknown option, or a missing application bundle
+are all reported on standard error and exit 1.
+.Sh EXAMPLES
+Open the current folder:
+.Pp
+.Dl $ pfadi
+.Pp
+Open two folders as tabs of one window:
+.Pp
+.Dl $ pfadi ~/git ~/Downloads
+.Pp
+Point at a file rather than opening it:
+.Pp
+.Dl $ pfadi -R ./report.pdf
+.Sh SEE ALSO
+.Xr open 1 ,
+.Xr pfadi-default 1
+.Sh AUTHORS
+.An Sebastian Winterberger
+.Aq Mt sapn95@users.noreply.github.com
+.Sh CAVEATS
+Folder sizes in the size column are measured by walking the folder, because the
+filesystem does not record them.
+Only the rows on screen are measured, and a walk that reaches its limit is shown
+as
+.Dq over
+a number rather than as a total.
+.Pp
+Sorting by size sorts files by their size and leaves folders where they are: the
+sort happens when the folder is listed, and the measurements arrive later.

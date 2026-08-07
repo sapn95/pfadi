@@ -50,6 +50,26 @@ final class BrowserViewController: NSViewController {
     private var renaming: URL?
     private var pendingRename: URL?
 
+    /// A file somebody asked to be shown, and the folder it should turn up in.
+    ///
+    /// The folder is part of it because the listing arrives later: without it,
+    /// a reveal asked for while another folder was still loading would select a
+    /// same-named row in whichever listing landed first.
+    private var pendingSelection: (folder: URL, name: String)?
+
+    /// What the status line has been told to say, and until when.
+    private var announcement: String?
+    private var announcementUntil = Date.distantPast
+    private static let announcementLifetime: TimeInterval = 8
+
+    /// Folder sizes, measured only for the rows on screen.
+    private let folderSizes = FolderSizeQueue()
+
+    /// Notification observers, removed on the way out. A block observer that is
+    /// never removed keeps its closure, and with it this controller, alive for
+    /// the life of the process.
+    private var observers: [any NSObjectProtocol] = []
+
     private let listingQueue = DispatchQueue(
         label: "io.github.sapn95.pfadi.listing", qos: .userInitiated)
 
@@ -96,6 +116,10 @@ final class BrowserViewController: NSViewController {
         fatalError("pfadi builds its views in code")
     }
 
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+    }
+
     /// Where everything ended up, for the layout check.
     ///
     /// Named rather than returned as a list of views, so a failure says "the
@@ -118,6 +142,35 @@ final class BrowserViewController: NSViewController {
     var listedDirectory: URL? { loadedDirectory }
     var showsHiddenFiles: Bool { showHidden }
     var isFavourite: Bool { favourites.contains(favouriteTarget()) }
+    /// The name of the first selected row, or nothing when there is no
+    /// selection.
+    var selectedName: String? { selectedEntry()?.name }
+    /// Every selected name, for the checks.
+    var selectedNames: [String] { selectedEntries().map(\.name) }
+    var statusLine: String { statusLabel.stringValue }
+
+    /// Selects a range the way ⇧↓ does, for the checks.
+    ///
+    /// Through the table's own selection rather than around it: what was
+    /// broken was that the table refused to hold more than one row, and a
+    /// check that kept its own list would have passed the whole time.
+    func selectRange(_ rows: Range<Int>) {
+        tableView.selectRowIndexes(IndexSet(rows), byExtendingSelection: false)
+    }
+
+    /// Adds one row to the selection the way a ⌘-click does.
+    func addToSelection(row: Int) {
+        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: true)
+    }
+
+    /// Which row a name is on, for the checks.
+    func rowIndex(of name: String) -> Int? {
+        entries.firstIndex { $0.name == name }
+    }
+    /// What has been measured for a folder in this listing, if anything.
+    func measuredSize(of name: String) -> FolderSize.Measurement? {
+        entries.first { $0.name == name }.flatMap { folderSizes.cached($0.url) }
+    }
 
     func setFilter(_ text: String) {
         searchField.stringValue = text
@@ -187,6 +240,21 @@ final class BrowserViewController: NSViewController {
         statusLabel.textColor = .secondaryLabelColor
 
         configureTable()
+
+        // Scrolling changes which folders are worth measuring. Asked for here
+        // rather than on a timer: the answer is only ever needed for rows
+        // somebody can see.
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView,
+                queue: .main
+            ) { [weak self] _ in self?.measureVisibleFolders() })
+
+        folderSizes.onMeasured = { [weak self] url, _ in
+            self?.redrawSize(of: url)
+        }
 
         pathToggle.translatesAutoresizingMaskIntoConstraints = false
         pathToggle.bezelStyle = .accessoryBar
@@ -261,7 +329,11 @@ final class BrowserViewController: NSViewController {
         tableView.style = .inset
         tableView.rowHeight = 24
         tableView.usesAlternatingRowBackgroundColors = false
-        tableView.allowsMultipleSelection = false
+        // ⌘-click to add one, shift-click for a range, ⇧↑ and ⇧↓ to extend.
+        // AppKit does all three itself once it is allowed to; what it cannot
+        // do is make the actions below act on more than the first row, which
+        // is the rest of the work.
+        tableView.allowsMultipleSelection = true
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
@@ -272,7 +344,11 @@ final class BrowserViewController: NSViewController {
 
         tableView.menu = makeContextMenu()
         tableView.registerForDraggedTypes([.fileURL])
+        // Both masks. Only the external one was set, so dragging a row onto a
+        // folder in the same window had no operation to offer and the drop was
+        // refused before any of the code below ran.
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
+        tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
 
         addColumn(id: "name", title: "Name", width: 420)
         addColumn(id: "size", title: "Size", width: 90)
@@ -346,6 +422,42 @@ final class BrowserViewController: NSViewController {
         view.window?.makeFirstResponder(tableView)
     }
 
+    /// Shows a file in the folder that holds it, with its row selected.
+    ///
+    /// What "Reveal in Finder" in some other application ends up calling, once
+    /// `pfadi-default apply` has pointed the system's file viewer here. Also
+    /// `pfadi -R <path>`.
+    func reveal(_ url: URL) {
+        let parent = PathCompletion.directoryURL(url.deletingLastPathComponent())
+        pendingSelection = (folder: parent, name: url.lastPathComponent)
+
+        // Already looking at the right folder with its rows in place: select
+        // now rather than re-reading a directory that has not changed.
+        if loadedDirectory?.path == parent.path {
+            applyPendingSelection()
+            view.window?.makeFirstResponder(tableView)
+            return
+        }
+        navigate(to: parent)
+    }
+
+    /// Selects the revealed row once its folder is on screen.
+    private func applyPendingSelection() {
+        guard let asked = pendingSelection, asked.folder.path == loadedDirectory?.path else {
+            return
+        }
+        pendingSelection = nil
+
+        guard let row = entries.firstIndex(where: { $0.name == asked.name }) else {
+            // The folder is right and the file is not in it: deleted since,
+            // or hidden by a filter that is not ours to clear.
+            announce("\(asked.name) is not in this folder")
+            NSSound.beep()
+            return
+        }
+        select(row: row)
+    }
+
     /// Moves to a folder: list it, watch it, remember it, select the top row.
     private func enter(_ url: URL, recordingHistory: Bool = true) {
         // The filter described the folder being left. Carrying it into the next
@@ -356,6 +468,12 @@ final class BrowserViewController: NSViewController {
         if recordingHistory {
             history.visit(url)
         }
+        // Whatever is being walked is for a folder nobody is looking at any
+        // more. What has already been measured is kept, so going back is
+        // instant.
+        folderSizes.cancelPending()
+        // Whatever was announced was about the folder being left.
+        announcement = nil
         directory = url
         reload(keepingSelection: false)
         preferences.lastDirectory = url.path
@@ -378,7 +496,11 @@ final class BrowserViewController: NSViewController {
     /// to freeze every menu, keystroke and scroll in the application, and the
     /// watcher makes it happen without anybody asking.
     private func reload(keepingSelection: Bool) {
-        let previous = keepingSelection ? selectedEntry()?.name : nil
+        // Every selected name, not merely the first. The watcher fires
+        // whenever anything in the folder is written, and collapsing a
+        // five-row selection to one because a build wrote a log file is the
+        // kind of thing that makes a list feel hostile.
+        let previous = keepingSelection ? selectedEntries().map(\.name) : []
 
         // The path field and the title describe where we are going, so they
         // update immediately rather than when the listing arrives.
@@ -416,7 +538,7 @@ final class BrowserViewController: NSViewController {
     private func apply(
         _ result: Result<[Entry], any Error>,
         directory: URL,
-        previousSelection: String?
+        previousSelection: [String]
     ) {
         var failure: String?
         switch result {
@@ -432,19 +554,30 @@ final class BrowserViewController: NSViewController {
         entries = Self.filtered(allEntries, by: filter)
         loadedDirectory = directory
         tableView.reloadData()
+        measureVisibleFolders()
 
         guard !entries.isEmpty else {
             statusLabel.stringValue = failure ?? "empty folder"
+            // Still cleared: an empty folder is an answer to "reveal this",
+            // and leaving the request pending would fire it at the next one.
+            applyPendingSelection()
             return
         }
 
-        // The remembered row may have been renamed or deleted by whatever
-        // triggered this reload, so falling back to the top is normal.
-        let row =
-            previousSelection.flatMap { name in entries.firstIndex { $0.name == name } } ?? 0
-        select(row: row)
-
         statusLabel.stringValue = statusText()
+
+        if pendingSelection?.folder.path == directory.path {
+            // A reveal wins over the row that happened to be selected before:
+            // some other application has just said "this one".
+            applyPendingSelection()
+        } else {
+            // A remembered row may have been renamed or deleted by whatever
+            // triggered this reload, so ending up with fewer than were
+            // selected, or with none and falling back to the top, is normal.
+            let wanted = Set(previousSelection)
+            let rows = entries.indices.filter { wanted.contains(entries[$0].name) }
+            select(rows: rows.isEmpty ? [0] : rows)
+        }
 
         if let pending = pendingRename, let row = entries.firstIndex(where: { $0.url == pending }) {
             pendingRename = nil
@@ -453,7 +586,33 @@ final class BrowserViewController: NSViewController {
         }
     }
 
+    /// Says what just happened, and keeps saying it for a moment.
+    ///
+    /// Every operation ends by re-reading the folder, and the reload sets the
+    /// status line to the item count. So "copied, 3 items" was written and
+    /// then wiped a few milliseconds later, every time, and the only channel
+    /// this window has for telling somebody what it did said nothing.
+    private func announce(_ message: String) {
+        announcement = message
+        announcementUntil = Date().addingTimeInterval(Self.announcementLifetime)
+        // The one place that writes the label directly. Everything else goes
+        // through here, or through statusText() when it is describing state
+        // rather than reporting an event.
+        statusLabel.stringValue = message
+    }
+
     private func statusText() -> String {
+        if let announcement, Date() < announcementUntil { return announcement }
+
+        // What is selected wins over what is in the folder: once several rows
+        // are picked, how many of them there are is the thing being asked.
+        let selected = selectedEntries()
+        if selected.count > 1 {
+            let bytes = selected.compactMap(\.size).reduce(0, +)
+            let size = bytes > 0 ? ", \(Self.sizeFormatter.string(fromByteCount: bytes))" : ""
+            return "\(selected.count) of \(entries.count) selected\(size)"
+        }
+
         if !filter.isEmpty {
             return "\(entries.count) of \(allEntries.count) match \u{201C}\(filter)\u{201D}"
         }
@@ -516,9 +675,16 @@ final class BrowserViewController: NSViewController {
     }
 
     private func select(row: Int) {
-        guard entries.indices.contains(row) else { return }
-        tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-        tableView.scrollRowToVisible(row)
+        select(rows: [row])
+    }
+
+    private func select(rows: [Int]) {
+        let valid = rows.filter { entries.indices.contains($0) }
+        guard let first = valid.first else { return }
+        tableView.selectRowIndexes(IndexSet(valid), byExtendingSelection: false)
+        // The first of them, so a restored selection scrolls to its top rather
+        // than to wherever it happens to end.
+        tableView.scrollRowToVisible(first)
     }
 
     private func beginRename(row: Int) {
@@ -533,35 +699,64 @@ final class BrowserViewController: NSViewController {
         tableView.editColumn(0, row: row, with: nil, select: true)
     }
 
+    /// The first selected row, for the things that can only mean one file:
+    /// renaming it, previewing which one to open with, asking what it is.
     private func selectedEntry() -> Entry? {
-        let row = tableView.selectedRow
-        return entries.indices.contains(row) ? entries[row] : nil
+        selectedEntries().first
     }
 
-    /// What the actions work on: the selected row, or the folder itself when
+    /// Everything selected, in the order it appears in the list.
+    ///
+    /// In list order rather than click order on purpose: a copy of five files
+    /// and a report of what happened both read better top to bottom than in
+    /// the order somebody happened to ⌘-click them.
+    private func selectedEntries() -> [Entry] {
+        tableView.selectedRowIndexes
+            .filter { entries.indices.contains($0) }
+            .map { entries[$0] }
+    }
+
+    /// What the actions work on: the selected rows, or the folder itself when
     /// nothing is selected. Copying "the path" with an empty list should still
     /// give you a path.
+    private func actionTargets() -> [URL] {
+        let selected = selectedEntries().map(\.url)
+        return selected.isEmpty ? [directory] : selected
+    }
+
     private func actionTarget() -> URL {
-        selectedEntry()?.url ?? directory
+        actionTargets()[0]
     }
 
     /// ⌘↓ on a folder, and the context menu. Opening in a tab keeps where you
     /// were, which is the entire point of having tabs.
     @objc func openInNewTab(_ sender: Any?) {
-        guard let entry = selectedEntry(), entry.isDirectory else {
+        let folders = selectedEntries().filter(\.isDirectory)
+        guard !folders.isEmpty else {
             NSSound.beep()
             return
         }
-        onNewTab?(entry.url)
+        for folder in folders { onNewTab?(folder.url) }
     }
 
+    /// Return, and a double click.
+    ///
+    /// One folder is walked into, because that is what a browser is for.
+    /// Several are opened as tabs, because there is nowhere else for them to
+    /// go, and files are handed to whatever owns them.
     @objc private func openSelection() {
-        guard let entry = selectedEntry() else { return }
-        if entry.isDirectory {
-            navigate(to: entry.url)
+        let selected = selectedEntries()
+        guard !selected.isEmpty else { return }
+
+        let folders = selected.filter(\.isDirectory)
+        let files = selected.filter { !$0.isDirectory }
+
+        if folders.count == 1, files.isEmpty {
+            navigate(to: folders[0].url)
         } else {
-            NSWorkspace.shared.open(entry.url)
+            for folder in folders { onNewTab?(folder.url) }
         }
+        for file in files { NSWorkspace.shared.open(file.url) }
     }
 
     private func typeAhead(_ prefix: String) {
@@ -604,13 +799,13 @@ final class BrowserViewController: NSViewController {
     }
 
     func connect(to share: URL) {
-        statusLabel.stringValue = "connecting to \(share.host ?? share.absoluteString)…"
+        announce("connecting to \(share.host ?? share.absoluteString)…")
 
         ShareMounter.mount(share) { [weak self] result in
             guard let self else { return }
             switch result {
             case .alreadyMounted(let url):
-                statusLabel.stringValue = "already mounted"
+                announce("already mounted")
                 favourites.rememberServer(share)
                 onFavouritesChanged?()
                 navigate(to: url)
@@ -621,11 +816,11 @@ final class BrowserViewController: NSViewController {
             case .needsCredentials:
                 // The system already has a connect sheet with keychain and
                 // guest handling in it. A second one would be worse.
-                statusLabel.stringValue = "asking the system for credentials"
+                announce("asking the system for credentials")
                 ShareMounter.askSystemToConnect(share)
             case .failed(let reason):
                 NSSound.beep()
-                statusLabel.stringValue = reason
+                announce(reason)
                 pathField.stringValue = directory.path
             }
         }
@@ -687,7 +882,14 @@ final class BrowserViewController: NSViewController {
         reload(keepingSelection: true)
     }
 
+    /// ⌘R. The one place folder sizes are thrown away.
+    ///
+    /// Not on every reload: the watcher fires whenever anything in the folder
+    /// is written, and re-walking a tree on every save would make the column
+    /// cost far more than it is worth. A size that has gone stale is corrected
+    /// by asking, which is what this is.
     @objc func refresh(_ sender: Any?) {
+        folderSizes.forget()
         reload(keepingSelection: true)
     }
 
@@ -725,10 +927,10 @@ final class BrowserViewController: NSViewController {
             favourites.remove(target)
         }
         onFavouritesChanged?()
-        statusLabel.stringValue =
+        announce(
             added
-            ? "added \(target.lastPathComponent) to favourites"
-            : "removed \(target.lastPathComponent) from favourites"
+                ? "added \(target.lastPathComponent) to favourites"
+                : "removed \(target.lastPathComponent) from favourites")
     }
 
     @objc func showInfo(_ sender: Any?) {
@@ -799,13 +1001,17 @@ final class BrowserViewController: NSViewController {
     /// focus its field editor answers first and copies the text; only when the
     /// list has focus does this run and copy the file.
     @objc func copy(_ sender: Any?) {
-        guard let entry = selectedEntry() else { return }
+        let selected = selectedEntries()
+        guard !selected.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         // File URLs, so this works with Finder and everything else that deals
         // in files rather than only within this application.
-        pasteboard.writeObjects([entry.url as NSURL])
-        statusLabel.stringValue = "copied \(entry.name)"
+        pasteboard.writeObjects(selected.map { $0.url as NSURL })
+        announce(
+            selected.count == 1
+                ? "copied \(selected[0].name)"
+                : "copied \(selected.count) items")
     }
 
     @objc func paste(_ sender: Any?) {
@@ -826,12 +1032,12 @@ final class BrowserViewController: NSViewController {
     /// gesture anybody makes meaning "and take it out of where it was".
     func transfer(_ sources: [URL], into destination: URL) {
         guard !transfers.isRunning else {
-            statusLabel.stringValue = "one transfer at a time, for now"
+            announce("one transfer at a time, for now")
             return
         }
         if let refusal = Transfer.check(moving: sources, into: destination, kind: .copy) {
             NSSound.beep()
-            statusLabel.stringValue = refusal.message
+            announce(refusal.message)
             return
         }
         let plan = Transfer.plan(sources, into: destination, kind: .copy)
@@ -842,19 +1048,19 @@ final class BrowserViewController: NSViewController {
 
     private func transfer(kind: Transfer.Kind) {
         guard !transfers.isRunning else {
-            statusLabel.stringValue = "one transfer at a time, for now"
+            announce("one transfer at a time, for now")
             return
         }
 
         let sources = pasteboardURLs()
         guard !sources.isEmpty else {
-            statusLabel.stringValue = "nothing on the clipboard to paste"
+            announce("nothing on the clipboard to paste")
             return
         }
 
         if let refusal = Transfer.check(moving: sources, into: directory, kind: kind) {
             NSSound.beep()
-            statusLabel.stringValue = refusal.message
+            announce(refusal.message)
             return
         }
 
@@ -914,7 +1120,7 @@ final class BrowserViewController: NSViewController {
             NSSound.beep()
             parts.append("\(outcome.failed.count) failed: \(outcome.failed[0].1)")
         }
-        statusLabel.stringValue = parts.joined(separator: ", ")
+        announce(parts.joined(separator: ", "))
         reload(keepingSelection: true)
     }
 
@@ -934,7 +1140,7 @@ final class BrowserViewController: NSViewController {
                     }
                 }
             }
-            statusLabel.stringValue = "created \(name)"
+            announce("created \(name)")
             // Normally the watcher brings the row in. On a folder it could not
             // attach to, nothing would ever arrive and the rename never starts.
             reload(keepingSelection: true)
@@ -947,31 +1153,68 @@ final class BrowserViewController: NSViewController {
         }
     }
 
+    /// One at a time: there is one field editor and one name being typed into
+    /// it. Renaming several is a different feature with a different dialog.
     @objc func renameSelection(_ sender: Any?) {
         guard let entry = selectedEntry(), let row = entries.firstIndex(of: entry) else { return }
         beginRename(row: row)
     }
 
     @objc func moveToTrash(_ sender: Any?) {
-        guard let entry = selectedEntry() else { return }
-        do {
-            let trashed = try FileOperations.trash(entry.url)
-            if let trashed {
-                registerUndo("Move to Trash") { controller in
-                    controller.attempt("put \(entry.name) back") {
-                        try FileManager.default.moveItem(at: trashed, to: entry.url)
+        let selected = selectedEntries()
+        guard !selected.isEmpty else { return }
+
+        // What actually reached the trash, so undo puts back exactly that and
+        // a failure part way through still restores the part that worked.
+        var moved: [(original: URL, inTrash: URL)] = []
+        var failure: (any Error)?
+
+        for entry in selected {
+            do {
+                if let trashed = try FileOperations.trash(entry.url) {
+                    moved.append((original: entry.url, inTrash: trashed))
+                }
+            } catch {
+                failure = error
+                break
+            }
+        }
+
+        if !moved.isEmpty {
+            let originals = moved
+            registerUndo("Move to Trash") { controller in
+                controller.attempt(Self.describe(putting: originals)) {
+                    for item in originals.reversed() {
+                        try FileManager.default.moveItem(at: item.inTrash, to: item.original)
                     }
-                    controller.registerUndo("Move to Trash") { controller in
-                        controller.attempt("move \(entry.name) to the trash again") {
-                            _ = try FileOperations.trash(entry.url)
+                }
+                controller.registerUndo("Move to Trash") { controller in
+                    controller.attempt("move them to the trash again") {
+                        for item in originals {
+                            _ = try FileOperations.trash(item.original)
                         }
                     }
                 }
             }
-            statusLabel.stringValue = "moved \(entry.name) to the trash"
-        } catch {
-            report(error, doing: "move \(entry.name) to the trash")
         }
+
+        if let failure {
+            report(
+                failure,
+                doing: "move \(selected.count == 1 ? selected[0].name : "everything selected")"
+                    + " to the trash")
+            return
+        }
+        announce(
+            moved.count == 1
+                ? "moved \(moved[0].original.lastPathComponent) to the trash"
+                : "moved \(moved.count) items to the trash")
+    }
+
+    private static func describe(putting items: [(original: URL, inTrash: URL)]) -> String {
+        items.count == 1
+            ? "put \(items[0].original.lastPathComponent) back"
+            : "put \(items.count) items back"
     }
 
     /// Undo is worth the small amount of bookkeeping precisely because these
@@ -1002,17 +1245,20 @@ final class BrowserViewController: NSViewController {
 
     private func report(_ error: any Error, doing what: String) {
         NSSound.beep()
-        statusLabel.stringValue = "could not \(what): \(error.localizedDescription)"
+        announce("could not \(what): \(error.localizedDescription)")
     }
 
     @objc func copyPath(_ sender: Any?) {
-        let target = actionTarget()
-        Actions.copyPath(target)
-        statusLabel.stringValue = "copied \(target.path)"
+        let targets = actionTargets()
+        // One path per line, which is what a shell, an editor and a chat
+        // message all want from a list of files.
+        Actions.copyPaths(targets)
+        announce(
+            targets.count == 1 ? "copied \(targets[0].path)" : "copied \(targets.count) paths")
     }
 
     @objc func revealInFinder(_ sender: Any?) {
-        Actions.revealInFinder(actionTarget())
+        Actions.revealInFinder(actionTargets())
     }
 
     @objc func openTerminalHere(_ sender: Any?) {
@@ -1043,13 +1289,17 @@ extension BrowserViewController: NSMenuItemValidation {
             return !transfers.isRunning && !pasteboardURLs().isEmpty
         }
         if menuItem.action == #selector(openInNewTab(_:)) {
-            return selectedEntry()?.isDirectory == true
+            return selectedEntries().contains(where: \.isDirectory)
+        }
+        // Renaming is the one that stays singular: there is one field editor
+        // and one name being typed into it.
+        if menuItem.action == #selector(renameSelection(_:)) {
+            return selectedEntries().count == 1
         }
         if menuItem.action == #selector(copy(_:))
-            || menuItem.action == #selector(renameSelection(_:))
             || menuItem.action == #selector(moveToTrash(_:))
         {
-            return selectedEntry() != nil
+            return !selectedEntries().isEmpty
         }
         if menuItem.action == #selector(toggleFavourite(_:)) {
             let target = favouriteTarget()
@@ -1074,6 +1324,9 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
     /// is left is to agree with it and re-read the folder.
     func tableViewSelectionDidChange(_ notification: Notification) {
         infoPanel.update(selectedEntry()?.url ?? directory)
+        // The count in the status line is part of the selection, so it moves
+        // with it rather than only when the folder is re-read.
+        statusLabel.stringValue = statusText()
 
         guard QLPreviewPanel.sharedPreviewPanelExists(),
             let panel = QLPreviewPanel.shared(), panel.isVisible
@@ -1103,7 +1356,11 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         case "name":
             return nameCell(for: entry, in: tableView)
         case "size":
-            var text = entry.isDirectory ? "--" : entry.size.map(Self.sizeFormatter.string) ?? ""
+            var text =
+                entry.isDirectory
+                ? folderSizeText(entry)
+                : entry.size.map(
+                    Self.sizeFormatter.string) ?? ""
             // A placeholder has a size and no bytes. Saying so here is the
             // difference between copying a folder and downloading it.
             if entry.cloud.isCloud, !entry.cloud.isDownloaded {
@@ -1116,6 +1373,46 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         default:
             return nil
         }
+    }
+
+    /// What goes in the size column for a folder.
+    ///
+    /// An en dash until the walk finishes, because a folder's size is not
+    /// something the filesystem knows and pretending otherwise means either
+    /// blocking the list or lying. "over" when the walk gave up at its limit:
+    /// the number is then a floor, and saying so is the difference between an
+    /// answer and a guess.
+    private func folderSizeText(_ entry: Entry) -> String {
+        let unknown = "\u{2013}"
+        guard let measured = folderSizes.cached(entry.url) else { return unknown }
+        // Nothing counted and not finished means the folder could not be read
+        // at all. "over Zero KB" would be a number where there is none.
+        guard measured.complete || measured.files > 0 else { return unknown }
+
+        let size = Self.sizeFormatter.string(fromByteCount: measured.bytes)
+        return measured.complete ? size : "over \(size)"
+    }
+
+    /// Asks for the sizes of the folders somebody can currently see.
+    private func measureVisibleFolders() {
+        var visible = tableView.rows(in: tableView.visibleRect)
+        if visible.length == 0 {
+            // Before the first layout pass there is no visible rect to speak
+            // of. What will be visible is the top of the list, so start there
+            // rather than measuring nothing until the first scroll.
+            visible = NSRange(location: 0, length: min(entries.count, 40))
+        }
+        let rows = visible.location..<min(visible.location + visible.length, entries.count)
+        folderSizes.want(rows.compactMap { entries[$0].isDirectory ? entries[$0].url : nil })
+    }
+
+    /// Redraws one size cell, once its folder has been measured.
+    private func redrawSize(of url: URL) {
+        guard let row = entries.firstIndex(where: { $0.url == url }) else { return }
+        let column = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("size"))
+        guard column >= 0 else { return }
+        tableView.reloadData(
+            forRowIndexes: IndexSet(integer: row), columnIndexes: IndexSet(integer: column))
     }
 
     private func nameCell(for entry: Entry, in tableView: NSTableView) -> NSView {
@@ -1219,12 +1516,15 @@ extension BrowserViewController: QLPreviewPanelDataSource, QLPreviewPanelDelegat
         }
     }
 
+    /// Every selected file, so the panel's own arrows walk the selection.
     func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
-        selectedEntry() == nil ? 0 : 1
+        selectedEntries().count
     }
 
     func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
-        selectedEntry()?.url as (any QLPreviewItem)?
+        let selected = selectedEntries()
+        guard selected.indices.contains(index) else { return nil }
+        return selected[index].url as (any QLPreviewItem)?
     }
 
     /// Send the panel's own key events back to the table, so the arrow keys
@@ -1277,7 +1577,7 @@ extension BrowserViewController: NSTextFieldDelegate {
                     }
                 }
             }
-            statusLabel.stringValue = "renamed to \(name)"
+            announce("renamed to \(name)")
         } catch {
             // Put the old name back on screen: the row still says the new one,
             // and a list that disagrees with the disk is worse than an error.
@@ -1300,7 +1600,11 @@ extension BrowserViewController: NSMenuDelegate {
     /// make every item in the menu agree about which file it means.
     func menuNeedsUpdate(_ menu: NSMenu) {
         let clicked = tableView.clickedRow
-        if entries.indices.contains(clicked), clicked != tableView.selectedRow {
+        // A right-click inside an existing selection acts on the whole of it;
+        // one outside starts a new selection of the row that was clicked.
+        // Anything else means right-clicking one of five selected files
+        // quietly throws the other four away.
+        if entries.indices.contains(clicked), !tableView.selectedRowIndexes.contains(clicked) {
             select(row: clicked)
         }
         guard let entry = selectedEntry() else { return }
@@ -1329,13 +1633,8 @@ extension BrowserViewController {
         let sources = draggedURLs(info)
         guard !sources.isEmpty else { return [] }
 
-        // Dropping between rows means "into the folder on screen"; dropping on
-        // a row means that row, but only when it is a folder.
-        let destination: URL
-        if operation == .on, entries.indices.contains(row), entries[row].isDirectory {
-            destination = entries[row].url
-        } else {
-            destination = directory
+        let destination = dropDestination(row: row, operation: operation)
+        if destination.path == directory.path {
             tableView.setDropRow(-1, dropOperation: .on)
         }
 
@@ -1354,17 +1653,34 @@ extension BrowserViewController {
         let sources = draggedURLs(info)
         guard !sources.isEmpty else { return false }
 
-        let destination: URL
-        if operation == .on, entries.indices.contains(row), entries[row].isDirectory {
-            destination = entries[row].url
-        } else {
-            destination = directory
-        }
+        let destination = dropDestination(row: row, operation: operation)
+        return drop(sources, into: destination, kind: kind(for: info, into: destination))
+    }
 
-        let transferKind = kind(for: info, into: destination)
+    /// Where a drop at this row lands.
+    ///
+    /// Dropping between rows means "into the folder on screen"; dropping on a
+    /// row means that row, but only when it is a folder. Shared by validate and
+    /// accept, which used to work it out separately and could in principle
+    /// disagree about where the files were going.
+    func dropDestination(row: Int, operation: NSTableView.DropOperation) -> URL {
+        if operation == .on, entries.indices.contains(row), entries[row].isDirectory {
+            return entries[row].url
+        }
+        return directory
+    }
+
+    /// Carries out a drop. Every source, not the first one: a drag that started
+    /// from five selected rows arrives here as five URLs.
+    @discardableResult
+    func drop(_ sources: [URL], into destination: URL, kind transferKind: Transfer.Kind) -> Bool {
+        guard !transfers.isRunning else {
+            announce("one transfer at a time, for now")
+            return false
+        }
         if let refusal = Transfer.check(moving: sources, into: destination, kind: transferKind) {
             NSSound.beep()
-            statusLabel.stringValue = refusal.message
+            announce(refusal.message)
             return false
         }
 
@@ -1375,6 +1691,11 @@ extension BrowserViewController {
         return true
     }
 
+    /// Every file URL on the drag's pasteboard.
+    ///
+    /// AppKit asks `pasteboardWriterForRow` once per selected row when a drag
+    /// starts inside a selection, so a five-row drag really does arrive with
+    /// five URLs on it, and reading only the first would silently drop four.
     private func draggedURLs(_ info: any NSDraggingInfo) -> [URL] {
         info.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
     }

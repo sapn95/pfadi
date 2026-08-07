@@ -61,6 +61,17 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 	<true/>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>pfadi</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>pfadi</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

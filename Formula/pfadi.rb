@@ -31,55 +31,70 @@ class Pfadi < Formula
 
     prefix.install "build/Pfadi.app"
 
-    # `pfadi` and `pfadi ~/git` from a shell.
+    # `pfadi`, `pfadi ~/git`, `pfadi -R report.pdf`.
     #
-    # Deliberately `open` rather than the binary itself. Running the executable
-    # holds the terminal until the window is closed, which is the wrong shape
-    # for a browser you glance at. Going through LaunchServices returns at once,
-    # reuses a window that is already open, and gets the Dock and the app
-    # switcher right.
-    (bin/"pfadi").write <<~LAUNCHER
-      #!/bin/sh
-      exec /usr/bin/open -a "#{opt_prefix}/Pfadi.app" "${1:-$PWD}"
-    LAUNCHER
-    (bin/"pfadi").chmod 0755
+    # This was two lines of shell handing $1 to /usr/bin/open. It still goes
+    # through LaunchServices, which was the right half: running the executable
+    # holds the terminal until the window is closed, whereas asking
+    # LaunchServices returns at once, reuses a window that is already open, and
+    # gets the Dock and the app switcher right. The wrong half was everything
+    # else, so the shell is gone and a real command parses the arguments.
+    bin.install "#{buildpath}/.build/release/pfadi-cli" => "pfadi"
 
     # The one-command way off Finder. Installed rather than left in the repo,
     # because somebody who installed a binary should not have to clone to find
     # the tool that makes it usable.
     bin.install "#{buildpath}/.build/release/pfadi-default" => "pfadi-default"
+
+    man1.install "man/pfadi.1", "man/pfadi-default.1"
   end
 
   def caveats
     <<~CAVEATS
-      To use pfadi instead of Finder, one command does the lot and says what
+      To use pfadi in place of Finder, one command does the lot and says what
       macOS refuses rather than pretending:
 
         pfadi-default apply
 
-      It puts a launcher in ~/Applications so Spotlight finds it, points
-      `open .` in a terminal at pfadi, and asks LaunchServices for every content
-      type it will actually hand over. `pfadi-default` on its own reports what
-      the system has now and changes nothing; `pfadi-default undo` puts it back.
+      The part that genuinely replaces Finder is the file viewer: with it set,
+      "Reveal in Finder" in every other application opens pfadi. It also puts a
+      launcher in ~/Applications so Spotlight finds it and points `open .` in a
+      terminal at pfadi. Double-clicking a folder inside Finder stays Finder's,
+      and `man pfadi-default` explains exactly why.
+
+      `pfadi-default` on its own reports what the system has now and changes
+      nothing; `pfadi-default undo` puts all of it back.
 
       From a terminal it works without any of that:
 
-        pfadi           # the current directory
-        pfadi ~/git     # somewhere else
+        pfadi                  # the current folder
+        pfadi ~/git ~/Downloads  # two folders, as tabs of one window
+        pfadi -R ./report.pdf  # point at a file rather than opening it
     CAVEATS
   end
 
   test do
     # Launching a windowed application under `brew test` would hang, so the
-    # test proves the bundle is well formed and the binary is executable.
+    # test proves the bundle is well formed and the commands answer.
     assert_path_exists prefix/"Pfadi.app/Contents/MacOS/pfadi"
     assert_predicate prefix/"Pfadi.app/Contents/MacOS/pfadi", :executable?
-    # The launcher must hand over to LaunchServices rather than exec the
-    # binary, or `pfadi ~/git` holds the terminal it was typed into.
-    assert_match "/usr/bin/open", (bin/"pfadi").read
+
+    # The command must answer for itself rather than leaking the usage of
+    # /usr/bin/open, which is what the shell wrapper it replaced did.
+    assert_match "pfadi #{version}", shell_output("#{bin}/pfadi --version")
+    assert_match "address bar", shell_output("#{bin}/pfadi --help")
+    # A path that is not there is an error, not a window.
+    assert_match "no such file or folder",
+      shell_output("#{bin}/pfadi /nope-does-not-exist 2>&1", 1)
+
     # The switch tool must report and change nothing when asked for neither.
     assert_match "Nothing has been changed",
       shell_output("PFADI_APP=#{prefix}/Pfadi.app #{bin}/pfadi-default")
+    assert_match "pfadi-default #{version}", shell_output("#{bin}/pfadi-default --version")
+
+    assert_path_exists man1/"pfadi.1"
+    assert_path_exists man1/"pfadi-default.1"
+
     system "plutil", "-lint", prefix/"Pfadi.app/Contents/Info.plist"
     assert_match version.to_s,
       shell_output("/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' " \

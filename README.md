@@ -7,7 +7,9 @@ A small macOS file browser with the one thing macOS has never had: an address
 bar you can click into and type, with tab completion.
 
 > **Work in progress.** It browses, copies, moves, renames, trashes and makes
-> folders, in tabs, with drag and drop, and ⌘Z takes back any of it. It is not
+> folders, in tabs, with drag and drop, several files at a time, and ⌘Z takes
+> back any of it. Reveal in Finder from other applications can be pointed at
+> it. It is not
 > signed or notarised, which is why the Homebrew formula compiles rather than
 > downloading. Keep Finder around for the things below it cannot do.
 
@@ -43,6 +45,9 @@ click    a folder in the path: everything beside it, with a filter
 ⌘F       filter the folder you are in
 space    Quick Look, and again to close it
 return   open, or go there
+⇧↑ ⇧↓    extend the selection
+⌘click   add one row to it, or take one out
+⇧click   everything between here and there
 a-z      type-ahead: jump to the row whose name starts like that
 ⌘[ ⌘]    back and forward
 ⌘↑       enclosing folder
@@ -159,6 +164,43 @@ It says when it rewrote something, quoting both back, and a checkbox turns that
 off. An already-mounted share is found rather than mounted again, which is how
 people end up with `share-1` through `share-4`.
 
+## Several at once
+
+⇧↑ and ⇧↓ extend the selection, ⌘-click adds and removes one, shift-click takes
+everything between. Every action then acts on all of it: copy, move to the
+trash, copy the paths, reveal in Finder, drag out, drop in. Quick Look walks
+the selection with its own arrows, and the status line counts what is picked
+and adds up the file sizes.
+
+Two stay singular on purpose. **Rename** works on one row, because there is one
+field editor and one name being typed into it. **Get Info** describes one thing,
+because a panel about five files at once is a different panel.
+
+Opening several is the one place it has to choose. One folder is walked into,
+because that is what a browser is for; several are opened as tabs, because
+there is nowhere else for them to go; files are handed to whatever owns them.
+
+A selection survives a reload. The watcher fires whenever anything in the
+folder is written, and losing five picked rows because a build wrote a log file
+is the kind of thing that makes a list feel hostile.
+
+## Folder sizes
+
+The size column shows a real number for folders, measured by walking them,
+because the filesystem does not record one. Two rules keep that from costing
+anything:
+
+- **Only what is on screen.** Scrolling asks for the rows now visible and tells
+  the walk in flight to stop if it is no longer one of them.
+- **Only once.** Answers are kept, so scrolling back is instant. ⌘R is the one
+  thing that throws them away, because re-walking a tree every time the watcher
+  fires would make the column cost far more than it is worth.
+
+An en dash means not measured yet. `over 4.2 GB` means the walk hit its limit
+and the number is a floor rather than a total — a guess dressed as an answer is
+worse than an honest bound. Sorting by size still sorts files only: the sort
+happens when the folder is listed and the measurements arrive after it.
+
 ## Writing to disk
 
 Everything that changes anything is reversible. ⌘Z puts back a trashed file,
@@ -190,31 +232,80 @@ prefixes, or `/a/bc` would count as living inside `/a/b`.
 
 ```bash
 pfadi-default          # what the system has now, changing nothing
-pfadi-default apply    # the launcher, the shell function, and what macOS allows
+pfadi-default apply    # the file viewer, the launcher, the shell function
 pfadi-default undo     # all of it back
+man pfadi-default      # the long version
 ```
 
-Every claim it makes is measured at run time rather than assumed:
+Every claim it makes is measured at run time rather than assumed, and the
+answers are not all the same.
+
+**What works, and it is the big one.** `NSFileViewer` is a global preference
+that decides what "Finder" means to AppKit. `selectFile:inFileViewerRootedAtPath:`
+— the call behind **Reveal in Finder**, **Show in Finder** and **Show in
+Enclosing Folder** in every other application — reads it, and hands the file to
+whatever it names. Set it, and "show me where this is" from your browser, your
+editor or your mail client opens pfadi with the file selected. It has been
+undocumented since Mac OS X 10.4 and it is the same mechanism Path Finder and
+ForkLift use.
+
+**What does not.** Double-clicking a folder inside Finder.
 
 | | |
 | --- | --- |
+| Reveal in Finder, from anywhere | **Handed over**, via `NSFileViewer` |
 | Volumes | Handed over |
 | Folders | **Refused**, `paramErr` from `LSSetDefaultRoleHandlerForContentType` |
 | Directories | **Refused**, the same |
 | The `file://` scheme | **Refused**, the same |
 
 Declaring `public.folder` in `CFBundleDocumentTypes` does not change the
-answer; it was tried, and the bundle declares it anyway. **Nothing but Finder
-can be the default for a folder on this system.** That is the entire reason for
-the shell function `apply` installs, which sends `open .` and `open <folder>`
-to pfadi and leaves `open report.pdf` alone. Finder cannot be taken out of the
-Dock either: macOS reserves that tile.
+answer; it was tried, and the bundle declares it anyway. Writing the handler
+straight into `com.apple.launchservices.secure` is accepted and then ignored —
+`apply` writes it, reads back what LaunchServices actually reports, and says so
+when the two disagree rather than claiming a win.
+
+Finder cannot be taken out of the Dock either, and not for want of a
+preference: it is not in `persistent-apps` at all, because Dock.app draws it.
+Removing it means turning off System Integrity Protection and FileVault and
+editing the sealed system volume. That is a bad trade for an icon.
+
+So the shell function `apply` installs remains: it sends `open .` and
+`open <folder>` to pfadi and leaves `open report.pdf` alone, because it only
+takes over when there is exactly one argument and it is a folder.
 
 The launcher it puts in `~/Applications` is a bundle whose only content is the
 command that starts pfadi. A symlink there is not indexed, because Spotlight
 indexes `~/Applications` but not Homebrew's Cellar. A copy is indexed and then
 goes stale the next time brew upgrades the real thing, which is worse: it keeps
 launching a version that is no longer installed. A launcher is neither.
+
+`undo` gives everything back, and only what is ours: the launcher goes only if
+its bundle identifier says pfadi wrote it, `NSFileViewer` is cleared only if it
+still names pfadi, and the shell block is cut out from between its markers so
+the rest of the profile survives byte for byte.
+
+## The command
+
+```bash
+pfadi                     # the folder the shell is in
+pfadi ~/git ~/Downloads   # two folders, as tabs of one window
+pfadi -R ./report.pdf     # point at a file rather than opening it
+pfadi --help              # and it is pfadi that answers
+man pfadi
+```
+
+This used to be two lines of shell handing `$1` to `/usr/bin/open`. It was
+right about one thing and wrong about the rest: running the binary directly
+holds the terminal until the window closes, whereas going through
+LaunchServices returns at once and reuses a window that is already open. So
+that stayed. What went were `pfadi --help` printing the usage of `open`,
+`pfadi a b` opening `a` and dropping `b` without a word, and a missing path
+reporting "The file … does not exist" about a folder.
+
+`-R` needs its own flag because a file URL cannot say "select this" — a folder
+handed over is one you want opened. So a reveal travels as `pfadi://reveal`
+instead, which is also what an incoming Reveal in Finder arrives as.
 
 ## Build
 
@@ -252,7 +343,9 @@ to happen.
 | --- | --- |
 | `Sources/PfadiCore` | Listing, sorting, completion, type-ahead, the watcher, transfers, favourites, preferences, shares. No AppKit, so it can be tested. |
 | `Sources/pfadi` | The window, the list, the path bar, the sidebar, the menus. AppKit, built in code, no nib files. |
+| `Sources/pfadi-cli` | The `pfadi` command. Parses the arguments, then hands them to LaunchServices. |
 | `Sources/pfadi-default` | The tool that puts pfadi where Finder is. |
+| `man/` | The manual pages, checked against `--help` by the tests. |
 | `Tests/PfadiSelfTest` | The tests, as a plain executable. |
 | `scripts/` | The `.app` bundle, the icon, signing. |
 | `Formula/pfadi.rb` | The Homebrew formula, copied into the tap on release. |
@@ -305,6 +398,7 @@ on Linux because they do not need to.
 ## Wanted next
 
 - **Expandable folders in the list**, the way an open panel does it.
+- **Renaming several at once**, which needs a dialog rather than a field editor.
 - **Downloading and evicting cloud placeholders**, which needs the File
   Provider domain APIs.
 
