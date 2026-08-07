@@ -518,7 +518,7 @@ required, which is the whole reason the test target looks the way it does.
 
 ```bash
 PFADI_CHECK_FOLDER=~/somewhere \
-  swift run pfadi --layout-check # …and against a real folder of your own
+  swift run pfadi --layout-check # …and against a folder of your own
 swift build                     # the binary
 swift run pfadi-selftest        # the tests
 swift run pfadi --layout-check  # the window, clicked through
@@ -526,6 +526,12 @@ swift run pfadi --layout-check  # the window, clicked through
 ./scripts/check-diagrams.sh     # every diagram in this README still renders
 ./scripts/make-app.sh           # build/Pfadi.app
 ```
+
+`PFADI_CHECK_FOLDER` runs the double-click and listing checks against a folder
+you name, which is how a tree that behaves differently — a cloud mount, a
+network share — gets looked at without inventing one a CI runner cannot have.
+Point it at something with a folder inside it; with nothing to open, that part
+says so and is skipped rather than reported as a defect.
 
 The diagrams above are ```` ```mermaid ```` blocks rather than committed SVGs,
 because GitHub renders them itself and a second copy of a picture is a second

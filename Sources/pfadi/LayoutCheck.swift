@@ -305,8 +305,10 @@ enum LayoutCheck {
             "it lists something, got \(browser.rowCount) rows")
 
         guard let folder = browser.firstFolderName else {
-            failures += 1
-            print("  FAIL it has a folder in it to open")
+            // Not a failure. Somebody pointed this at a folder with no folders
+            // in it, and reporting that as a defect in pfadi would be noise
+            // about the environment rather than about the code.
+            print("  ..   no folder inside it to open, skipped")
             return
         }
         guard let namedRow = browser.rowIndex(of: folder) else { return }
