@@ -6,12 +6,14 @@
 A small macOS file browser with the one thing macOS has never had: an address
 bar you can click into and type, with tab completion.
 
-> **Work in progress.** It browses, copies, moves, renames, trashes and makes
-> folders, in tabs, with drag and drop, several files at a time, and ⌘Z takes
-> back any of it. Reveal in Finder from other applications can be pointed at
-> it. It is not
-> signed or notarised, which is why the Homebrew formula compiles rather than
-> downloading. Keep Finder around for the things below it cannot do.
+It browses, copies, moves, renames, trashes and makes folders, in tabs, with
+drag and drop, several files at a time, and ⌘Z takes back any of it. Reveal in
+Finder from every other application can be pointed at it.
+
+It is not signed or notarised, which is why the Homebrew formula compiles on
+your machine rather than downloading a binary. Finder stays for the two things
+macOS will not hand over, and [Instead of Finder](#instead-of-finder) says
+exactly which two, why, and what was measured to find out.
 
 ```bash
 brew install sapn95/tap/pfadi
@@ -55,6 +57,8 @@ a-z      type-ahead: jump to the row whose name starts like that
 ⇧⌘H      home
 ⇧⌘.      hide the dotfiles, which are shown by default
 ⇧⌘K      the Created column, on and off
+right-click the column headers: which columns to show
+drag     a column header to move it
 ⌘R       refresh
 ⌘T ⌘N    a new tab, a new window
 ⌘C ⌘V    copy, then paste, with ⌥⌘V to move instead
@@ -207,6 +211,20 @@ An en dash means not measured yet. `over 4.2 GB` means the walk hit its limit
 and the number is a floor rather than a total — a guess dressed as an answer is
 worse than an honest bound.
 
+```mermaid
+flowchart LR
+  columns["the columns on screen"]
+  keys["only the resource keys<br/>those columns need"]
+  read["read the folder<br/>on a worker thread"]
+  order["folders first,<br/>then the sort column"]
+  rows["rows drawn"]
+  walk["walk the folders<br/>that are visible"]
+  kept["kept until ⌘R"]
+
+  columns --> keys --> read --> order --> rows
+  rows --> walk --> kept --> rows
+```
+
 **Sorting by size sorts the folders too**, which is the reason to measure them
 at all. Clicking that header measures every folder in the listing rather than
 only the visible ones, because an order worked out from whatever happened to be
@@ -217,20 +235,48 @@ and then move it.
 
 ## Columns
 
-Name, Size and Modified are always there. **Created** is a fourth, off by
-default, because the date that usually matters is when something last changed.
-It is blank where the filesystem records no creation date, which an SMB share
-often does not.
+Twelve of them. Three are on to begin with.
 
-**Right-click the headers** for the list of columns with a tick against the ones
-showing. ⇧⌘K is the shortcut for Created. **Drag a header** to move a column.
-Name cannot be hidden: a list of sizes and dates with nothing saying which file
-they belong to is not a list, and pfadi says so rather than greying the item out
-without explanation.
+| Column | |
+| --- | --- |
+| **Name** | Cannot be switched off. |
+| **Size** | Files from the filesystem, folders by walking them. |
+| **Files** | How many are inside, from that same walk, so it costs nothing extra. |
+| **Modified** | |
+| **Created** | Blank where the volume records none, which an SMB share often does not. |
+| **Added** | When it arrived in this folder. In `~/Downloads` it is the only date that means anything. |
+| **Last Opened** | |
+| **Kind** | What the system calls it: Folder, PNG image, Terminal script. |
+| **Extension** | |
+| **Tags** | Finder's, in Finder's order. |
+| **Permissions** | `drwxr-xr-x`. Finder cannot show this in a list at all. |
+| **Owner** | |
 
-Every header sorts, including Created. Hiding the column being sorted by falls
-back to name, so the list is never in an order with nothing on screen to explain
-it. Widths, order and the sort all survive a quit.
+**Right-click the headers** for the list, with a tick against the ones showing.
+It is also under **View → Columns**, because a menu you have to know to
+right-click for is a menu most people never find. **Drag a header** to move a
+column. ⇧⌘K is the shortcut for Created.
+
+Name cannot be hidden, and pfadi says so in the banner rather than greying the
+item out with no explanation: a list of sizes and dates with nothing saying
+which file they belong to is not a list.
+
+**Only what is on screen is read off the disk.** Tags, owner and permissions
+each cost something per entry, and a folder of forty thousand files should not
+pay for a column nobody switched on. Switching one on re-reads the folder;
+switching one off is a redraw.
+
+Two details that would otherwise bite. **Permissions and Owner come from
+`lstat`**, not from the resource keys, because those follow symbolic links and
+the interesting thing about a link is the link — a link shows as `l...` here.
+And **the column being sorted by is read even when it is hidden**, or a sort
+restored from last launch would name a column since switched off and leave the
+list in an order with nothing on screen to explain it.
+
+Every header sorts except Files, whose number arrives after the listing does;
+sorting by it would put the rows in an order and then change it under the
+pointer. Hiding the column being sorted by falls back to name. Widths, order and
+the sort all survive a quit.
 
 ## Writing to disk
 
@@ -291,6 +337,31 @@ man pfadi-default      # the long version
 Every claim it makes is measured at run time rather than assumed, and the
 answers are not all the same.
 
+```mermaid
+flowchart LR
+  apply["pfadi-default apply"]
+
+  viewer["NSFileViewer<br/>global preference"]
+  shell["open() in .zshrc"]
+  launcher["launcher in ~/Applications"]
+  ls["LaunchServices<br/>content types"]
+
+  reveal(["Reveal in Finder,<br/>from any application"])
+  terminal(["open . in a terminal"])
+  spotlight(["Spotlight finds it"])
+  volumes(["Volumes"])
+  folders(["Double-click a folder<br/>inside Finder"])
+
+  apply --> viewer --> reveal
+  apply --> shell --> terminal
+  apply --> launcher --> spotlight
+  apply --> ls --> volumes
+  ls -. "paramErr -50, every way round" .-> folders
+
+  classDef refused stroke-dasharray: 4 3
+  class folders refused
+```
+
 **What works, and it is the big one.** `NSFileViewer` is a global preference
 that decides what "Finder" means to AppKit. `selectFile:inFileViewerRootedAtPath:`
 — the call behind **Reveal in Finder**, **Show in Finder** and **Show in
@@ -306,20 +377,48 @@ ForkLift use.
 | --- | --- |
 | Reveal in Finder, from anywhere | **Handed over**, via `NSFileViewer` |
 | Volumes | Handed over |
-| Folders | **Refused**, `paramErr` from `LSSetDefaultRoleHandlerForContentType` |
-| Directories | **Refused**, the same |
-| The `file://` scheme | **Refused**, the same |
+| Folders | **Blocked** |
+| Directories | **Blocked** |
+| The `file://` scheme | **Blocked** |
 
-Declaring `public.folder` in `CFBundleDocumentTypes` does not change the
-answer; it was tried, and the bundle declares it anyway. Writing the handler
-straight into `com.apple.launchservices.secure` is accepted and then ignored —
-`apply` writes it, reads back what LaunchServices actually reports, and says so
-when the two disagree rather than claiming a win.
+Blocked by macOS itself, not by a missing declaration, and asked through the
+interface that is current rather than the one that is deprecated:
+
+| Asked how | Answer for `public.folder` |
+| --- | --- |
+| `NSWorkspace.setDefaultApplication(at:toOpen:)`, macOS 12+ | `NSCocoaErrorDomain 256`, wrapping `NSOSStatusErrorDomain -50` |
+| `LSSetDefaultRoleHandlerForContentType`, deprecated | `paramErr` (-50) |
+| the same, with `LSHandlerRank: Owner` instead of `Alternate` | `paramErr` (-50) |
+| writing the handler into `com.apple.launchservices.secure` | written, then ignored |
+| `lsregister -dump` | pfadi **is** a registered claimant, and is refused anyway |
+
+`apply` uses the modern call, because a refusal from a deprecated function is a
+weaker claim than a refusal from the current one. It is the same refusal. It
+also writes the preference-file entry, reads back what LaunchServices actually
+reports, and says so when the two disagree rather than claiming a win.
+
+The command every forum post recommends for this no longer exists:
+
+```console
+$ lsregister -kill -r -domain user
+The -kill option has been removed because it was dangerous and no longer useful.
+```
+
+On a Linux desktop this is one line — `xdg-mime default pfadi.desktop
+inode/directory` — which is worth knowing, because it means the wall here is a
+decision rather than a missing feature.
 
 Finder cannot be taken out of the Dock either, and not for want of a
 preference: it is not in `persistent-apps` at all, because Dock.app draws it.
 Removing it means turning off System Integrity Protection and FileVault and
 editing the sealed system volume. That is a bad trade for an icon.
+
+Of everything else that claims to replace Finder, only QSpace goes further, and
+it does it by **not being Finder's desktop**: it draws its own, so a
+double-click on a folder there never reaches Finder in the first place. ForkLift
+and Path Finder use `NSFileViewer` and the same preference-file entry, and ask
+for a restart that pfadi does not need. That route is in
+[Wanted next](#wanted-next), with what it would cost.
 
 So the shell function `apply` installs remains: it sends `open .` and
 `open <folder>` to pfadi and leaves `open report.pdf` alone, because it only
@@ -358,18 +457,44 @@ reporting "The file … does not exist" about a folder.
 handed over is one you want opened. So a reveal travels as `pfadi://reveal`
 instead, which is also what an incoming Reveal in Finder arrives as.
 
+```mermaid
+flowchart TD
+  cli["pfadi ~/git"]
+  dock["a folder dropped<br/>on the Dock icon"]
+  finder["Reveal in Finder,<br/>from another application"]
+
+  parse["Invocation.parse"]
+  kind{"what did it mean?"}
+  open["open the folder"]
+  select["open the folder holding it,<br/>select the file"]
+  window["a window, or a tab<br/>of the one in front"]
+
+  cli --> parse --> kind
+  dock -- "file URL" --> kind
+  finder -- "pfadi://reveal" --> kind
+  kind -- "a folder" --> open --> window
+  kind -- "a file" --> select --> window
+```
+
 ## Build
 
 Needs Swift 6 and macOS 14. The Command Line Tools are enough; Xcode is not
 required, which is the whole reason the test target looks the way it does.
 
 ```bash
-swift build                    # the binary
-swift run pfadi-selftest       # the tests
-swift run pfadi --layout-check # the window, clicked through
-./scripts/coverage.sh          # how much of PfadiCore that ran, with a floor
-./scripts/make-app.sh          # build/Pfadi.app
+swift build                     # the binary
+swift run pfadi-selftest        # the tests
+swift run pfadi --layout-check  # the window, clicked through
+./scripts/coverage.sh           # how much of PfadiCore that ran, with a floor
+./scripts/check-diagrams.sh     # every diagram in this README still renders
+./scripts/make-app.sh           # build/Pfadi.app
 ```
+
+The diagrams above are ```` ```mermaid ```` blocks rather than committed SVGs,
+because GitHub renders them itself and a second copy of a picture is a second
+copy to keep in step. What a committed SVG would have proved — that the source
+parses — `check-diagrams.sh` proves instead, by handing every block to the real
+renderer and throwing the output away.
 
 Coverage is measured on PfadiCore and CI fails below 80%. Not on the AppKit
 half: that is what `--layout-check` is for, and a single number covering both
@@ -403,6 +528,7 @@ to happen.
 | `Sources/PfadiCore` | Listing, sorting, completion, type-ahead, the watcher, transfers, favourites, preferences, shares. No AppKit, so it can be tested. |
 | `Sources/pfadi` | The window, the list, the path bar, the sidebar, the menus. AppKit, built in code, no nib files. |
 | `Sources/pfadi-cli` | The `pfadi` command. Parses the arguments, then hands them to LaunchServices. |
+| `scripts/coverage.sh` | Coverage on PfadiCore, with the floor CI enforces. |
 | `Sources/pfadi-default` | The tool that puts pfadi where Finder is. |
 | `man/` | The manual pages, checked against `--help` by the tests. |
 | `Tests/PfadiSelfTest` | The tests, as a plain executable. |
@@ -458,6 +584,10 @@ on Linux because they do not need to.
 
 - **Expandable folders in the list**, the way an open panel does it.
 - **Renaming several at once**, which needs a dialog rather than a field editor.
+- **Its own desktop**, which is the only remaining way to make a double-click on
+  a folder land here. It means `CreateDesktop false` and taking over icon
+  layout, drag and drop, the context menu and Stacks, and it would still only
+  cover the desktop. QSpace is the one competitor that does it.
 - **Downloading and evicting cloud placeholders**, which needs the File
   Provider domain APIs.
 

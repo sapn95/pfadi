@@ -45,6 +45,16 @@ jobs:
         # the two numbers would hide whichever one was slipping.
         run: ./scripts/coverage.sh
 
+      - name: mermaid-cli, for the diagram check below
+        run: brew install mermaid-cli
+
+      - name: every diagram in the README still renders
+        # The README's diagrams are mermaid blocks, which GitHub renders
+        # itself. Nothing else would notice one that stopped parsing, because
+        # a broken block renders as its own source and looks like a code
+        # sample.
+        run: ./scripts/check-diagrams.sh
+
       - name: assemble the .app bundle
         run: ./scripts/make-app.sh
       - name: the bundle is actually launchable

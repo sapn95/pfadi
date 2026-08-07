@@ -10,6 +10,13 @@ public struct ListingOrder: Equatable, Sendable {
         case size
         case modified
         case created
+        case added
+        case opened
+        case kind
+        case fileExtension = "extension"
+        case tags
+        case permissions
+        case owner
     }
 
     public var key: Key
@@ -96,7 +103,33 @@ extension DirectoryListing {
             return compare(lhs.modified, rhs.modified)
         case .created:
             return compare(lhs.created, rhs.created)
+        case .added:
+            return compare(lhs.added, rhs.added)
+        case .opened:
+            return compare(lhs.opened, rhs.opened)
+        case .kind:
+            return compare(lhs.kind, rhs.kind)
+        case .fileExtension:
+            return compare(lhs.url.pathExtension, rhs.url.pathExtension)
+        case .tags:
+            // Joined rather than compared element by element: what is on screen
+            // is one string, and sorting by something the eye cannot see in the
+            // column is worse than sorting by nothing.
+            return compare(lhs.tags.joined(separator: ", "), rhs.tags.joined(separator: ", "))
+        case .permissions:
+            return compare(lhs.permissions, rhs.permissions)
+        case .owner:
+            return compare(lhs.owner, rhs.owner)
         }
+    }
+
+    /// Text, with the empty ones last either way up handled by the caller.
+    ///
+    /// A row with nothing in the column sorts as an empty string, which puts it
+    /// at the top of an A-to-Z sort. That is the right place for it: the column
+    /// is empty, and it is honest for the empties to be together.
+    private static func compare(_ lhs: String?, _ rhs: String?) -> ComparisonResult {
+        (lhs ?? "").localizedStandardCompare(rhs ?? "")
     }
 
     /// An entry whose date could not be read sorts as the oldest thing there

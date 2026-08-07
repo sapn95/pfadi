@@ -1,4 +1,5 @@
 import AppKit
+import PfadiCore
 
 /// The menu bar, built in code so the project stays free of nib files.
 ///
@@ -211,6 +212,12 @@ enum MainMenu {
         )
         created.keyEquivalentModifierMask = [.command, .shift]
 
+        // The same list the headers offer behind a right-click, put where it
+        // can be found by somebody who does not know to right-click a header.
+        let columns = menu.addItem(withTitle: "Columns", action: nil, keyEquivalent: "")
+        columns.submenu = NSMenu(title: "Columns")
+        columns.submenu?.delegate = ColumnsMenuDelegate.shared
+
         menu.addItem(.separator())
 
         menu.addItem(
@@ -250,5 +257,35 @@ enum MainMenu {
 
         item.submenu = menu
         return item
+    }
+}
+
+/// Fills the View menu's Columns submenu when it opens.
+///
+/// Built on demand rather than at launch, and from the window in front rather
+/// than from a stored list, so it says what is true of the list somebody is
+/// actually looking at. A menu built once at launch stops being true the first
+/// time a column is switched.
+final class ColumnsMenuDelegate: NSObject, NSMenuDelegate {
+    static let shared = ColumnsMenuDelegate()
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let showing = Set(BrowserWindow.frontmost?.browser.visibleColumns ?? [])
+
+        for column in ListingColumn.allCases {
+            let item = menu.addItem(
+                withTitle: column.title,
+                action: #selector(BrowserViewController.toggleColumn(_:)),
+                keyEquivalent: "")
+            item.representedObject = column.rawValue
+            item.state = showing.contains(column.rawValue) ? .on : .off
+            // Name is shown ticked and inert rather than offered and refused.
+            item.isEnabled = column.canBeHidden
+        }
+        menu.addItem(.separator())
+        let hint = menu.addItem(
+            withTitle: "Drag a header to reorder", action: nil, keyEquivalent: "")
+        hint.isEnabled = false
     }
 }
