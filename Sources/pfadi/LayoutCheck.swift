@@ -49,15 +49,22 @@ enum LayoutCheck {
                     "\(wanted.title) is applied to the whole application, got "
                         + (NSApp.appearance?.name.rawValue ?? "nothing"))
             }
+
+            // Asked here, while this run set it, rather than after restoring
+            // whatever this machine has saved: a check that reads somebody's
+            // preference and then asserts a value has stopped checking the
+            // code and started checking the machine.
+            if wanted == .dark {
+                expect(
+                    NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
+                    "and dark really takes effect, got "
+                        + NSApp.effectiveAppearance.name.rawValue)
+            }
         }
 
-        // Back to what it will actually run as, so the windows the checks below
-        // build are the ones a person would see.
-        AppDelegate.applyAppearance(Preferences().appearance)
-        expect(
-            NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua,
-            "and the effective appearance really is dark, got "
-                + NSApp.effectiveAppearance.name.rawValue)
+        // Left on dark for the checks below, so the windows they build are the
+        // ones somebody who has changed nothing would see.
+        AppDelegate.applyAppearance(.dark)
     }
 
     /// A defaults store that touches nothing, so asking what the default is
