@@ -172,6 +172,14 @@ final class BrowserViewController: NSViewController {
         tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: true)
     }
 
+    /// Deselects everything, for the checks.
+    ///
+    /// With nothing selected the actions work on the folder on screen, which
+    /// makes what they were asked for unambiguous.
+    func clearSelection() {
+        tableView.deselectAll(nil)
+    }
+
     /// Which row a name is on, for the checks.
     func rowIndex(of name: String) -> Int? {
         entries.firstIndex { $0.name == name }
@@ -586,7 +594,7 @@ final class BrowserViewController: NSViewController {
             ("Paste", #selector(paste(_:))),
             ("Move Item Here", #selector(pasteAsMove(_:))),
             ("Copy Path", #selector(copyPath(_:))),
-            ("Reveal in Finder", #selector(revealInFinder(_:))),
+            ("Show in Finder", #selector(showInFinder(_:))),
         ] {
             menu.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
         }
@@ -1534,8 +1542,11 @@ final class BrowserViewController: NSViewController {
             targets.count == 1 ? "copied \(targets[0].path)" : "copied \(targets.count) paths")
     }
 
-    @objc func revealInFinder(_ sender: Any?) {
-        Actions.revealInFinder(actionTargets())
+    /// ⇧⌘R. Deliberately Finder, not "the system's file viewer": inside pfadi
+    /// the only reason to reach for this is to get to Finder, and once pfadi is
+    /// the file viewer the polite call comes straight back here.
+    @objc func showInFinder(_ sender: Any?) {
+        Actions.showInFinder(actionTargets())
     }
 
     @objc func openTerminalHere(_ sender: Any?) {

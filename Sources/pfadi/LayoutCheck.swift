@@ -229,6 +229,71 @@ enum LayoutCheck {
 
         dropping(in: window, fixture: fixture)
         sorting(in: window, fixture: fixture)
+        showingInFinder(in: window, fixture: fixture)
+    }
+
+    /// Show in Finder has to reach Finder.
+    ///
+    /// The polite call, `activateFileViewerSelecting`, honours the NSFileViewer
+    /// preference. Once `pfadi-default apply` points that at pfadi, the menu
+    /// item inside pfadi opened pfadi: a command that does nothing and looks
+    /// like a bug.
+    private static func showingInFinder(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        browser.navigate(to: fixture)
+        settle(until: { browser.listedDirectory?.path == fixture.path })
+
+        // Nothing selected, so the target is the folder on screen rather than
+        // whichever row the check before this one left highlighted.
+        browser.clearSelection()
+
+        let before = pfadiWindowCount()
+        browser.showInFinder(nil)
+        // Long enough for Finder to be launched from cold, which on a CI
+        // runner it will be.
+        settle(until: { finderShows(fixture) }, seconds: 8)
+
+        // The thing that was wrong: another window here, on the same folder,
+        // in the application the person is already looking at.
+        expect(
+            pfadiWindowCount() == before,
+            "it does not open another pfadi window, had \(before) and now "
+                + "\(pfadiWindowCount())")
+        expect(
+            finderShows(fixture),
+            "and Finder is showing \(fixture.lastPathComponent), its windows are "
+                + (windowTitles(ownedBy: "Finder").joined(separator: ", ").isEmpty
+                    ? "none" : windowTitles(ownedBy: "Finder").joined(separator: ", ")))
+    }
+
+    /// How many windows this application has on screen.
+    private static func pfadiWindowCount() -> Int {
+        windowTitles(ownedBy: "pfadi").count
+    }
+
+    /// Whether Finder has a window on this folder.
+    ///
+    /// By title, because the window list is what can be seen from outside a
+    /// process, and asking Finder itself needs an automation permission this
+    /// check has no business requesting.
+    private static func finderShows(_ folder: URL) -> Bool {
+        let wanted = folder.resolvingSymlinksInPath().lastPathComponent
+        return windowTitles(ownedBy: "Finder").contains {
+            $0 == wanted || $0.hasSuffix("/" + wanted)
+        }
+    }
+
+    private static func windowTitles(ownedBy owner: String) -> [String] {
+        let info =
+            CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        return info.compactMap { window in
+            guard window[kCGWindowOwnerName as String] as? String == owner,
+                let title = window[kCGWindowName as String] as? String,
+                !title.isEmpty
+            else { return nil }
+            return title
+        }
     }
 
     /// Clicking a column header, which is the only way anybody sorts anything.

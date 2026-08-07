@@ -236,23 +236,34 @@ final class PathBar: NSView {
             return
         }
 
-        // Waited for, rather than opened now.
+        // Opened now.
         //
-        // A menu put up on the first click takes over event tracking, so the
-        // second click of a double click lands in the menu and the branch above
-        // never runs. Double-clicking a folder in the path did nothing at all,
-        // whatever it was written to do. Nothing can see a double click before
-        // the menu is up, so the menu has to come after the moment one is still
-        // possible — which is exactly what the system's own interval measures.
-        pendingMenu?.cancel()
-        let work = DispatchWorkItem { [weak self, weak sender] in
-            guard let self, let sender else { return }
-            pendingMenu = nil
-            present(folders(in: url.deletingLastPathComponent()), below: sender)
-        }
-        pendingMenu = work
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + NSEvent.doubleClickInterval, execute: work)
+        // It used to wait for the double-click interval, because a menu takes
+        // over event tracking the moment it appears and the second click of a
+        // double click therefore lands inside it. That made the double click
+        // work and cost half a second of nothing on every single click, which
+        // is far too much for the gesture people actually use.
+        //
+        // So the wait is gone and the double click is caught on the way out
+        // instead: `dismissed(by:)` below asks what closed the menu.
+        present(
+            folders(in: url.deletingLastPathComponent()),
+            below: sender,
+            goingTo: url)
+    }
+
+    /// Whether the click that closed a menu was the second half of a double
+    /// click on the folder that opened it.
+    ///
+    /// A menu dismissed by a click outside itself swallows that click, so the
+    /// button never hears about it. This is the only place it can be seen.
+    private func dismissed(by event: NSEvent?, from anchor: NSView, opened at: TimeInterval)
+        -> Bool
+    {
+        guard let event, event.type == .leftMouseDown else { return false }
+        guard event.timestamp - at < NSEvent.doubleClickInterval else { return false }
+        let point = anchor.convert(event.locationInWindow, from: nil)
+        return anchor.bounds.contains(point)
     }
 
     @objc private func descendClicked() {
@@ -277,7 +288,7 @@ final class PathBar: NSView {
     /// plain list and sometimes a searchable one means looking first and
     /// reacting second, every time. The same shape every time means typing
     /// straight away without checking what you got.
-    private func present(_ folders: [URL], below anchor: NSView) {
+    private func present(_ folders: [URL], below anchor: NSView, goingTo destination: URL? = nil) {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -322,7 +333,15 @@ final class PathBar: NSView {
 
         filter.onChange = build
         build("")
+
+        // popUp blocks until the menu closes, so what closed it can be asked
+        // for the moment it returns.
+        let opened = ProcessInfo.processInfo.systemUptime
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.height + 4), in: anchor)
+
+        if let destination, dismissed(by: NSApp.currentEvent, from: anchor, opened: opened) {
+            onChoose?(destination)
+        }
     }
 
     @objc private func folderChosen(_ sender: NSMenuItem) {

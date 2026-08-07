@@ -249,8 +249,8 @@ enum MainMenu {
         terminal.keyEquivalentModifierMask = [.command, .control]
 
         let reveal = menu.addItem(
-            withTitle: "Reveal in Finder",
-            action: #selector(BrowserViewController.revealInFinder(_:)),
+            withTitle: "Show in Finder",
+            action: #selector(BrowserViewController.showInFinder(_:)),
             keyEquivalent: "r"
         )
         reveal.keyEquivalentModifierMask = [.command, .shift]
