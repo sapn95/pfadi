@@ -77,6 +77,16 @@ Point at a file rather than opening it:
 .Sh AUTHORS
 .An Sebastian Winterberger
 .Aq Mt sapn95@users.noreply.github.com
+.Sh SHOW IN FINDER
+Once pfadi is the system's file viewer, the call behind this
+.Pq Fn activateFileViewerSelecting
+comes back to pfadi, so the menu item addresses Finder by name instead.
+The item is then not selected, only its folder opened:
+.Xr open 1
+.Fl R
+goes through the same preference and is redirected too, and the only remaining
+route that selects needs an automation permission that a menu item has no
+business asking for.
 .Sh COLUMNS
 Twelve, of which
 .Sy Name , Sy Size No and Sy Modified

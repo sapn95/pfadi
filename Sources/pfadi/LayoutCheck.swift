@@ -229,6 +229,56 @@ enum LayoutCheck {
 
         dropping(in: window, fixture: fixture)
         sorting(in: window, fixture: fixture)
+        showingInFinder(in: window, fixture: fixture)
+    }
+
+    /// Show in Finder has to reach Finder.
+    ///
+    /// The polite call, `activateFileViewerSelecting`, honours the NSFileViewer
+    /// preference. Once `pfadi-default apply` points that at pfadi, the menu
+    /// item inside pfadi opened pfadi: a command that does nothing and looks
+    /// like a bug.
+    ///
+    /// Checked by asking who took the request, not by looking for a window.
+    /// A window title needs Screen Recording permission, which a CI runner does
+    /// not have and a file browser should never ask for — the first version of
+    /// this check did look, passed here and failed there.
+    private static func showingInFinder(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        browser.navigate(to: fixture)
+        settle(until: { browser.listedDirectory?.path == fixture.path })
+
+        // Nothing selected, so the target is the folder on screen rather than
+        // whichever row the check before this one left highlighted.
+        browser.clearSelection()
+
+        let before = pfadiWindowCount()
+        var receiver: String?
+        var answered = false
+        browser.showInFinder { identifier in
+            receiver = identifier
+            answered = true
+        }
+        settle(until: { answered }, seconds: 10)
+
+        expect(answered, "the request was answered")
+        expect(
+            receiver == "com.apple.finder",
+            "and Finder took it, got \(receiver ?? "nobody")")
+
+        // The thing that was wrong: another window here, on the same folder,
+        // in the application the person is already looking at.
+        expect(
+            pfadiWindowCount() == before,
+            "no second pfadi window, had \(before) and now \(pfadiWindowCount())")
+    }
+
+    /// How many windows this application has, asked of the application itself.
+    ///
+    /// `NSApp.windows` rather than the system window list, which needs a
+    /// permission to say anything useful.
+    private static func pfadiWindowCount() -> Int {
+        NSApp.windows.filter(\.isVisible).count
     }
 
     /// Clicking a column header, which is the only way anybody sorts anything.

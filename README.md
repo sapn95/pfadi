@@ -69,7 +69,7 @@ F2       rename
 ⌘I       what is this: kind, size, dates, access, cloud status
 ⇧⌘C      copy the path of the selection
 ⌃⌘T      open a terminal here
-⇧⌘R      reveal in Finder
+⇧⌘R      show it in Finder, the real one
 ⌘D       add this folder to the sidebar, or take it back out
 ⌘K       connect to a server
 ```
@@ -94,6 +94,15 @@ Clicking the leftmost folder goes straight there, because the root has no
 siblings to offer. When the path is too long, folders fold into an ellipsis
 that still opens them, and they give way in a deliberate order: the ones just
 below the root first, then the root, and never the last one.
+
+The menu opens the moment you click, and a double click on a folder goes
+straight there. Those two are harder to have together than they look: a menu
+takes over event tracking the instant it appears, so the second click lands
+inside it and nothing can see it coming. Waiting for the system's double-click
+interval before opening would show it — and that interval is half a second,
+which is far too long for the gesture people actually use. So the double click
+is caught on the way out instead: `popUp` blocks until the menu closes, and what
+closed it can then be asked.
 
 `⇧⌘G` or the button at the right end of the row swaps the whole thing for a
 text field. Tab walks the matches inline, shift-tab goes back, both wrap, and
@@ -434,6 +443,20 @@ launching a version that is no longer installed. A launcher is neither.
 its bundle identifier says pfadi wrote it, `NSFileViewer` is cleared only if it
 still names pfadi, and the shell block is cut out from between its markers so
 the rest of the profile survives byte for byte.
+
+## Show in Finder
+
+Once pfadi is the system's file viewer, the polite call for this —
+`activateFileViewerSelecting` — comes straight back to pfadi. A menu item inside
+pfadi that opens pfadi is a command that does nothing and looks like a bug, so
+**Show in Finder addresses Finder by name** when pfadi holds `NSFileViewer`, and
+uses the polite call when it does not.
+
+The cost is that the item is not selected, only its folder opened. `open -R`
+goes through the same preference and is hijacked too; the only route left that
+selects is an Apple Event, which would put a "pfadi wants to control Finder"
+permission prompt behind a menu item. Getting to Finder at the right folder is
+what somebody asked for. A dialog is not.
 
 ## The command
 
