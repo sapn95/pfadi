@@ -240,7 +240,10 @@ enum LayoutCheck {
         try? manager.createDirectory(at: folder, withIntermediateDirectories: true)
 
         // Deliberately in an order where name, size and date all disagree.
-        for (name, bytes) in [("small.bin", 64), ("huge.bin", 40_000), ("medium.bin", 4_000)] {
+        // Named so that name order and size order disagree: with the sizes
+        // ascending as zulu, alpha, mike, a check of the name header that
+        // expected the size order would pass without the header working.
+        for (name, bytes) in [("mike.bin", 64), ("zulu.bin", 40_000), ("alpha.bin", 4_000)] {
             manager.createFile(
                 atPath: folder.appendingPathComponent(name).path,
                 contents: Data(repeating: 0x61, count: bytes))
@@ -251,22 +254,23 @@ enum LayoutCheck {
         expect(browser.rowCount == 3, "three files to sort, got \(browser.rowCount)")
 
         expect(browser.clickColumnHeader("size"), "the size header can be clicked")
-        settle(until: { browser.listedNames.first == "small.bin" }, seconds: 3)
+        settle(until: { browser.listedNames.first == "mike.bin" }, seconds: 3)
         expect(
-            browser.listedNames == ["small.bin", "medium.bin", "huge.bin"],
+            browser.listedNames == ["mike.bin", "alpha.bin", "zulu.bin"],
             "smallest first, got \(browser.listedNames.joined(separator: " "))")
 
         expect(browser.clickColumnHeader("size"), "and clicked again")
-        settle(until: { browser.listedNames.first == "huge.bin" }, seconds: 3)
+        settle(until: { browser.listedNames.first == "zulu.bin" }, seconds: 3)
         expect(
-            browser.listedNames == ["huge.bin", "medium.bin", "small.bin"],
+            browser.listedNames == ["zulu.bin", "alpha.bin", "mike.bin"],
             "largest first, got \(browser.listedNames.joined(separator: " "))")
 
         expect(browser.clickColumnHeader("name"), "the name header too")
-        settle(until: { browser.listedNames.first == "huge.bin" }, seconds: 3)
+        settle(until: { browser.listedNames.first == "alpha.bin" }, seconds: 3)
         expect(
-            browser.listedNames == ["huge.bin", "medium.bin", "small.bin"],
-            "by name, got \(browser.listedNames.joined(separator: " "))")
+            browser.listedNames == ["alpha.bin", "mike.bin", "zulu.bin"],
+            "by name, which is a different order, got "
+                + browser.listedNames.joined(separator: " "))
 
         expect(browser.clickColumnHeader("modified"), "and the modified header")
         settle(seconds: 0.5)
@@ -302,8 +306,41 @@ enum LayoutCheck {
             "the big one on top, got " + browser.listedNames.prefix(2).joined(separator: " "))
 
         created(in: window)
+        headerMenu(in: window)
         pathBarClicks(in: window, fixture: fixture)
         refusedTrash(in: window)
+    }
+
+    /// The right-click menu on the column headers.
+    private static func headerMenu(in window: BrowserWindow) {
+        let browser = window.browser
+        let before = browser.visibleColumns
+
+        expect(
+            before.contains("name"), "the name column is on, got \(before.joined(separator: " "))")
+
+        expect(browser.clickHeaderMenuItem("modified"), "Modified is in the header menu")
+        expect(
+            !browser.visibleColumns.contains("modified"),
+            "and picking it takes the column away, got \(browser.visibleColumns.joined(separator: " "))"
+        )
+
+        expect(browser.clickHeaderMenuItem("modified"), "picked again")
+        expect(browser.visibleColumns.contains("modified"), "and it comes back")
+
+        // Name has to stay: a list of sizes and dates with nothing saying
+        // which file they belong to is not a list.
+        browser.clickHeaderMenuItem("name")
+        expect(
+            browser.visibleColumns.contains("name"),
+            "the name column cannot be hidden")
+        expect(
+            browser.bannerMessage.contains("name column"),
+            "and says so where somebody will see it, got \(browser.bannerMessage)")
+
+        expect(
+            browser.visibleColumns == before,
+            "everything is back as it was, got \(browser.visibleColumns.joined(separator: " "))")
     }
 
     /// The Created column: off unless asked for, and sortable once it is.
@@ -393,6 +430,19 @@ enum LayoutCheck {
         expect(
             browser.statusLine.contains("macOS does not let"),
             "and says why rather than quoting a permission error")
+
+        // The status line is eleven points of grey at the bottom of the
+        // window. A refusal reported only there reads, from where anybody is
+        // looking, as nothing having happened.
+        expect(
+            browser.bannerMessage.contains("Documents"),
+            "the banner says it too, got \(browser.bannerMessage)")
+
+        // And it goes when you leave, rather than following you into a folder
+        // it has nothing to do with.
+        browser.navigate(to: FileManager.default.temporaryDirectory)
+        settle(seconds: 0.4)
+        expect(browser.bannerMessage.isEmpty, "and clears on the way out")
     }
 
     /// Dropping several files at once, copy and move.

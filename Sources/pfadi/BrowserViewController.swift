@@ -44,6 +44,9 @@ final class BrowserViewController: NSViewController {
     private let infoPanel = InfoPanel()
     private let transfers = TransferController()
     private let openWithMenu = NSMenu(title: "Open With")
+    /// Kept so the shared menu delegate can tell the header's menu from the
+    /// list's, which want opposite things when they open.
+    private var headerMenu: NSMenu?
 
     /// The row being renamed, and a folder that was just created and should be
     /// renamed as soon as the watcher shows it.
@@ -85,6 +88,9 @@ final class BrowserViewController: NSViewController {
     private let searchField = NSSearchField()
     private let tableView = FileTableView()
     private let statusLabel = NSTextField(labelWithString: "")
+    /// Where anything that did not happen gets said, because the status line
+    /// is the wrong size and the wrong colour for it.
+    private let banner = NoticeBanner()
 
     private static let sizeFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -212,6 +218,28 @@ final class BrowserViewController: NSViewController {
     /// Whether a sibling menu is still waiting to open, for the checks.
     var isPathMenuPending: Bool { pathBar.isMenuPending }
 
+    /// What the banner is saying, for the checks. Empty when it is not showing.
+    var bannerMessage: String { banner.message }
+
+    /// The columns on screen, in the order they are drawn, for the checks.
+    var visibleColumns: [String] {
+        tableView.tableColumns.filter { !$0.isHidden }.map { $0.identifier.rawValue }
+    }
+
+    /// Picks a column out of the header menu, for the checks.
+    @discardableResult
+    func clickHeaderMenuItem(_ identifier: String) -> Bool {
+        guard let menu = headerMenu,
+            let item = menu.items.first(where: { $0.representedObject as? String == identifier })
+        else { return false }
+        // Through the delegate first, so the state the menu would show is the
+        // state being checked.
+        menuNeedsUpdate(menu)
+        guard item.isEnabled || identifier == "name" else { return false }
+        toggleColumn(item)
+        return true
+    }
+
     func layoutReport() -> LayoutReport {
         view.layoutSubtreeIfNeeded()
         var frames: [String: NSRect] = [
@@ -293,6 +321,10 @@ final class BrowserViewController: NSViewController {
         pathToggle.target = self
         pathToggle.action = #selector(togglePathEditing(_:))
 
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        banner.onVisibilityChanged = { [weak self] in self?.view.needsLayout = true }
+
+        view.addSubview(banner)
         view.addSubview(pathToggle)
         view.addSubview(pathBar)
         view.addSubview(pathField)
@@ -340,7 +372,14 @@ final class BrowserViewController: NSViewController {
             // something and carrying on quietly.
             view.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
 
-            scrollView.topAnchor.constraint(equalTo: pathField.bottomAnchor, constant: 10),
+            // Between the path row and the list. Hidden it is zero high, so
+            // the list keeps every point of the window when there is nothing
+            // to say.
+            banner.topAnchor.constraint(equalTo: pathField.bottomAnchor, constant: 8),
+            banner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            banner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+
+            scrollView.topAnchor.constraint(equalTo: banner.bottomAnchor, constant: 8),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -6),
@@ -388,7 +427,18 @@ final class BrowserViewController: NSViewController {
         // A column that comes and goes loses its width every time, and the
         // header cannot be sorted by something that is not there.
         addColumn(id: "created", title: "Created", width: 160)
-        showCreatedColumn(preferences.showCreated)
+        setColumn("created", visible: preferences.showCreated)
+
+        // Right-click the header for what else there is to show. A column you
+        // cannot discover is a column nobody has.
+        let header = makeHeaderMenu()
+        headerMenu = header
+        tableView.headerView?.menu = header
+        // Drag a header to move it. On by default in AppKit, set here because
+        // it is a decision rather than an accident, and the autosave keeps the
+        // order across a quit.
+        tableView.allowsColumnReordering = true
+        tableView.allowsColumnResizing = true
 
         // Column widths are the other thing a person sets once and expects to
         // find again, and AppKit persists them itself once the table has a
@@ -403,6 +453,66 @@ final class BrowserViewController: NSViewController {
         tableView.sortDescriptors = [
             NSSortDescriptor(key: order.key.rawValue, ascending: order.ascending)
         ]
+    }
+
+    /// The menu behind a right-click on the column headers.
+    ///
+    /// Built once and updated when it opens, because which columns are on is a
+    /// thing that changes and a menu built at launch would stop being true the
+    /// first time one was switched.
+    private func makeHeaderMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
+        for column in tableView.tableColumns {
+            let item = menu.addItem(
+                withTitle: column.title,
+                action: #selector(toggleColumn(_:)),
+                keyEquivalent: "")
+            item.target = self
+            item.representedObject = column.identifier.rawValue
+        }
+        menu.addItem(.separator())
+        let hint = menu.addItem(
+            withTitle: "Drag a header to reorder", action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        return menu
+    }
+
+    @objc func toggleColumn(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? String else { return }
+        // Name is what every row is identified by. A list of sizes and dates
+        // with nothing to say which file they belong to is not a list.
+        guard identifier != "name" else {
+            NSSound.beep()
+            warn("the name column cannot be hidden")
+            return
+        }
+
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier(identifier))
+        guard index >= 0 else { return }
+        let wanted = tableView.tableColumns[index].isHidden
+        setColumn(identifier, visible: wanted)
+
+        if identifier == "created" {
+            preferences.showCreated = wanted
+        }
+        // Sorting by a column that has just been taken away would leave the
+        // list in an order with nothing on screen to explain it.
+        if !wanted, order.key.rawValue == identifier {
+            sortByName()
+        }
+        announce(wanted ? "showing \(sender.title)" : "hiding \(sender.title)")
+    }
+
+    private func setColumn(_ identifier: String, visible: Bool) {
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier(identifier))
+        guard index >= 0 else { return }
+        tableView.tableColumns[index].isHidden = !visible
+    }
+
+    private func sortByName() {
+        order = ListingOrder(key: .name, ascending: true)
+        tableView.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true)]
     }
 
     private func makeContextMenu() -> NSMenu {
@@ -510,6 +620,7 @@ final class BrowserViewController: NSViewController {
         folderSizes.cancelPending()
         // Whatever was announced was about the folder being left.
         announcement = nil
+        banner.hide()
         directory = url
         reload(keepingSelection: false)
         preferences.lastDirectory = url.path
@@ -632,6 +743,15 @@ final class BrowserViewController: NSViewController {
     /// status line to the item count. So "copied, 3 items" was written and
     /// then wiped a few milliseconds later, every time, and the only channel
     /// this window has for telling somebody what it did said nothing.
+    /// Says something went wrong, where somebody will see it.
+    ///
+    /// Both: the banner because it is unmissable, and the status line because
+    /// that is where the last thing that happened lives.
+    private func warn(_ message: String, kind: NoticeBanner.Kind = .warning) {
+        banner.show(message, kind: kind)
+        announce(message)
+    }
+
     private func announce(_ message: String) {
         announcement = message
         announcementUntil = Date().addingTimeInterval(Self.announcementLifetime)
@@ -926,21 +1046,12 @@ final class BrowserViewController: NSViewController {
     @objc func toggleCreatedColumn(_ sender: Any?) {
         let wanted = !preferences.showCreated
         preferences.showCreated = wanted
-        showCreatedColumn(wanted)
+        setColumn("created", visible: wanted)
 
-        // Sorting by a column that has just been taken away would leave the
-        // list in an order with nothing on screen to explain it.
         if !wanted, order.key == .created {
-            order = ListingOrder(key: .name, ascending: true)
-            tableView.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true)]
+            sortByName()
         }
         announce(wanted ? "showing when things were created" : "hiding the created column")
-    }
-
-    private func showCreatedColumn(_ visible: Bool) {
-        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("created"))
-        guard index >= 0 else { return }
-        tableView.tableColumns[index].isHidden = !visible
     }
 
     /// Whether the Created column is on screen, for the checks.
@@ -1234,6 +1345,11 @@ final class BrowserViewController: NSViewController {
         // What actually reached the trash, so undo puts back exactly that and
         // a failure part way through still restores the part that worked.
         var moved: [(original: URL, inTrash: URL)] = []
+        // Counted separately, because the system does not always say where
+        // something landed. Undo needs the destination and so only gets the
+        // ones that have it; the count is about what actually went, and
+        // leaving those out made the message say nothing at all.
+        var goneCount = 0
         var refused: [(name: String, reason: String)] = []
 
         // Every one of them, rather than stopping at the first refusal, and
@@ -1243,6 +1359,7 @@ final class BrowserViewController: NSViewController {
         for entry in selected {
             switch FileOperations.trashChecking(entry.url) {
             case .moved(let landed):
+                goneCount += 1
                 if let landed {
                     moved.append((original: entry.url, inTrash: landed))
                 }
@@ -1255,24 +1372,38 @@ final class BrowserViewController: NSViewController {
         reload(keepingSelection: true)
 
         var parts: [String] = []
-        if !moved.isEmpty {
+        if goneCount > 0 {
             parts.append(
-                moved.count == 1
+                goneCount == 1 && moved.count == 1
                     ? "moved \(moved[0].original.lastPathComponent) to the trash"
-                    : "moved \(moved.count) items to the trash")
+                    : "moved \(goneCount) items to the trash")
         }
         if !refused.isEmpty {
             NSSound.beep()
             // Named when there are few enough to read, counted when there are
             // not, and the reason either way: "3 refused" on its own is a
-            // dead end.
+            // dead end. Every distinct reason, because two folders refused for
+            // two different reasons is two things worth knowing.
             let names =
                 refused.count <= 3
                 ? refused.map(\.name).joined(separator: ", ")
                 : "\(refused.count) items"
-            parts.append("could not move \(names): \(refused[0].reason)")
+            let reasons = Set(refused.map(\.reason)).sorted().joined(separator: "; ")
+            parts.append("could not move \(names): \(reasons)")
         }
-        announce(parts.joined(separator: "; "))
+        // Never nothing: a command that ran and said neither what it did nor
+        // why it did not is the worst of the three.
+        let message =
+            parts.isEmpty
+            ? "nothing was moved to the trash" : parts.joined(separator: "; ")
+
+        // The banner only when something was refused. A trash that worked is
+        // not worth a band across the window.
+        if refused.isEmpty {
+            announce(message)
+        } else {
+            warn(message)
+        }
     }
 
     private func registerTrashUndo(_ items: [(original: URL, inTrash: URL)]) {
@@ -1333,7 +1464,7 @@ final class BrowserViewController: NSViewController {
 
     private func report(_ error: any Error, doing what: String) {
         NSSound.beep()
-        announce("could not \(what): \(error.localizedDescription)")
+        warn("could not \(what): \(error.localizedDescription)", kind: .failure)
     }
 
     @objc func copyPath(_ sender: Any?) {
@@ -1566,7 +1697,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
             tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
             ?? Self.makeNameCell(id: id)
 
-        cell.imageView?.image = NSWorkspace.shared.icon(forFile: entry.url.path)
+        cell.imageView?.image = FileIcons.icon(for: entry.url, isDirectory: entry.isDirectory)
         cell.textField?.stringValue = entry.name
         cell.textField?.delegate = self
         cell.textField?.isEditable = (renaming == entry.url)
@@ -1744,6 +1875,21 @@ extension BrowserViewController: NSMenuDelegate {
     /// row that was clicked. Selecting it first is the least surprising way to
     /// make every item in the menu agree about which file it means.
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === headerMenu {
+            // A tick against every column that is on, so the menu says what is
+            // showing as well as what could be.
+            for item in menu.items {
+                guard let identifier = item.representedObject as? String else { continue }
+                let index = tableView.column(
+                    withIdentifier: NSUserInterfaceItemIdentifier(identifier))
+                item.state = index >= 0 && !tableView.tableColumns[index].isHidden ? .on : .off
+                // Name is not optional, so it is shown ticked and inert rather
+                // than offered and then refused.
+                item.isEnabled = identifier != "name"
+            }
+            return
+        }
+
         let clicked = tableView.clickedRow
         // A right-click inside an existing selection acts on the whole of it;
         // one outside starts a new selection of the row that was clicked.

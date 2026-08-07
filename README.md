@@ -218,18 +218,32 @@ and then move it.
 ## Columns
 
 Name, Size and Modified are always there. **Created** is a fourth, off by
-default and switched on with ⇧⌘K, because the date that usually matters is when
-something last changed and four columns of dates is clutter for everyone who
-does not want it. It is blank where the filesystem records no creation date,
-which an SMB share often does not.
+default, because the date that usually matters is when something last changed.
+It is blank where the filesystem records no creation date, which an SMB share
+often does not.
 
-Every header sorts, including Created. Widths and the sort survive a quit.
+**Right-click the headers** for the list of columns with a tick against the ones
+showing. ⇧⌘K is the shortcut for Created. **Drag a header** to move a column.
+Name cannot be hidden: a list of sizes and dates with nothing saying which file
+they belong to is not a list, and pfadi says so rather than greying the item out
+without explanation.
+
+Every header sorts, including Created. Hiding the column being sorted by falls
+back to name, so the list is never in an order with nothing on screen to explain
+it. Widths, order and the sort all survive a quit.
 
 ## Writing to disk
 
 Everything that changes anything is reversible. ⌘Z puts back a trashed file,
 undoes a rename, trashes a folder that was just created, and unwinds a copy or
 a move.
+
+Anything that did not happen gets a **band across the top of the list**, not
+just a line in the status bar. The status bar is eleven points of secondary grey
+and it is the right place for how many items there are; it is the wrong place
+for "that did not happen", which read from where anybody is actually looking as
+nothing happening at all. The band stays until it is dismissed or until you go
+somewhere else.
 
 **Some things will not go to the trash, and now they say so.** `~/Documents`,
 `~/Desktop`, `~/Library` and the rest of the folders macOS keeps inside a home
@@ -352,9 +366,17 @@ required, which is the whole reason the test target looks the way it does.
 ```bash
 swift build                    # the binary
 swift run pfadi-selftest       # the tests
-swift run pfadi --layout-check # the window, measured
+swift run pfadi --layout-check # the window, clicked through
+./scripts/coverage.sh          # how much of PfadiCore that ran, with a floor
 ./scripts/make-app.sh          # build/Pfadi.app
 ```
+
+Coverage is measured on PfadiCore and CI fails below 80%. Not on the AppKit
+half: that is what `--layout-check` is for, and a single number covering both
+would hide whichever one was slipping. `swift test --enable-code-coverage`
+cannot be used because the tests are a plain executable, so the instrumentation
+is asked for directly and the profile merged by hand, which is all `swift test`
+does anyway.
 
 There is no Developer ID signature and no notarisation, and that is a decision
 rather than an omission. A certificate needs an Apple Developer Program

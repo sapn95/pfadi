@@ -153,9 +153,13 @@ public enum FileOperations {
         _ url: URL,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> Bool {
+        // Apple's own, and only those. ~/Applications is a folder people make
+        // themselves and ~/Sites has not been special since Mountain Lion;
+        // calling either of them reserved would explain a refusal that never
+        // happened and refuse to explain the real one.
         let reserved: Set<String> = [
             "Desktop", "Documents", "Downloads", "Library", "Movies", "Music",
-            "Pictures", "Public", "Applications", "Sites",
+            "Pictures", "Public",
         ]
         guard reserved.contains(url.lastPathComponent) else { return false }
         return url.deletingLastPathComponent().resolvingSymlinksInPath().path

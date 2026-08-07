@@ -149,14 +149,18 @@ enum OrderAndTrashSuites {
 
         Harness.suite("trash: something that is not there is refused, not claimed") {
             let missing = URL(fileURLWithPath: "/nope-\(UUID().uuidString)")
-            Harness.expect(
-                FileOperations.trashChecking(missing) != .moved(nil),
-                "there was nothing to move")
+            // Refused specifically, not merely "not one particular success":
+            // a .moved with a destination would have slipped through that.
+            guard case .refused = FileOperations.trashChecking(missing) else {
+                Harness.expect(false, "there was nothing to move, so it cannot have moved")
+                return
+            }
+            Harness.expect(true, "there was nothing to move")
         }
 
         Harness.suite("trash: the folders macOS keeps are recognised") {
             let home = URL(fileURLWithPath: "/Users/somebody")
-            for name in ["Documents", "Desktop", "Library", "Downloads", "Pictures"] {
+            for name in ["Documents", "Desktop", "Library", "Downloads", "Pictures", "Public"] {
                 Harness.expect(
                     FileOperations.isReservedHomeFolder(
                         home.appendingPathComponent(name), home: home),
@@ -178,6 +182,12 @@ enum OrderAndTrashSuites {
                 !FileOperations.isReservedHomeFolder(
                     URL(fileURLWithPath: "/Users/somebody-else/Documents"), home: home),
                 "nor is somebody else's")
+            for name in ["Applications", "Sites"] {
+                Harness.expect(
+                    !FileOperations.isReservedHomeFolder(
+                        home.appendingPathComponent(name), home: home),
+                    "~/\(name) is a folder people make themselves, not one of Apple's")
+            }
         }
     }
 }
