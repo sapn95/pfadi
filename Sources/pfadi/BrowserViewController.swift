@@ -79,6 +79,13 @@ final class BrowserViewController: NSViewController {
     private let listingQueue = DispatchQueue(
         label: "io.github.sapn95.pfadi.listing", qos: .userInitiated)
 
+    /// How many times the whole table has been rebuilt, for the checks.
+    ///
+    /// A rebuild replaces the cell views, and a cell replaced under the pointer
+    /// breaks a double click in progress. Counting them is how a check can tell
+    /// "the list is up to date" from "the list was thrown away and made again".
+    private(set) var reloadCount = 0
+
     private let pathBar = PathBar()
     /// Switches the path row between the clickable bar and the text field. A
     /// button, because a keystroke and a double click are both things you have
@@ -179,6 +186,18 @@ final class BrowserViewController: NSViewController {
     func clearSelection() {
         tableView.deselectAll(nil)
     }
+
+    /// A reload of the kind the watcher asks for, for the checks.
+    ///
+    /// Not `refresh`, which also throws the measured folder sizes away on
+    /// purpose. The watcher fires whenever anything in the folder is written
+    /// and asks only for the listing to be read again.
+    func reloadAsWatcherWould() {
+        reload(keepingSelection: true)
+    }
+
+    /// The first folder in the listing, for the checks.
+    var firstFolderName: String? { entries.first(where: \.isDirectory)?.name }
 
     /// Which row a name is on, for the checks.
     func rowIndex(of name: String) -> Int? {
@@ -553,7 +572,7 @@ final class BrowserViewController: NSViewController {
         if wanted, !column.resourceKeys.isEmpty || column.needsFileStatus {
             reload(keepingSelection: true)
         } else {
-            tableView.reloadData()
+            rebuildTable()
         }
     }
 
@@ -773,9 +792,18 @@ final class BrowserViewController: NSViewController {
         }
 
         allEntries = resorted(allEntries)
-        entries = Self.filtered(allEntries, by: filter)
+        let updated = Self.filtered(allEntries, by: filter)
+        let unchanged = updated == entries && loadedDirectory?.path == directory.path
+        entries = updated
         loadedDirectory = directory
-        tableView.reloadData()
+
+        // A reload that changes nothing must change nothing. The watcher fires
+        // whenever anything in the folder is written, and in a cloud folder
+        // that is often; reloading the table each time resets what the mouse is
+        // in the middle of doing.
+        if !unchanged {
+            rebuildTable()
+        }
         measureVisibleFolders()
 
         guard !entries.isEmpty else {
@@ -794,6 +822,9 @@ final class BrowserViewController: NSViewController {
             // A reveal wins over the row that happened to be selected before:
             // some other application has just said "this one".
             applyPendingSelection()
+        } else if unchanged {
+            // Nothing moved, so the selection is already where it belongs and
+            // setting it again would scroll the list out from under somebody.
         } else {
             // A remembered row may have been renamed or deleted by whatever
             // triggered this reload, so ending up with fewer than were
@@ -902,7 +933,7 @@ final class BrowserViewController: NSViewController {
     @objc fileprivate func searchChanged(_ sender: NSSearchField) {
         filter = sender.stringValue.trimmingCharacters(in: .whitespaces)
         entries = Self.filtered(allEntries, by: filter)
-        tableView.reloadData()
+        rebuildTable()
         if !entries.isEmpty { select(row: 0) }
         statusLabel.stringValue = statusText()
     }
@@ -977,6 +1008,11 @@ final class BrowserViewController: NSViewController {
     /// One folder is walked into, because that is what a browser is for.
     /// Several are opened as tabs, because there is nowhere else for them to
     /// go, and files are handed to whatever owns them.
+    /// What a double click and Return both run, for the checks.
+    func activateSelection() {
+        openSelection()
+    }
+
     @objc private func openSelection() {
         let selected = selectedEntries()
         guard !selected.isEmpty else { return }
@@ -1735,7 +1771,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
             let selected = selectedEntries().map(\.name)
             allEntries = resorted(allEntries)
             entries = Self.filtered(allEntries, by: filter)
-            tableView.reloadData()
+            rebuildTable()
             let wanted = Set(selected)
             select(rows: entries.indices.filter { wanted.contains(self.entries[$0].name) })
         }
@@ -1785,20 +1821,35 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         folderSizes.want(rows.compactMap { entries[$0].isDirectory ? entries[$0].url : nil })
     }
 
-    /// Redraws one size cell, once its folder has been measured.
+    /// The one place the table is rebuilt, so it can be counted.
+    private func rebuildTable() {
+        reloadCount += 1
+        tableView.reloadData()
+    }
+
+    /// Puts a measurement into the cells that show it, without rebuilding them.
+    ///
+    /// `reloadData(forRowIndexes:columnIndexes:)` makes new cell views, and a
+    /// cell replaced under the pointer breaks the click sequence in progress.
+    /// In a folder with two dozen subfolders the measurements arrive in a
+    /// steady trickle, so a double click had to be tried three times before one
+    /// of them landed between two of them.
     private func redrawSize(of url: URL) {
         guard let row = entries.firstIndex(where: { $0.url == url }) else { return }
-        // Both columns the walk fills in, not only the size: the file count
-        // comes from the same measurement and was left blank until something
-        // else happened to redraw the row.
-        var columns = IndexSet()
+        let entry = entries[row]
+
         for listed in [ListingColumn.size, .files] {
             let index = tableView.column(
                 withIdentifier: NSUserInterfaceItemIdentifier(listed.rawValue))
-            if index >= 0 { columns.insert(index) }
+            guard index >= 0, !tableView.tableColumns[index].isHidden else { continue }
+            // makeIfNecessary: false, so a row that has scrolled away is left
+            // alone: it will be built with the right text when it comes back.
+            guard
+                let cell = tableView.view(atColumn: index, row: row, makeIfNecessary: false)
+                    as? NSTableCellView
+            else { continue }
+            cell.textField?.stringValue = text(for: entry, in: listed)
         }
-        guard !columns.isEmpty else { return }
-        tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: columns)
     }
 
     private func nameCell(for entry: Entry, in tableView: NSTableView) -> NSView {

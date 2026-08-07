@@ -215,6 +215,12 @@ anything:
 - **Only once.** Answers are kept, so scrolling back is instant. ⌘R is the one
   thing that throws them away, because re-walking a tree every time the watcher
   fires would make the column cost far more than it is worth.
+- **Without rebuilding the row.** A measurement writes into the cell that is
+  already on screen. Reloading the row makes new cell views, and a cell replaced
+  under the pointer ends the click in progress — in a folder with two dozen
+  subfolders the answers arrive in a trickle, and a double click had to be tried
+  three times before one landed between two of them. A reload that changes
+  nothing now redraws nothing either.
 
 The number is the **logical** size, the same thing the file rows show. It was
 the allocated size at first, which is defensible right up until a cloud folder
@@ -511,6 +517,8 @@ Needs Swift 6 and macOS 14. The Command Line Tools are enough; Xcode is not
 required, which is the whole reason the test target looks the way it does.
 
 ```bash
+PFADI_CHECK_FOLDER=~/somewhere \
+  swift run pfadi --layout-check # …and against a folder of your own
 swift build                     # the binary
 swift run pfadi-selftest        # the tests
 swift run pfadi --layout-check  # the window, clicked through
@@ -518,6 +526,12 @@ swift run pfadi --layout-check  # the window, clicked through
 ./scripts/check-diagrams.sh     # every diagram in this README still renders
 ./scripts/make-app.sh           # build/Pfadi.app
 ```
+
+`PFADI_CHECK_FOLDER` runs the double-click and listing checks against a folder
+you name, which is how a tree that behaves differently — a cloud mount, a
+network share — gets looked at without inventing one a CI runner cannot have.
+Point it at something with a folder inside it; with nothing to open, that part
+says so and is skipped rather than reported as a defect.
 
 The diagrams above are ```` ```mermaid ```` blocks rather than committed SVGs,
 because GitHub renders them itself and a second copy of a picture is a second
