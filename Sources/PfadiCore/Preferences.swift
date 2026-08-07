@@ -60,6 +60,16 @@ public final class Preferences {
         }
     }
 
+    /// Light, dark, or the system's choice. Dark unless somebody says
+    /// otherwise, which is the point of it being a preference at all.
+    public var appearance: Appearance {
+        get {
+            (store.object(forKey: Key.appearance) as? String)
+                .flatMap(Appearance.init(rawValue:)) ?? .dark
+        }
+        set { store.set(newValue.rawValue, forKey: Key.appearance) }
+    }
+
     /// Which columns are on.
     ///
     /// Which, not what order: the order on screen belongs to AppKit, kept by
@@ -134,6 +144,7 @@ public final class Preferences {
         static let sortKey = "sortKey"
         static let sortAscending = "sortAscending"
         static let columns = "columns"
+        static let appearance = "appearance"
         /// The one switch that came before the list. Read when the list is
         /// missing, never written.
         static let legacyShowCreated = "showCreated"
