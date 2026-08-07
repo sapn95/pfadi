@@ -238,6 +238,11 @@ enum LayoutCheck {
     /// preference. Once `pfadi-default apply` points that at pfadi, the menu
     /// item inside pfadi opened pfadi: a command that does nothing and looks
     /// like a bug.
+    ///
+    /// Checked by asking who took the request, not by looking for a window.
+    /// A window title needs Screen Recording permission, which a CI runner does
+    /// not have and a file browser should never ask for — the first version of
+    /// this check did look, passed here and failed there.
     private static func showingInFinder(in window: BrowserWindow, fixture: URL) {
         let browser = window.browser
         browser.navigate(to: fixture)
@@ -248,52 +253,32 @@ enum LayoutCheck {
         browser.clearSelection()
 
         let before = pfadiWindowCount()
-        browser.showInFinder(nil)
-        // Long enough for Finder to be launched from cold, which on a CI
-        // runner it will be.
-        settle(until: { finderShows(fixture) }, seconds: 8)
+        var receiver: String?
+        var answered = false
+        browser.showInFinder { identifier in
+            receiver = identifier
+            answered = true
+        }
+        settle(until: { answered }, seconds: 10)
+
+        expect(answered, "the request was answered")
+        expect(
+            receiver == "com.apple.finder",
+            "and Finder took it, got \(receiver ?? "nobody")")
 
         // The thing that was wrong: another window here, on the same folder,
         // in the application the person is already looking at.
         expect(
             pfadiWindowCount() == before,
-            "it does not open another pfadi window, had \(before) and now "
-                + "\(pfadiWindowCount())")
-        expect(
-            finderShows(fixture),
-            "and Finder is showing \(fixture.lastPathComponent), its windows are "
-                + (windowTitles(ownedBy: "Finder").joined(separator: ", ").isEmpty
-                    ? "none" : windowTitles(ownedBy: "Finder").joined(separator: ", ")))
+            "no second pfadi window, had \(before) and now \(pfadiWindowCount())")
     }
 
-    /// How many windows this application has on screen.
-    private static func pfadiWindowCount() -> Int {
-        windowTitles(ownedBy: "pfadi").count
-    }
-
-    /// Whether Finder has a window on this folder.
+    /// How many windows this application has, asked of the application itself.
     ///
-    /// By title, because the window list is what can be seen from outside a
-    /// process, and asking Finder itself needs an automation permission this
-    /// check has no business requesting.
-    private static func finderShows(_ folder: URL) -> Bool {
-        let wanted = folder.resolvingSymlinksInPath().lastPathComponent
-        return windowTitles(ownedBy: "Finder").contains {
-            $0 == wanted || $0.hasSuffix("/" + wanted)
-        }
-    }
-
-    private static func windowTitles(ownedBy owner: String) -> [String] {
-        let info =
-            CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] ?? []
-        return info.compactMap { window in
-            guard window[kCGWindowOwnerName as String] as? String == owner,
-                let title = window[kCGWindowName as String] as? String,
-                !title.isEmpty
-            else { return nil }
-            return title
-        }
+    /// `NSApp.windows` rather than the system window list, which needs a
+    /// permission to say anything useful.
+    private static func pfadiWindowCount() -> Int {
+        NSApp.windows.filter(\.isVisible).count
     }
 
     /// Clicking a column header, which is the only way anybody sorts anything.

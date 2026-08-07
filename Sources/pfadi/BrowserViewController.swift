@@ -1549,6 +1549,11 @@ final class BrowserViewController: NSViewController {
         Actions.showInFinder(actionTargets())
     }
 
+    /// Which application took the request, for the checks.
+    func showInFinder(reporting handled: @escaping (String?) -> Void) {
+        Actions.showInFinder(actionTargets(), handled: handled)
+    }
+
     @objc func openTerminalHere(_ sender: Any?) {
         // A shell opens in a folder, never on a file: use the folder holding
         // the selection when something is selected.

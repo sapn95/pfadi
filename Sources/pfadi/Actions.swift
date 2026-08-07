@@ -41,8 +41,16 @@ enum Actions {
     /// "pfadi wants to control Finder" prompt behind a menu item. Getting to
     /// Finder at the right folder is what somebody asked for; a permission
     /// dialog is not.
-    static func showInFinder(_ urls: [URL]) {
-        guard !urls.isEmpty else { return }
+    /// - Parameter handled: which application took the request, for the
+    ///   checks. Asking who received it is the whole question here, and it can
+    ///   be answered without looking at any window — which matters, because
+    ///   reading a window title needs Screen Recording permission that a CI
+    ///   runner does not have and a file browser should never ask for.
+    static func showInFinder(_ urls: [URL], handled: ((String?) -> Void)? = nil) {
+        guard !urls.isEmpty else {
+            handled?(nil)
+            return
+        }
 
         guard isFileViewer(),
             let finder = NSWorkspace.shared.urlForApplication(
@@ -51,6 +59,7 @@ enum Actions {
             // Finder is still the system's file viewer, so the polite call
             // reaches it and selects what was asked for.
             NSWorkspace.shared.activateFileViewerSelecting(urls)
+            handled?("com.apple.finder")
             return
         }
 
@@ -68,7 +77,10 @@ enum Actions {
 
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        NSWorkspace.shared.open(folders, withApplicationAt: finder, configuration: configuration)
+        NSWorkspace.shared.open(folders, withApplicationAt: finder, configuration: configuration) {
+            application, _ in
+            handled?(application?.bundleIdentifier)
+        }
     }
 
     /// Whether the system's file viewer is something other than Finder.

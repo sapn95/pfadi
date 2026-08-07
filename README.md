@@ -95,12 +95,13 @@ siblings to offer. When the path is too long, folders fold into an ellipsis
 that still opens them, and they give way in a deliberate order: the ones just
 below the root first, then the root, and never the last one.
 
-The menu opens the moment you click. It used to wait for the system's
-double-click interval, because a menu takes over event tracking the instant it
-appears and the second click therefore lands inside it — so the wait was the
-only way to see a double click coming. Half a second of nothing on every click
-is far too much for the gesture people actually use, so the double click is
-caught on the way out instead: `popUp` blocks until the menu closes, and what
+The menu opens the moment you click, and a double click on a folder goes
+straight there. Those two are harder to have together than they look: a menu
+takes over event tracking the instant it appears, so the second click lands
+inside it and nothing can see it coming. Waiting for the system's double-click
+interval before opening would show it — and that interval is half a second,
+which is far too long for the gesture people actually use. So the double click
+is caught on the way out instead: `popUp` blocks until the menu closes, and what
 closed it can then be asked.
 
 `⇧⌘G` or the button at the right end of the row swaps the whole thing for a
