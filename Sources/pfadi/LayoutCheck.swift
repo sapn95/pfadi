@@ -254,12 +254,46 @@ enum LayoutCheck {
             print("  FAIL the folder to open is listed")
             return
         }
-        browser.selectRange(row..<(row + 1))
-        browser.activateSelection()
+        // A real event through the table's own mouseDown, not a call to the
+        // action behind it. NSTableView's doubleAction asks its own bookkeeping
+        // whether both clicks belonged to the same row, and that bookkeeping is
+        // disturbed by anything touching the rows in between — which made
+        // opening a folder in a busy directory a matter of luck.
+        expect(browser.doubleClickRow(row), "the row can be double-clicked")
         settle(until: { browser.listedDirectory?.path == inside.path }, seconds: 5)
         expect(
             same(browser.currentDirectory, inside),
             "a double click on a folder goes into it, got \(browser.currentDirectory.path)")
+
+        // And again with a reload in flight, which is the state the real one
+        // was in when it took three tries. The listing is read on a worker, so
+        // this cannot promise the reload lands exactly between the two clicks
+        // — what it does promise is that one being under way does not stop the
+        // click working.
+        browser.navigate(to: fixture)
+        settle(until: { browser.rowIndex(of: "openable") != nil })
+        guard let again = browser.rowIndex(of: "openable") else { return }
+        browser.reloadAsWatcherWould()
+        browser.doubleClickRow(again)
+        settle(until: { browser.listedDirectory?.path == inside.path }, seconds: 5)
+        expect(
+            same(browser.currentDirectory, inside),
+            "and still does with a reload in flight, got " + browser.currentDirectory.path)
+
+        // Two rows picked, then one of them double-clicked: both open, the way
+        // it does everywhere else. Forcing the selection down to the row under
+        // the pointer would have thrown the other one away.
+        browser.navigate(to: fixture)
+        settle(until: { browser.rowIndex(of: "openable") != nil })
+        if browser.rowCount >= 2 {
+            browser.selectRange(0..<2)
+            let picked = browser.selectedNames
+            browser.doubleClickRow(0)
+            settle(seconds: 0.4)
+            expect(
+                browser.selectedNames == picked || browser.listedDirectory?.path != fixture.path,
+                "a double click inside a selection keeps it, had \(picked.count)")
+        }
 
         // Nothing may rebuild the table while somebody is clicking in it. A
         // rebuild replaces the cell views, and a cell replaced under the

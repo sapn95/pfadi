@@ -46,7 +46,8 @@ click    a folder in the path: everything beside it, with a filter
 ›        the arrow after the last folder: everything inside it
 ⌘F       filter the folder you are in
 space    Quick Look, and again to close it
-return   open, or go there
+2×click  open a folder, or hand a file to whatever owns it
+return   the same, for whatever is selected
 ⇧↑ ⇧↓    extend the selection
 ⌘click   add one row to it, or take one out
 ⇧click   everything between here and there
