@@ -230,6 +230,97 @@ enum LayoutCheck {
         dropping(in: window, fixture: fixture)
         sorting(in: window, fixture: fixture)
         showingInFinder(in: window, fixture: fixture)
+        openingFolders(in: window, fixture: fixture)
+    }
+
+    /// A double click on a folder goes into it.
+    ///
+    /// There was no check for this at all, which is how it could be broken in
+    /// a whole tree without anything noticing. Return runs the same code, so
+    /// this covers both.
+    private static func openingFolders(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+        let inside = fixture.appendingPathComponent("openable")
+        try? manager.createDirectory(at: inside, withIntermediateDirectories: true)
+        manager.createFile(atPath: inside.appendingPathComponent("x.txt").path, contents: Data())
+
+        browser.navigate(to: fixture)
+        browser.refresh(nil)
+        settle(until: { browser.rowIndex(of: "openable") != nil })
+
+        guard let row = browser.rowIndex(of: "openable") else {
+            failures += 1
+            print("  FAIL the folder to open is listed")
+            return
+        }
+        browser.selectRange(row..<(row + 1))
+        browser.activateSelection()
+        settle(until: { browser.listedDirectory?.path == inside.path }, seconds: 5)
+        expect(
+            same(browser.currentDirectory, inside),
+            "a double click on a folder goes into it, got \(browser.currentDirectory.path)")
+
+        // Nothing may rebuild the table while somebody is clicking in it. A
+        // rebuild replaces the cell views, and a cell replaced under the
+        // pointer ends the click sequence in progress: in a cloud folder the
+        // measurements arrive in a trickle and a double click had to be tried
+        // three times before one landed between two of them.
+        browser.navigate(to: fixture)
+        settle(until: { browser.listedDirectory?.path == fixture.path })
+        // By name, so a re-sort by a size that arrives later cannot be mistaken
+        // for a rebuild nobody asked for.
+        browser.clickColumnHeader("name")
+        settle(seconds: 1)
+        let quiet = browser.reloadCount
+
+        // What the watcher asks for, which is only that the listing be read
+        // again. Deliberately not refresh, which also throws the measured
+        // folder sizes away and has every right to redraw.
+        browser.reloadAsWatcherWould()
+        settle(seconds: 1.5)
+        expect(
+            browser.reloadCount == quiet,
+            "a reload that changes nothing rebuilds nothing, \(quiet) then "
+                + "\(browser.reloadCount)")
+
+        // And the measurements landing afterwards must not do it either.
+        let afterSizes = browser.reloadCount
+        settle(seconds: 2)
+        expect(
+            browser.reloadCount == afterSizes,
+            "nor do the folder sizes arriving, \(afterSizes) then \(browser.reloadCount)")
+
+        // And on a folder somebody names, which is how a tree that behaves
+        // differently — a cloud mount, a network share — gets looked at
+        // without inventing one that cannot be made on a runner.
+        guard let named = ProcessInfo.processInfo.environment["PFADI_CHECK_FOLDER"] else { return }
+        let target = URL(fileURLWithPath: named)
+        print("  ..   and in \(target.path)")
+
+        browser.navigate(to: target)
+        settle(until: { browser.listedDirectory?.path == target.path }, seconds: 15)
+        expect(
+            browser.rowCount > 0,
+            "it lists something, got \(browser.rowCount) rows")
+
+        guard let folder = browser.firstFolderName else {
+            failures += 1
+            print("  FAIL it has a folder in it to open")
+            return
+        }
+        guard let namedRow = browser.rowIndex(of: folder) else { return }
+        browser.selectRange(namedRow..<(namedRow + 1))
+        browser.activateSelection()
+
+        let expected = target.appendingPathComponent(folder)
+        settle(until: { browser.listedDirectory?.path == expected.path }, seconds: 15)
+        expect(
+            same(browser.currentDirectory, expected),
+            "opening \(folder) goes into it, got \(browser.currentDirectory.path)")
+        expect(
+            browser.listedDirectory?.path == expected.path,
+            "and it is listed, got \(browser.listedDirectory?.path ?? "nothing")")
     }
 
     /// Show in Finder has to reach Finder.
