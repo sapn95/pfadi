@@ -60,6 +60,16 @@ public final class Preferences {
         }
     }
 
+    /// Whether the Created column is in the list.
+    ///
+    /// Off by default: most of the time the date that matters is when
+    /// something last changed, and a fourth column of dates on by default is
+    /// clutter for the people who do not want it.
+    public var showCreated: Bool {
+        get { store.object(forKey: Key.showCreated) as? Bool ?? false }
+        set { store.set(newValue, forKey: Key.showCreated) }
+    }
+
     /// The sidebar folders, or nil when the person has never touched them and
     /// the defaults should still apply. An empty array is a real answer: it
     /// means every one of them was removed on purpose.
@@ -96,5 +106,6 @@ public final class Preferences {
         static let showHidden = "showHidden"
         static let sortKey = "sortKey"
         static let sortAscending = "sortAscending"
+        static let showCreated = "showCreated"
     }
 }

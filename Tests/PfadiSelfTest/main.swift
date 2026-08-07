@@ -119,6 +119,7 @@ Harness.suite("root: the top has no parent, so it has no siblings") {
         "and neither is home, however much it feels like it")
 }
 PreferenceSuites.run()
+PreferenceSuites.runRemaining()
 SortingSuites.run()
 FavouriteSuites.run()
 WriteSuites.run()
@@ -126,8 +127,10 @@ HistorySuites.run()
 InfoSuites.run()
 ShareSuites.run()
 TransferSuites.run()
+TransferSuites.runMessages()
 CommandLineSuites.run()
 FolderSizeSuites.run()
 DefaultHandlerSuites.run()
+OrderAndTrashSuites.run()
 
 Harness.finish()

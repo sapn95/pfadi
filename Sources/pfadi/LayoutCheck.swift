@@ -228,6 +228,221 @@ enum LayoutCheck {
             "a reload keeps them selected, got \(browser.selectedNames.count)")
 
         dropping(in: window, fixture: fixture)
+        sorting(in: window, fixture: fixture)
+    }
+
+    /// Clicking a column header, which is the only way anybody sorts anything.
+    private static func sorting(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+        let folder = fixture.appendingPathComponent("sortable")
+        try? manager.removeItem(at: folder)
+        try? manager.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        // Deliberately in an order where name, size and date all disagree.
+        // Named so that name order and size order disagree: with the sizes
+        // ascending as zulu, alpha, mike, a check of the name header that
+        // expected the size order would pass without the header working.
+        for (name, bytes) in [("mike.bin", 64), ("zulu.bin", 40_000), ("alpha.bin", 4_000)] {
+            manager.createFile(
+                atPath: folder.appendingPathComponent(name).path,
+                contents: Data(repeating: 0x61, count: bytes))
+        }
+
+        browser.navigate(to: folder)
+        settle(until: { browser.listedDirectory?.path == folder.path && browser.rowCount == 3 })
+        expect(browser.rowCount == 3, "three files to sort, got \(browser.rowCount)")
+
+        expect(browser.clickColumnHeader("size"), "the size header can be clicked")
+        settle(until: { browser.listedNames.first == "mike.bin" }, seconds: 3)
+        expect(
+            browser.listedNames == ["mike.bin", "alpha.bin", "zulu.bin"],
+            "smallest first, got \(browser.listedNames.joined(separator: " "))")
+
+        expect(browser.clickColumnHeader("size"), "and clicked again")
+        settle(until: { browser.listedNames.first == "zulu.bin" }, seconds: 3)
+        expect(
+            browser.listedNames == ["zulu.bin", "alpha.bin", "mike.bin"],
+            "largest first, got \(browser.listedNames.joined(separator: " "))")
+
+        expect(browser.clickColumnHeader("name"), "the name header too")
+        settle(until: { browser.listedNames.first == "alpha.bin" }, seconds: 3)
+        expect(
+            browser.listedNames == ["alpha.bin", "mike.bin", "zulu.bin"],
+            "by name, which is a different order, got "
+                + browser.listedNames.joined(separator: " "))
+
+        expect(browser.clickColumnHeader("modified"), "and the modified header")
+        settle(seconds: 0.5)
+        expect(
+            browser.listedNames.count == 3,
+            "which still lists everything, got \(browser.listedNames.count)")
+
+        // Folders have to sort by size too. Before they were measured they had
+        // no size at all, so they stayed pinned to the top in name order and
+        // sorting by size looked like it did nothing.
+        let manager2 = FileManager.default
+        for (name, bytes) in [("a-big", 30_000), ("z-small", 100)] {
+            let sub = folder.appendingPathComponent(name)
+            try? manager2.createDirectory(at: sub, withIntermediateDirectories: true)
+            manager2.createFile(
+                atPath: sub.appendingPathComponent("payload.bin").path,
+                contents: Data(repeating: 0x61, count: bytes))
+        }
+        browser.refresh(nil)
+        settle(until: { browser.rowIndex(of: "z-small") != nil })
+
+        expect(browser.clickColumnHeader("size"), "sorted by size again")
+        settle(until: { browser.listedNames.first == "z-small" }, seconds: 8)
+        expect(
+            Array(browser.listedNames.prefix(2)) == ["z-small", "a-big"],
+            "the small folder sorts above the big one, got "
+                + browser.listedNames.prefix(2).joined(separator: " "))
+
+        expect(browser.clickColumnHeader("size"), "and the other way round")
+        settle(until: { browser.listedNames.first == "a-big" }, seconds: 8)
+        expect(
+            Array(browser.listedNames.prefix(2)) == ["a-big", "z-small"],
+            "the big one on top, got " + browser.listedNames.prefix(2).joined(separator: " "))
+
+        created(in: window)
+        headerMenu(in: window)
+        pathBarClicks(in: window, fixture: fixture)
+        refusedTrash(in: window)
+    }
+
+    /// The right-click menu on the column headers.
+    private static func headerMenu(in window: BrowserWindow) {
+        let browser = window.browser
+        let before = browser.visibleColumns
+
+        expect(
+            before.contains("name"), "the name column is on, got \(before.joined(separator: " "))")
+
+        expect(browser.clickHeaderMenuItem("modified"), "Modified is in the header menu")
+        expect(
+            !browser.visibleColumns.contains("modified"),
+            "and picking it takes the column away, got \(browser.visibleColumns.joined(separator: " "))"
+        )
+
+        expect(browser.clickHeaderMenuItem("modified"), "picked again")
+        expect(browser.visibleColumns.contains("modified"), "and it comes back")
+
+        // Name has to stay: a list of sizes and dates with nothing saying
+        // which file they belong to is not a list.
+        browser.clickHeaderMenuItem("name")
+        expect(
+            browser.visibleColumns.contains("name"),
+            "the name column cannot be hidden")
+        expect(
+            browser.bannerMessage.contains("name column"),
+            "and says so where somebody will see it, got \(browser.bannerMessage)")
+
+        expect(
+            browser.visibleColumns == before,
+            "everything is back as it was, got \(browser.visibleColumns.joined(separator: " "))")
+    }
+
+    /// The Created column: off unless asked for, and sortable once it is.
+    private static func created(in window: BrowserWindow) {
+        let browser = window.browser
+        let wasShown = browser.showsCreatedColumn
+
+        browser.toggleCreatedColumn(nil)
+        expect(
+            browser.showsCreatedColumn != wasShown,
+            "⇧⌘K puts the created column on screen")
+
+        if browser.showsCreatedColumn {
+            expect(browser.clickColumnHeader("created"), "and its header sorts by it")
+            settle(seconds: 0.5)
+            expect(browser.rowCount > 0, "which still lists everything")
+        }
+
+        browser.toggleCreatedColumn(nil)
+        expect(browser.showsCreatedColumn == wasShown, "and again puts it away")
+        // Hiding the column it was sorted by has to leave a sort you can see.
+        expect(browser.rowCount > 0, "with the list still in some order")
+    }
+
+    /// Double-clicking a folder in the path bar.
+    ///
+    /// It was written to navigate and could never run: the sibling menu opened
+    /// on the first click and took the second one with it.
+    private static func pathBarClicks(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let parent = fixture.deletingLastPathComponent()
+
+        browser.navigate(to: fixture)
+        settle(until: { browser.listedDirectory?.path == fixture.path })
+
+        expect(
+            browser.clickPathComponent(parent.path, clicks: 2),
+            "the enclosing folder is in the bar")
+        expect(
+            same(browser.currentDirectory, parent),
+            "a double click goes straight there, got \(browser.currentDirectory.path)")
+        expect(
+            !browser.isPathMenuPending,
+            "and no menu was left waiting to open on top of it")
+    }
+
+    /// Trashing a selection where the system refuses part of it.
+    private static func refusedTrash(in window: BrowserWindow) {
+        let browser = window.browser
+        let home = FileManager.default.homeDirectoryForCurrentUser
+
+        // A real one, made here, beside one macOS will not give up. Trashing
+        // used to stop at the first refusal, so the file that could have gone
+        // stayed put and the message was about the whole selection.
+        let mine = home.appendingPathComponent(
+            "pfadi-check-\(ProcessInfo.processInfo.processIdentifier).txt")
+        FileManager.default.createFile(atPath: mine.path, contents: Data("x".utf8))
+        defer { try? FileManager.default.removeItem(at: mine) }
+
+        browser.navigate(to: home)
+        settle(until: { browser.rowIndex(of: mine.lastPathComponent) != nil }, seconds: 5)
+
+        guard let mineRow = browser.rowIndex(of: mine.lastPathComponent),
+            let documentsRow = browser.rowIndex(of: "Documents")
+        else {
+            failures += 1
+            print("  FAIL both the file and Documents are listed in home")
+            return
+        }
+
+        browser.selectRange(mineRow..<(mineRow + 1))
+        browser.addToSelection(row: documentsRow)
+        expect(browser.selectedNames.count == 2, "both are selected")
+
+        browser.moveToTrash(nil)
+        settle(seconds: 1)
+
+        expect(
+            !FileManager.default.fileExists(atPath: mine.path),
+            "the one that could go, went")
+        expect(
+            FileManager.default.fileExists(atPath: home.appendingPathComponent("Documents").path),
+            "and Documents is still there")
+        expect(
+            browser.statusLine.contains("Documents"),
+            "the message names what was refused, got \(browser.statusLine)")
+        expect(
+            browser.statusLine.contains("macOS does not let"),
+            "and says why rather than quoting a permission error")
+
+        // The status line is eleven points of grey at the bottom of the
+        // window. A refusal reported only there reads, from where anybody is
+        // looking, as nothing having happened.
+        expect(
+            browser.bannerMessage.contains("Documents"),
+            "the banner says it too, got \(browser.bannerMessage)")
+
+        // And it goes when you leave, rather than following you into a folder
+        // it has nothing to do with.
+        browser.navigate(to: FileManager.default.temporaryDirectory)
+        settle(seconds: 0.4)
+        expect(browser.bannerMessage.isEmpty, "and clears on the way out")
     }
 
     /// Dropping several files at once, copy and move.

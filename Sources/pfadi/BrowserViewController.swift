@@ -44,6 +44,9 @@ final class BrowserViewController: NSViewController {
     private let infoPanel = InfoPanel()
     private let transfers = TransferController()
     private let openWithMenu = NSMenu(title: "Open With")
+    /// Kept so the shared menu delegate can tell the header's menu from the
+    /// list's, which want opposite things when they open.
+    private var headerMenu: NSMenu?
 
     /// The row being renamed, and a folder that was just created and should be
     /// renamed as soon as the watcher shows it.
@@ -64,6 +67,9 @@ final class BrowserViewController: NSViewController {
 
     /// Folder sizes, measured only for the rows on screen.
     private let folderSizes = FolderSizeQueue()
+    /// Whether a re-sort is already on its way, so measurements arriving in a
+    /// burst schedule one between them rather than one each.
+    private var resortScheduled = false
 
     /// Notification observers, removed on the way out. A block observer that is
     /// never removed keeps its closure, and with it this controller, alive for
@@ -82,6 +88,9 @@ final class BrowserViewController: NSViewController {
     private let searchField = NSSearchField()
     private let tableView = FileTableView()
     private let statusLabel = NSTextField(labelWithString: "")
+    /// Where anything that did not happen gets said, because the status line
+    /// is the wrong size and the wrong colour for it.
+    private let banner = NoticeBanner()
 
     private static let sizeFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -167,6 +176,29 @@ final class BrowserViewController: NSViewController {
     func rowIndex(of name: String) -> Int? {
         entries.firstIndex { $0.name == name }
     }
+
+    /// The rows as they are ordered right now, for the checks.
+    var listedNames: [String] { entries.map(\.name) }
+
+    /// Clicks a column header, for the checks.
+    ///
+    /// The same thing AppKit does: take the column's prototype descriptor, flip
+    /// it when that column is already the one being sorted by, and hand the
+    /// result to the table. Setting `order` directly would prove the sort works
+    /// while the header that has to reach it stays broken.
+    @discardableResult
+    func clickColumnHeader(_ identifier: String) -> Bool {
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier(identifier))
+        guard index >= 0 else { return false }
+        let column = tableView.tableColumns[index]
+        guard let prototype = column.sortDescriptorPrototype else { return false }
+
+        let current = tableView.sortDescriptors.first
+        let ascending =
+            current?.key == prototype.key ? !(current?.ascending ?? true) : prototype.ascending
+        tableView.sortDescriptors = [NSSortDescriptor(key: prototype.key, ascending: ascending)]
+        return true
+    }
     /// What has been measured for a folder in this listing, if anything.
     func measuredSize(of name: String) -> FolderSize.Measurement? {
         entries.first { $0.name == name }.flatMap { folderSizes.cached($0.url) }
@@ -179,8 +211,33 @@ final class BrowserViewController: NSViewController {
 
     /// Clicks a folder in the path bar, for the checks.
     @discardableResult
-    func clickPathComponent(_ path: String) -> Bool {
-        pathBar.clickComponent(path: path)
+    func clickPathComponent(_ path: String, clicks: Int = 1) -> Bool {
+        pathBar.clickComponent(path: path, clicks: clicks)
+    }
+
+    /// Whether a sibling menu is still waiting to open, for the checks.
+    var isPathMenuPending: Bool { pathBar.isMenuPending }
+
+    /// What the banner is saying, for the checks. Empty when it is not showing.
+    var bannerMessage: String { banner.message }
+
+    /// The columns on screen, in the order they are drawn, for the checks.
+    var visibleColumns: [String] {
+        tableView.tableColumns.filter { !$0.isHidden }.map { $0.identifier.rawValue }
+    }
+
+    /// Picks a column out of the header menu, for the checks.
+    @discardableResult
+    func clickHeaderMenuItem(_ identifier: String) -> Bool {
+        guard let menu = headerMenu,
+            let item = menu.items.first(where: { $0.representedObject as? String == identifier })
+        else { return false }
+        // Through the delegate first, so the state the menu would show is the
+        // state being checked.
+        menuNeedsUpdate(menu)
+        guard item.isEnabled || identifier == "name" else { return false }
+        toggleColumn(item)
+        return true
     }
 
     func layoutReport() -> LayoutReport {
@@ -253,7 +310,9 @@ final class BrowserViewController: NSViewController {
             ) { [weak self] _ in self?.measureVisibleFolders() })
 
         folderSizes.onMeasured = { [weak self] url, _ in
-            self?.redrawSize(of: url)
+            guard let self else { return }
+            redrawSize(of: url)
+            resortLater()
         }
 
         pathToggle.translatesAutoresizingMaskIntoConstraints = false
@@ -262,6 +321,10 @@ final class BrowserViewController: NSViewController {
         pathToggle.target = self
         pathToggle.action = #selector(togglePathEditing(_:))
 
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        banner.onVisibilityChanged = { [weak self] in self?.view.needsLayout = true }
+
+        view.addSubview(banner)
         view.addSubview(pathToggle)
         view.addSubview(pathBar)
         view.addSubview(pathField)
@@ -309,7 +372,14 @@ final class BrowserViewController: NSViewController {
             // something and carrying on quietly.
             view.widthAnchor.constraint(greaterThanOrEqualToConstant: 320),
 
-            scrollView.topAnchor.constraint(equalTo: pathField.bottomAnchor, constant: 10),
+            // Between the path row and the list. Hidden it is zero high, so
+            // the list keeps every point of the window when there is nothing
+            // to say.
+            banner.topAnchor.constraint(equalTo: pathField.bottomAnchor, constant: 8),
+            banner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            banner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+
+            scrollView.topAnchor.constraint(equalTo: banner.bottomAnchor, constant: 8),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -6),
@@ -353,6 +423,22 @@ final class BrowserViewController: NSViewController {
         addColumn(id: "name", title: "Name", width: 420)
         addColumn(id: "size", title: "Size", width: 90)
         addColumn(id: "modified", title: "Modified", width: 160)
+        // Present but hidden unless asked for, rather than added and removed.
+        // A column that comes and goes loses its width every time, and the
+        // header cannot be sorted by something that is not there.
+        addColumn(id: "created", title: "Created", width: 160)
+        setColumn("created", visible: preferences.showCreated)
+
+        // Right-click the header for what else there is to show. A column you
+        // cannot discover is a column nobody has.
+        let header = makeHeaderMenu()
+        headerMenu = header
+        tableView.headerView?.menu = header
+        // Drag a header to move it. On by default in AppKit, set here because
+        // it is a decision rather than an accident, and the autosave keeps the
+        // order across a quit.
+        tableView.allowsColumnReordering = true
+        tableView.allowsColumnResizing = true
 
         // Column widths are the other thing a person sets once and expects to
         // find again, and AppKit persists them itself once the table has a
@@ -367,6 +453,66 @@ final class BrowserViewController: NSViewController {
         tableView.sortDescriptors = [
             NSSortDescriptor(key: order.key.rawValue, ascending: order.ascending)
         ]
+    }
+
+    /// The menu behind a right-click on the column headers.
+    ///
+    /// Built once and updated when it opens, because which columns are on is a
+    /// thing that changes and a menu built at launch would stop being true the
+    /// first time one was switched.
+    private func makeHeaderMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
+        for column in tableView.tableColumns {
+            let item = menu.addItem(
+                withTitle: column.title,
+                action: #selector(toggleColumn(_:)),
+                keyEquivalent: "")
+            item.target = self
+            item.representedObject = column.identifier.rawValue
+        }
+        menu.addItem(.separator())
+        let hint = menu.addItem(
+            withTitle: "Drag a header to reorder", action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        return menu
+    }
+
+    @objc func toggleColumn(_ sender: NSMenuItem) {
+        guard let identifier = sender.representedObject as? String else { return }
+        // Name is what every row is identified by. A list of sizes and dates
+        // with nothing to say which file they belong to is not a list.
+        guard identifier != "name" else {
+            NSSound.beep()
+            warn("the name column cannot be hidden")
+            return
+        }
+
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier(identifier))
+        guard index >= 0 else { return }
+        let wanted = tableView.tableColumns[index].isHidden
+        setColumn(identifier, visible: wanted)
+
+        if identifier == "created" {
+            preferences.showCreated = wanted
+        }
+        // Sorting by a column that has just been taken away would leave the
+        // list in an order with nothing on screen to explain it.
+        if !wanted, order.key.rawValue == identifier {
+            sortByName()
+        }
+        announce(wanted ? "showing \(sender.title)" : "hiding \(sender.title)")
+    }
+
+    private func setColumn(_ identifier: String, visible: Bool) {
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier(identifier))
+        guard index >= 0 else { return }
+        tableView.tableColumns[index].isHidden = !visible
+    }
+
+    private func sortByName() {
+        order = ListingOrder(key: .name, ascending: true)
+        tableView.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true)]
     }
 
     private func makeContextMenu() -> NSMenu {
@@ -474,6 +620,7 @@ final class BrowserViewController: NSViewController {
         folderSizes.cancelPending()
         // Whatever was announced was about the folder being left.
         announcement = nil
+        banner.hide()
         directory = url
         reload(keepingSelection: false)
         preferences.lastDirectory = url.path
@@ -526,6 +673,7 @@ final class BrowserViewController: NSViewController {
             let result = Result {
                 try DirectoryListing.read(directory, showHidden: showHidden, order: order)
             }
+
             DispatchQueue.main.async {
                 // A newer navigation has already been asked for, so this answer
                 // is about a folder nobody is looking at any more.
@@ -551,6 +699,7 @@ final class BrowserViewController: NSViewController {
             failure = "cannot read \(directory.path): \(error.localizedDescription)"
         }
 
+        allEntries = resorted(allEntries)
         entries = Self.filtered(allEntries, by: filter)
         loadedDirectory = directory
         tableView.reloadData()
@@ -594,6 +743,15 @@ final class BrowserViewController: NSViewController {
     /// status line to the item count. So "copied, 3 items" was written and
     /// then wiped a few milliseconds later, every time, and the only channel
     /// this window has for telling somebody what it did said nothing.
+    /// Says something went wrong, where somebody will see it.
+    ///
+    /// Both: the banner because it is unmissable, and the status line because
+    /// that is where the last thing that happened lives.
+    private func warn(_ message: String, kind: NoticeBanner.Kind = .warning) {
+        banner.show(message, kind: kind)
+        announce(message)
+    }
+
     private func announce(_ message: String) {
         announcement = message
         announcementUntil = Date().addingTimeInterval(Self.announcementLifetime)
@@ -884,6 +1042,24 @@ final class BrowserViewController: NSViewController {
         reload(keepingSelection: true)
     }
 
+    /// ⇧⌘K. A fourth column of dates, for the people who want it.
+    @objc func toggleCreatedColumn(_ sender: Any?) {
+        let wanted = !preferences.showCreated
+        preferences.showCreated = wanted
+        setColumn("created", visible: wanted)
+
+        if !wanted, order.key == .created {
+            sortByName()
+        }
+        announce(wanted ? "showing when things were created" : "hiding the created column")
+    }
+
+    /// Whether the Created column is on screen, for the checks.
+    var showsCreatedColumn: Bool {
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("created"))
+        return index >= 0 && !tableView.tableColumns[index].isHidden
+    }
+
     /// ⌘R. The one place folder sizes are thrown away.
     ///
     /// Not on every reload: the watcher fires whenever anything in the folder
@@ -1169,40 +1345,67 @@ final class BrowserViewController: NSViewController {
         // What actually reached the trash, so undo puts back exactly that and
         // a failure part way through still restores the part that worked.
         var moved: [(original: URL, inTrash: URL)] = []
-        var failure: (any Error)?
+        // Counted separately, because the system does not always say where
+        // something landed. Undo needs the destination and so only gets the
+        // ones that have it; the count is about what actually went, and
+        // leaving those out made the message say nothing at all.
+        var goneCount = 0
+        var refused: [(name: String, reason: String)] = []
 
+        // Every one of them, rather than stopping at the first refusal, and
+        // through the checked call rather than the plain one: macOS will not
+        // let ~/Documents and its kind go to the trash, and it refuses by
+        // reporting success and doing nothing.
         for entry in selected {
-            do {
-                if let trashed = try FileOperations.trash(entry.url) {
-                    moved.append((original: entry.url, inTrash: trashed))
+            switch FileOperations.trashChecking(entry.url) {
+            case .moved(let landed):
+                goneCount += 1
+                if let landed {
+                    moved.append((original: entry.url, inTrash: landed))
                 }
-            } catch {
-                failure = error
-                break
+            case .refused(let reason):
+                refused.append((name: entry.name, reason: reason))
             }
         }
 
         registerTrashUndo(moved)
+        reload(keepingSelection: true)
 
-        if let failure {
-            report(
-                failure,
-                doing: "move \(selected.count == 1 ? selected[0].name : "everything selected")"
-                    + " to the trash")
-            return
+        var parts: [String] = []
+        if goneCount > 0 {
+            parts.append(
+                goneCount == 1 && moved.count == 1
+                    ? "moved \(moved[0].original.lastPathComponent) to the trash"
+                    : "moved \(goneCount) items to the trash")
         }
-        announce(
-            moved.count == 1
-                ? "moved \(moved[0].original.lastPathComponent) to the trash"
-                : "moved \(moved.count) items to the trash")
+        if !refused.isEmpty {
+            NSSound.beep()
+            // Named when there are few enough to read, counted when there are
+            // not, and the reason either way: "3 refused" on its own is a
+            // dead end. Every distinct reason, because two folders refused for
+            // two different reasons is two things worth knowing.
+            let names =
+                refused.count <= 3
+                ? refused.map(\.name).joined(separator: ", ")
+                : "\(refused.count) items"
+            let reasons = Set(refused.map(\.reason)).sorted().joined(separator: "; ")
+            parts.append("could not move \(names): \(reasons)")
+        }
+        // Never nothing: a command that ran and said neither what it did nor
+        // why it did not is the worst of the three.
+        let message =
+            parts.isEmpty
+            ? "nothing was moved to the trash" : parts.joined(separator: "; ")
+
+        // The banner only when something was refused. A trash that worked is
+        // not worth a band across the window.
+        if refused.isEmpty {
+            announce(message)
+        } else {
+            warn(message)
+        }
     }
 
-    /// Undo for a trip to the trash, and the redo that follows it.
-    ///
-    /// Recursive because the trash renames: a file put back and trashed again
-    /// lands somewhere else the second time, so the redo has to record where
-    /// and register the next undo against that. Redoing twice used to try to
-    /// restore from the first run's paths, which are no longer there.
     private func registerTrashUndo(_ items: [(original: URL, inTrash: URL)]) {
         guard !items.isEmpty else { return }
         registerUndo("Move to Trash") { controller in
@@ -1261,7 +1464,7 @@ final class BrowserViewController: NSViewController {
 
     private func report(_ error: any Error, doing what: String) {
         NSSound.beep()
-        announce("could not \(what): \(error.localizedDescription)")
+        warn("could not \(what): \(error.localizedDescription)", kind: .failure)
     }
 
     @objc func copyPath(_ sender: Any?) {
@@ -1293,6 +1496,9 @@ extension BrowserViewController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleHidden(_:)) {
             menuItem.state = showHidden ? .on : .off
+        }
+        if menuItem.action == #selector(toggleCreatedColumn(_:)) {
+            menuItem.state = preferences.showCreated ? .on : .off
         }
         if menuItem.action == #selector(goBack(_:)) { return history.canGoBack }
         if menuItem.action == #selector(goForward(_:)) { return history.canGoForward }
@@ -1386,8 +1592,49 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         case "modified":
             let text = entry.modified.map(Self.dateFormatter.string) ?? ""
             return textCell(text, in: tableView, aligned: .left)
+        case "created":
+            // Blank rather than a dash: not every filesystem records one, and
+            // an SMB share answering with nothing is normal rather than an
+            // error worth drawing attention to.
+            let text = entry.created.map(Self.dateFormatter.string) ?? ""
+            return textCell(text, in: tableView, aligned: .left)
         default:
             return nil
+        }
+    }
+
+    /// Sorts with the folder sizes this window has measured.
+    ///
+    /// PfadiCore cannot do it alone: a folder has no size on disk, so sorting
+    /// by size left every folder pinned to the top of the list in name order,
+    /// which looks exactly like a sort that does not work.
+    private func resorted(_ listing: [Entry]) -> [Entry] {
+        guard order.key == .size else {
+            return DirectoryListing.sorted(listing, by: order)
+        }
+        return DirectoryListing.sorted(listing, by: order) { [folderSizes] entry in
+            entry.isDirectory ? folderSizes.cached(entry.url)?.bytes : entry.size
+        }
+    }
+
+    /// Puts the rows back in order once a folder has been measured.
+    ///
+    /// Only while sorting by size, and coalesced: measurements arrive one per
+    /// folder, and re-sorting on each of them would have rows jumping under the
+    /// pointer all the way down a large folder.
+    private func resortLater() {
+        guard order.key == .size, !resortScheduled else { return }
+        resortScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self else { return }
+            resortScheduled = false
+            guard order.key == .size else { return }
+            let selected = selectedEntries().map(\.name)
+            allEntries = resorted(allEntries)
+            entries = Self.filtered(allEntries, by: filter)
+            tableView.reloadData()
+            let wanted = Set(selected)
+            select(rows: entries.indices.filter { wanted.contains(self.entries[$0].name) })
         }
     }
 
@@ -1411,6 +1658,14 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     /// Asks for the sizes of the folders somebody can currently see.
     private func measureVisibleFolders() {
+        // Sorting by size is the one case where the rows on screen are not
+        // enough: an order worked out from the folders that happen to be
+        // visible is not an order at all.
+        if order.key == .size {
+            folderSizes.want(entries.filter(\.isDirectory).map(\.url))
+            return
+        }
+
         var visible = tableView.rows(in: tableView.visibleRect)
         if visible.length == 0 {
             // Before the first layout pass there is no visible rect to speak
@@ -1442,7 +1697,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
             tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
             ?? Self.makeNameCell(id: id)
 
-        cell.imageView?.image = NSWorkspace.shared.icon(forFile: entry.url.path)
+        cell.imageView?.image = FileIcons.icon(for: entry.url, isDirectory: entry.isDirectory)
         cell.textField?.stringValue = entry.name
         cell.textField?.delegate = self
         cell.textField?.isEditable = (renaming == entry.url)
@@ -1620,6 +1875,21 @@ extension BrowserViewController: NSMenuDelegate {
     /// row that was clicked. Selecting it first is the least surprising way to
     /// make every item in the menu agree about which file it means.
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === headerMenu {
+            // A tick against every column that is on, so the menu says what is
+            // showing as well as what could be.
+            for item in menu.items {
+                guard let identifier = item.representedObject as? String else { continue }
+                let index = tableView.column(
+                    withIdentifier: NSUserInterfaceItemIdentifier(identifier))
+                item.state = index >= 0 && !tableView.tableColumns[index].isHidden ? .on : .off
+                // Name is not optional, so it is shown ticked and inert rather
+                // than offered and then refused.
+                item.isEnabled = identifier != "name"
+            }
+            return
+        }
+
         let clicked = tableView.clickedRow
         // A right-click inside an existing selection acts on the whole of it;
         // one outside starts a new selection of the row that was clicked.

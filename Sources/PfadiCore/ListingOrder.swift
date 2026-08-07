@@ -9,6 +9,7 @@ public struct ListingOrder: Equatable, Sendable {
         case name
         case size
         case modified
+        case created
     }
 
     public var key: Key
@@ -26,17 +27,43 @@ extension DirectoryListing {
     /// Sorts a listing.
     ///
     /// Directories stay above files whatever the column and whichever
-    /// direction it points. Sorting by size and having folders scatter through
-    /// the list is technically consistent and useless in practice: a folder has
-    /// no size until something walks it, so they would all sort as zero.
-    public static func sorted(_ entries: [Entry], by order: ListingOrder) -> [Entry] {
+    /// direction it points, which is the convention every file browser on this
+    /// system follows.
+    ///
+    /// - Parameter sizeOf: what a row's size is, when that is not simply the
+    ///   number the filesystem gave. A folder has no size on disk, so sorting
+    ///   by size used to leave every folder pinned to the top in name order —
+    ///   which looks exactly like a sort that does not work. Passing the
+    ///   measured sizes in sorts the folders among themselves too. Folders that
+    ///   have not been measured yet sort last within their block, because
+    ///   unknown is not zero.
+    public static func sorted(
+        _ entries: [Entry],
+        by order: ListingOrder,
+        sizeOf: ((Entry) -> Int64?)? = nil
+    ) -> [Entry] {
         entries.sorted { lhs, rhs in
             if lhs.isDirectory != rhs.isDirectory {
                 return lhs.isDirectory
             }
 
-            let ascending = compare(lhs, rhs, by: order.key)
-            switch ascending {
+            // Answered here rather than in `compare`, and deliberately not
+            // flipped with the column: a row whose size nobody knows yet
+            // belongs at the bottom of its block whichever way the arrow
+            // points. A comparison cannot say that, because the switch below
+            // turns it upside down along with everything else.
+            if order.key == .size {
+                let left = size(of: lhs, using: sizeOf)
+                let right = size(of: rhs, using: sizeOf)
+                if left == nil || right == nil {
+                    guard left != nil || right != nil else {
+                        return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                    }
+                    return right == nil
+                }
+            }
+
+            switch compare(lhs, rhs, by: order.key, sizeOf: sizeOf) {
             case .orderedSame:
                 // A stable tiebreak, so two files of the same size do not swap
                 // places every time the folder is re-read.
@@ -49,24 +76,44 @@ extension DirectoryListing {
         }
     }
 
-    private static func compare(_ lhs: Entry, _ rhs: Entry, by key: ListingOrder.Key)
-        -> ComparisonResult
-    {
+    private static func compare(
+        _ lhs: Entry,
+        _ rhs: Entry,
+        by key: ListingOrder.Key,
+        sizeOf: ((Entry) -> Int64?)?
+    ) -> ComparisonResult {
         switch key {
         case .name:
             return lhs.name.localizedStandardCompare(rhs.name)
         case .size:
-            let left = lhs.size ?? 0
-            let right = rhs.size ?? 0
+            // Both sides are known by the time this runs: `sorted` deals with
+            // the unknown ones before it gets here.
+            let left = size(of: lhs, using: sizeOf) ?? 0
+            let right = size(of: rhs, using: sizeOf) ?? 0
             if left == right { return .orderedSame }
             return left < right ? .orderedAscending : .orderedDescending
         case .modified:
-            // An entry whose date could not be read sorts as the oldest thing
-            // there is, rather than jumping to the top of a newest-first list.
-            let left = lhs.modified ?? .distantPast
-            let right = rhs.modified ?? .distantPast
-            if left == right { return .orderedSame }
-            return left < right ? .orderedAscending : .orderedDescending
+            return compare(lhs.modified, rhs.modified)
+        case .created:
+            return compare(lhs.created, rhs.created)
         }
+    }
+
+    /// An entry whose date could not be read sorts as the oldest thing there
+    /// is, rather than jumping to the top of a newest-first list.
+    private static func compare(_ lhs: Date?, _ rhs: Date?) -> ComparisonResult {
+        let left = lhs ?? .distantPast
+        let right = rhs ?? .distantPast
+        if left == right { return .orderedSame }
+        return left < right ? .orderedAscending : .orderedDescending
+    }
+
+    /// How big a row is: what the caller says, or what the filesystem said.
+    ///
+    /// A folder's own entry has no size, so without a resolver every folder is
+    /// nil here, and that is exactly what made sorting by size look broken.
+    private static func size(of entry: Entry, using sizeOf: ((Entry) -> Int64?)?) -> Int64? {
+        if let sizeOf { return sizeOf(entry) }
+        return entry.size
     }
 }

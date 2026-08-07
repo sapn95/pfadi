@@ -321,3 +321,42 @@ enum TransferSuites {
 private final class OutcomeBox: @unchecked Sendable {
     var value: TransferRunner.Outcome?
 }
+
+extension TransferSuites {
+    /// The parts of a refusal a person actually reads.
+    static func runMessages() {
+        Harness.suite("transfer: a refusal says which file and why") {
+            let folder = URL(fileURLWithPath: "/tmp/project")
+            // Each one names the item, because "that is not allowed" about an
+            // unnamed file in a selection of twenty is not an explanation.
+            Harness.expectEqual(
+                Transfer.Refusal.intoItself(folder).message,
+                "project cannot be put inside itself", "into itself")
+            Harness.expectEqual(
+                Transfer.Refusal.intoOwnDescendant(folder).message,
+                "project cannot be moved into a folder inside it", "into its own descendant")
+            Harness.expectEqual(
+                Transfer.Refusal.sameFolder(folder).message,
+                "that is already where it is", "into where it already is")
+            Harness.expectEqual(
+                Transfer.Refusal.missing(folder).message,
+                "project is no longer there", "and one that has since gone")
+        }
+
+        Harness.suite("transfer: an empty plan says so") {
+            try withSandbox([]) { root in
+                // What the controller checks before starting a progress bar
+                // for nothing.
+                let plan = Transfer.plan([], into: root, kind: .copy)
+                Harness.expect(plan.isEmpty, "nothing to copy is an empty plan")
+
+                try Data("x".utf8).write(to: root.appendingPathComponent("one.txt"))
+                Harness.expect(
+                    !Transfer.plan(
+                        [root.appendingPathComponent("one.txt")], into: root, kind: .copy
+                    ).isEmpty,
+                    "and one file is not")
+            }
+        }
+    }
+}

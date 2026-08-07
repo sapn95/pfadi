@@ -39,6 +39,12 @@ jobs:
         # with the filter off the edge. So is a behaviour one: the model can be
         # right the whole time the thing on screen is unreachable.
         run: swift run pfadi --layout-check
+      - name: coverage, with a floor under it
+        # PfadiCore only: the AppKit half is covered by --layout-check above,
+        # which drives a real window rather than reading the model, and mixing
+        # the two numbers would hide whichever one was slipping.
+        run: ./scripts/coverage.sh
+
       - name: assemble the .app bundle
         run: ./scripts/make-app.sh
       - name: the bundle is actually launchable

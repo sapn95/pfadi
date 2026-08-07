@@ -11,6 +11,9 @@ public struct Entry: Sendable, Equatable {
     public let isDirectory: Bool
     public let size: Int64?
     public let modified: Date?
+    /// When it was made. Optional because not every filesystem records one:
+    /// an SMB share can answer with nothing at all.
+    public let created: Date?
     public let cloud: CloudFiles.Status
 
     public init(
@@ -19,6 +22,7 @@ public struct Entry: Sendable, Equatable {
         isDirectory: Bool,
         size: Int64?,
         modified: Date?,
+        created: Date? = nil,
         cloud: CloudFiles.Status = .local
     ) {
         self.url = url
@@ -26,6 +30,7 @@ public struct Entry: Sendable, Equatable {
         self.isDirectory = isDirectory
         self.size = size
         self.modified = modified
+        self.created = created
         self.cloud = cloud
     }
 }

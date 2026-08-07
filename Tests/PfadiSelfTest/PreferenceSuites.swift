@@ -3,7 +3,7 @@ import PfadiCore
 
 /// A store that lives and dies with the test, so nothing is written into the
 /// real user's defaults.
-private final class MemoryStore: KeyValueStore {
+final class MemoryStore: KeyValueStore {
     private var values: [String: Any] = [:]
 
     func object(forKey key: String) -> Any? { values[key] }
@@ -52,6 +52,46 @@ enum PreferenceSuites {
                 store.object(forKey: "showHidden") as? Bool == false,
                 "false is written down, not just left absent")
             Harness.expect(!Preferences(store: store).showHidden, "and reads back as false")
+        }
+    }
+}
+
+extension PreferenceSuites {
+    /// The settings nothing else in the tests happens to touch.
+    ///
+    /// Every one of these is read at launch and written when somebody changes
+    /// it, and a getter with the wrong key or the wrong default fails silently:
+    /// the setting appears to work and is back to its old value next launch.
+    static func runRemaining() {
+        Harness.suite("preferences: the created column is off until asked for") {
+            let store = MemoryStore()
+            let preferences = Preferences(store: store)
+            Harness.expect(!preferences.showCreated, "off by default")
+            preferences.showCreated = true
+            Harness.expect(
+                Preferences(store: store).showCreated,
+                "and on again after a relaunch, which is the whole point")
+            preferences.showCreated = false
+            Harness.expect(!Preferences(store: store).showCreated, "and off again")
+        }
+
+        Harness.suite("preferences: rewriting pasted addresses is on until turned off") {
+            let store = MemoryStore()
+            Harness.expect(
+                Preferences(store: store).rewriteAddresses,
+                "on by default, because being told what it did beats being refused")
+            Preferences(store: store).rewriteAddresses = false
+            Harness.expect(
+                !Preferences(store: store).rewriteAddresses, "and the choice survives")
+        }
+
+        Harness.suite("preferences: servers start empty and come back in order") {
+            let store = MemoryStore()
+            Harness.expectEqual(Preferences(store: store).servers, [], "nothing to begin with")
+            Preferences(store: store).servers = ["smb://a/one", "nfs://b/two"]
+            Harness.expectEqual(
+                Preferences(store: store).servers, ["smb://a/one", "nfs://b/two"],
+                "newest first, as they were written")
         }
     }
 }

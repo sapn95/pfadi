@@ -91,4 +91,78 @@ public enum FileOperations {
         try fileManager.trashItem(at: url, resultingItemURL: &resulting)
         return resulting as URL?
     }
+
+    /// What happened when something was asked to go to the trash.
+    public enum TrashOutcome: Equatable {
+        /// Gone, and here is where it landed, when the system said where.
+        case moved(URL?)
+        /// Still exactly where it was, and why.
+        case refused(String)
+    }
+
+    /// Trashes something and then checks that it actually went.
+    ///
+    /// `trashItem` cannot be taken at its word. Asked to trash `~/Documents` it
+    /// returns without throwing, reports a resulting URL, and leaves the folder
+    /// exactly where it was. There is no error to catch, which is why moving
+    /// one of those folders to the trash appeared to work and silently did
+    /// nothing at all.
+    public static func trashChecking(
+        _ url: URL,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default
+    ) -> TrashOutcome {
+        let landed: URL?
+        do {
+            landed = try trash(url, fileManager: fileManager)
+        } catch {
+            return .refused(refusal(for: url, home: home, saying: error.localizedDescription))
+        }
+        guard exists(url) else { return .moved(landed) }
+        return .refused(refusal(for: url, home: home, saying: nil))
+    }
+
+    /// Whether anything is at this path, symbolic link included.
+    ///
+    /// `lstat` rather than `fileExists`, which follows links: a link whose
+    /// target is gone is still a link that is still there, and reporting it as
+    /// trashed when it was refused is the mistake this whole function exists to
+    /// stop making.
+    private static func exists(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0
+    }
+
+    /// Why something did not go to the trash, in words.
+    private static func refusal(for url: URL, home: URL, saying message: String?) -> String {
+        if isReservedHomeFolder(url, home: home) {
+            return "macOS does not let this folder be moved to the trash"
+        }
+        // The system refused and gave no reason, which is worse than an error
+        // message but better than a claim that it worked.
+        return message ?? "the system refused, and left it where it was"
+    }
+
+    /// The folders macOS keeps for itself directly inside a home directory.
+    ///
+    /// By name and position rather than by asking, because there is nothing to
+    /// ask: the refusal comes back as success, and the flag behind it is not
+    /// exposed. `~/Documents` is one of these; `~/projects/Documents` is an
+    /// ordinary folder with an unlucky name.
+    public static func isReservedHomeFolder(
+        _ url: URL,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> Bool {
+        // Apple's own, and only those. ~/Applications is a folder people make
+        // themselves and ~/Sites has not been special since Mountain Lion;
+        // calling either of them reserved would explain a refusal that never
+        // happened and refuse to explain the real one.
+        let reserved: Set<String> = [
+            "Desktop", "Documents", "Downloads", "Library", "Movies", "Music",
+            "Pictures", "Public",
+        ]
+        guard reserved.contains(url.lastPathComponent) else { return false }
+        return url.deletingLastPathComponent().resolvingSymlinksInPath().path
+            == home.resolvingSymlinksInPath().path
+    }
 }

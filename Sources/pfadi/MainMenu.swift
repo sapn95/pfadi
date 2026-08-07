@@ -204,6 +204,15 @@ enum MainMenu {
         )
         hidden.keyEquivalentModifierMask = [.command, .shift]
 
+        let created = menu.addItem(
+            withTitle: "Show Created Column",
+            action: #selector(BrowserViewController.toggleCreatedColumn(_:)),
+            keyEquivalent: "k"
+        )
+        created.keyEquivalentModifierMask = [.command, .shift]
+
+        menu.addItem(.separator())
+
         menu.addItem(
             withTitle: "Refresh",
             action: #selector(BrowserViewController.refresh(_:)),

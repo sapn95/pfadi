@@ -32,8 +32,8 @@ enum SortingSuites {
         Harness.suite("sorting: by size") {
             let up = DirectoryListing.sorted(all, by: ListingOrder(key: .size, ascending: true))
             Harness.expectEqual(
-                up.map(\.name), ["folder", "unknown.txt", "small.txt", "big.txt"],
-                "smallest first, and an unknown size counts as nothing")
+                up.map(\.name), ["folder", "small.txt", "big.txt", "unknown.txt"],
+                "smallest first, and a size nobody knows sorts last rather than as zero")
 
             let down = DirectoryListing.sorted(all, by: ListingOrder(key: .size, ascending: false))
             Harness.expectEqual(
