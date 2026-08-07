@@ -80,7 +80,12 @@ public enum DefaultHandler {
     /// `undo` has to give it back byte for byte apart from what we added.
     public static func removingBlock(from text: String) -> String {
         guard let start = text.range(of: markerStart),
-            let end = text.range(of: markerEnd)
+            let end = text.range(of: markerEnd),
+            // A hand-edited profile can hold the closing marker above the
+            // opening one. An inverted range is not an error in Swift, it is a
+            // trap, so this refuses rather than crashing in somebody's shell
+            // profile.
+            end.upperBound >= start.lowerBound
         else { return text }
         var cut = text
         // Through the end of the marker line, and the newline after it.

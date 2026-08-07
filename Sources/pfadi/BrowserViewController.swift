@@ -557,7 +557,9 @@ final class BrowserViewController: NSViewController {
         measureVisibleFolders()
 
         guard !entries.isEmpty else {
-            statusLabel.stringValue = failure ?? "empty folder"
+            // statusText(), not "empty folder": trashing the last file in a
+            // folder announced what it did and then immediately overwrote it.
+            statusLabel.stringValue = failure ?? statusText()
             // Still cleared: an empty folder is an answer to "reveal this",
             // and leaving the request pending would fire it at the next one.
             applyPendingSelection()
@@ -1180,23 +1182,7 @@ final class BrowserViewController: NSViewController {
             }
         }
 
-        if !moved.isEmpty {
-            let originals = moved
-            registerUndo("Move to Trash") { controller in
-                controller.attempt(Self.describe(putting: originals)) {
-                    for item in originals.reversed() {
-                        try FileManager.default.moveItem(at: item.inTrash, to: item.original)
-                    }
-                }
-                controller.registerUndo("Move to Trash") { controller in
-                    controller.attempt("move them to the trash again") {
-                        for item in originals {
-                            _ = try FileOperations.trash(item.original)
-                        }
-                    }
-                }
-            }
-        }
+        registerTrashUndo(moved)
 
         if let failure {
             report(
@@ -1209,6 +1195,36 @@ final class BrowserViewController: NSViewController {
             moved.count == 1
                 ? "moved \(moved[0].original.lastPathComponent) to the trash"
                 : "moved \(moved.count) items to the trash")
+    }
+
+    /// Undo for a trip to the trash, and the redo that follows it.
+    ///
+    /// Recursive because the trash renames: a file put back and trashed again
+    /// lands somewhere else the second time, so the redo has to record where
+    /// and register the next undo against that. Redoing twice used to try to
+    /// restore from the first run's paths, which are no longer there.
+    private func registerTrashUndo(_ items: [(original: URL, inTrash: URL)]) {
+        guard !items.isEmpty else { return }
+        registerUndo("Move to Trash") { controller in
+            controller.attempt(Self.describe(putting: items)) {
+                // Deepest last in, first out: a folder cannot be put back
+                // before the thing it used to live in.
+                for item in items.reversed() {
+                    try FileManager.default.moveItem(at: item.inTrash, to: item.original)
+                }
+            }
+            controller.registerUndo("Move to Trash") { controller in
+                var again: [(original: URL, inTrash: URL)] = []
+                controller.attempt("move them to the trash again") {
+                    for item in items {
+                        if let trashed = try FileOperations.trash(item.original) {
+                            again.append((original: item.original, inTrash: trashed))
+                        }
+                    }
+                }
+                controller.registerTrashUndo(again)
+            }
+        }
     }
 
     private static func describe(putting items: [(original: URL, inTrash: URL)]) -> String {
@@ -1402,7 +1418,12 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
             // rather than measuring nothing until the first scroll.
             visible = NSRange(location: 0, length: min(entries.count, 40))
         }
-        let rows = visible.location..<min(visible.location + visible.length, entries.count)
+        // Clamped both ends. rows(in:) answers about the table's last layout,
+        // which can describe more rows than the list now holds, and an
+        // inverted Range is a trap rather than an empty one.
+        let lower = min(max(visible.location, 0), entries.count)
+        let upper = min(visible.location + visible.length, entries.count)
+        let rows = lower..<max(lower, upper)
         folderSizes.want(rows.compactMap { entries[$0].isDirectory ? entries[$0].url : nil })
     }
 

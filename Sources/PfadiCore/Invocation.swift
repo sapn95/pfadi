@@ -29,8 +29,12 @@ public enum Invocation: Equatable {
         workingDirectory: URL,
         fileManager: FileManager = .default
     ) -> Invocation {
-        var paths: [String] = []
-        var reveal: [String] = []
+        // One list, in the order they were typed. Keeping the reveals in a
+        // second list sorted them ahead of everything else, so
+        // `pfadi ~/git -R notes.txt` and `pfadi -R notes.txt ~/git` opened
+        // their tabs in the same order whichever way round they were written.
+        var asked: [(path: String, reveal: Bool)] = []
+
         // Everything after `--` is a path, however much it looks like a flag.
         // A folder really can be called `--help`, and refusing to open it
         // because of that is the kind of detail that makes a tool feel cheap.
@@ -39,7 +43,7 @@ public enum Invocation: Equatable {
 
         while let argument = iterator.next() {
             if literal {
-                paths.append(argument)
+                asked.append((path: argument, reveal: false))
                 continue
             }
             switch argument {
@@ -55,7 +59,7 @@ public enum Invocation: Equatable {
                 guard let next = iterator.next() else {
                     return .failed("\(argument) needs a path after it")
                 }
-                reveal.append(next)
+                asked.append((path: next, reveal: true))
             default:
                 // A lone "-" is a path in the sense that it is not an option,
                 // and it will fail the existence check below like any other
@@ -64,34 +68,27 @@ public enum Invocation: Equatable {
                 if argument.hasPrefix("-"), argument != "-" {
                     return .failed("unknown option: \(argument)")
                 }
-                paths.append(argument)
+                asked.append((path: argument, reveal: false))
             }
         }
 
         // Nothing to go on: the folder the shell is standing in.
-        if paths.isEmpty && reveal.isEmpty {
+        guard !asked.isEmpty else {
             return .show([.directory(PathCompletion.directoryURL(workingDirectory))])
         }
 
         var targets: [PathCompletion.Target] = []
-        for path in reveal {
-            let url = absolute(path, relativeTo: workingDirectory)
-            guard fileManager.fileExists(atPath: url.path) else {
-                return .failed("no such file or folder: \(path)")
+        for item in asked {
+            var isDirectory: ObjCBool = false
+            let url = absolute(item.path, relativeTo: workingDirectory)
+            guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+                return .failed("no such file or folder: \(item.path)")
             }
             // -R means "select this", even for a folder. Without the override
             // a folder would be opened rather than pointed at, which is the
             // opposite of what was asked for.
-            targets.append(.file(url.standardizedFileURL))
-        }
-        for path in paths {
-            var isDirectory: ObjCBool = false
-            let url = absolute(path, relativeTo: workingDirectory)
-            guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-                return .failed("no such file or folder: \(path)")
-            }
             targets.append(
-                isDirectory.boolValue
+                isDirectory.boolValue && !item.reveal
                     ? .directory(PathCompletion.directoryURL(url))
                     : .file(url.standardizedFileURL))
         }

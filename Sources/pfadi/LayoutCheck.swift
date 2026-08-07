@@ -331,7 +331,7 @@ enum LayoutCheck {
             "revealing opens the folder holding it, got \(browser.currentDirectory.path)")
         expect(
             browser.selectedName == "notes.txt",
-            "and selects the file, got \(browser.selectedName ?? "nothing)")")
+            "and selects the file, got \(browser.selectedName ?? "nothing")")
 
         // A plain file URL, which is what a drop on the Dock icon sends.
         let dropped = AppDelegate.target(for: fixture.appendingPathComponent("report.txt"))

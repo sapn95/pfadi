@@ -126,6 +126,51 @@ enum FolderSizeSuites {
             }
         }
 
+        Harness.suite("folder size queue: forgetting mid-walk does not put it back") {
+            // A big enough tree that the walk is still running when forget()
+            // lands. Without clearing what is in flight, it finished and wrote
+            // its answer into the cache that had just been emptied, so ⌘R on a
+            // folder being measured put the stale number straight back.
+            try withSandbox(["big"], directories: ["big"]) { root in
+                let big = root.appendingPathComponent("big")
+                for index in 0..<4000 {
+                    try Data("x".utf8).write(to: big.appendingPathComponent("f\(index).txt"))
+                }
+                let queue = FolderSizeQueue(deliver: { $0() })
+                queue.want([big])
+                queue.forget()
+
+                // Long enough for a walk that was not stopped to have finished.
+                Thread.sleep(forTimeInterval: 1.5)
+                Harness.expect(
+                    queue.cached(big) == nil,
+                    "nothing came back after being forgotten")
+            }
+        }
+
+        Harness.suite("folder size queue: what is in flight is not queued again") {
+            try withSandbox(["one"], directories: ["one"]) { root in
+                let one = root.appendingPathComponent("one")
+                let queue = FolderSizeQueue(deliver: { $0() })
+                var arrivals = 0
+                let lock = NSLock()
+                queue.onMeasured = { _, _ in
+                    lock.lock()
+                    arrivals += 1
+                    lock.unlock()
+                }
+                // The same folder asked for twice, which is what every scroll
+                // event does for the rows that did not move.
+                queue.want([one])
+                queue.want([one])
+                Thread.sleep(forTimeInterval: 1)
+                lock.lock()
+                let seen = arrivals
+                lock.unlock()
+                Harness.expectEqual(seen, 1, "measured once, reported once")
+            }
+        }
+
         Harness.suite("folder size queue: asking for nothing is not an error") {
             let queue = FolderSizeQueue(deliver: { $0() })
             queue.onMeasured = { _, _ in

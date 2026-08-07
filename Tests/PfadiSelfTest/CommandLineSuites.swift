@@ -130,6 +130,27 @@ enum CommandLineSuites {
                     "and without -R the same folder is opened")
             }
         }
+
+        Harness.suite("command line: reveals stay where they were typed") {
+            try withSandbox(["sub", "notes.txt"], directories: ["sub"]) { root in
+                // Collected separately, the reveals came out ahead of
+                // everything else, so these two lines opened their tabs in the
+                // same order however they were written.
+                guard
+                    case .show(let first) = Invocation.parse(
+                        ["pfadi", "sub", "-R", "notes.txt"], workingDirectory: root),
+                    case .show(let second) = Invocation.parse(
+                        ["pfadi", "-R", "notes.txt", "sub"], workingDirectory: root)
+                else {
+                    Harness.expect(false, "both orders parse")
+                    return
+                }
+                Harness.expectEqual(
+                    first.map(name(of:)), ["sub", "notes.txt"], "folder first when written first")
+                Harness.expectEqual(
+                    second.map(name(of:)), ["notes.txt", "sub"], "and reveal first when it is")
+            }
+        }
     }
 
     private static func scheme() {

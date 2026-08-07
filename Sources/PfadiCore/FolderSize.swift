@@ -130,8 +130,17 @@ public final class FolderSizeQueue {
     public func want(_ urls: [URL]) {
         lock.lock()
         let wanted = urls.filter { cache[$0.path] == nil }
-        pending = wanted
-        let start = !running && !wanted.isEmpty
+        // The walk in flight has to be let go of when it is no longer wanted.
+        // Clearing it is exactly what the cancellation closure in `step`
+        // watches for, so leaving it set meant a folder scrolled past went on
+        // being walked to the end.
+        if let current = inFlight, !wanted.contains(where: { $0.path == current.path }) {
+            inFlight = nil
+        }
+        // And whatever is still in flight is not queued a second time, or it
+        // would be measured twice and reported twice.
+        pending = wanted.filter { $0.path != inFlight?.path }
+        let start = !running && !pending.isEmpty
         if start { running = true }
         lock.unlock()
 
@@ -154,6 +163,10 @@ public final class FolderSizeQueue {
         lock.lock()
         cache.removeAll()
         pending.removeAll()
+        // The walk in flight goes too. Without this it finishes and writes its
+        // answer into the cache that was just emptied, so ⌘R on a folder being
+        // measured put the stale number straight back.
+        inFlight = nil
         lock.unlock()
     }
 

@@ -38,6 +38,19 @@ enum DefaultHandlerSuites {
                 "somebody who never ran apply keeps their file byte for byte")
         }
 
+        Harness.suite("profile: markers the wrong way round are left alone") {
+            // A hand-edited profile can end up like this, and in Swift an
+            // inverted range is not an empty one, it is a crash.
+            let muddled = """
+                \(DefaultHandler.markerEnd)
+                open() { echo mine; }
+                \(DefaultHandler.markerStart)
+                """
+            Harness.expectEqual(
+                DefaultHandler.removingBlock(from: muddled), muddled,
+                "refused rather than crashing in somebody's login shell")
+        }
+
         Harness.suite("profile: a path with a quote in it cannot break out") {
             // The whole reason for shellQuoted: this text becomes a function in
             // somebody's login shell, and a path is data, not code.
