@@ -84,6 +84,12 @@ Only the rows on screen are measured, and a walk that reaches its limit is shown
 as
 .Dq over
 a number rather than as a total.
+Sorting by that column measures every folder in the listing instead, because an
+order worked out from the rows that happen to be visible is not an order.
 .Pp
-Sorting by size sorts files by their size and leaves folders where they are: the
-sort happens when the folder is listed, and the measurements arrive later.
+The folders macOS keeps inside a home directory
+.Pq Pa ~/Documents , Pa ~/Desktop , Pa ~/Library and their kind
+cannot be moved to the trash.
+The system refuses by returning success and doing nothing, so every trash is
+checked afterwards rather than believed, and a selection containing one of them
+still trashes everything else.

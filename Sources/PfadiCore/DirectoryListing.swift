@@ -20,6 +20,7 @@ public enum DirectoryListing {
             .isDirectoryKey,
             .fileSizeKey,
             .contentModificationDateKey,
+            .creationDateKey,
         ]
         var options: FileManager.DirectoryEnumerationOptions = []
         if !showHidden {
@@ -47,6 +48,7 @@ public enum DirectoryListing {
                 isDirectory: values?.isDirectory ?? false,
                 size: values?.fileSize.map(Int64.init),
                 modified: values?.contentModificationDate,
+                created: values?.creationDate,
                 cloud: provider.map { found in
                     CloudFiles.Status(
                         provider: found.provider,

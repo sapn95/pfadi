@@ -54,6 +54,7 @@ a-z      type-ahead: jump to the row whose name starts like that
 ⌘↓       open the selected folder in a tab
 ⇧⌘H      home
 ⇧⌘.      hide the dotfiles, which are shown by default
+⇧⌘K      the Created column, on and off
 ⌘R       refresh
 ⌘T ⌘N    a new tab, a new window
 ⌘C ⌘V    copy, then paste, with ⌥⌘V to move instead
@@ -78,6 +79,12 @@ last one offers everything inside it. Both menus have the same shape, with the
 filter at the top and already focused, whichever part was clicked and however
 few folders are in it. A menu that is sometimes a plain list and sometimes a
 searchable one means looking first and reacting second, every single time.
+
+A **double click** on a folder in the bar goes straight there without the menu.
+That needs the menu to wait for the system's double-click interval before it
+opens: a menu takes over event tracking the moment it appears, so one opened on
+the first click swallows the second, and the double click could never happen
+however it was written.
 
 Clicking the leftmost folder goes straight there, because the root has no
 siblings to offer. When the path is too long, folders fold into an ellipsis
@@ -198,14 +205,44 @@ anything:
 
 An en dash means not measured yet. `over 4.2 GB` means the walk hit its limit
 and the number is a floor rather than a total — a guess dressed as an answer is
-worse than an honest bound. Sorting by size still sorts files only: the sort
-happens when the folder is listed and the measurements arrive after it.
+worse than an honest bound.
+
+**Sorting by size sorts the folders too**, which is the reason to measure them
+at all. Clicking that header measures every folder in the listing rather than
+only the visible ones, because an order worked out from whatever happened to be
+on screen is not an order. Rows settle as the answers arrive, and a folder not
+measured yet sits at the bottom of the folder block either way up: unknown is
+not zero, and treating it as zero would put it on top of a smallest-first list
+and then move it.
+
+## Columns
+
+Name, Size and Modified are always there. **Created** is a fourth, off by
+default and switched on with ⇧⌘K, because the date that usually matters is when
+something last changed and four columns of dates is clutter for everyone who
+does not want it. It is blank where the filesystem records no creation date,
+which an SMB share often does not.
+
+Every header sorts, including Created. Widths and the sort survive a quit.
 
 ## Writing to disk
 
 Everything that changes anything is reversible. ⌘Z puts back a trashed file,
 undoes a rename, trashes a folder that was just created, and unwinds a copy or
 a move.
+
+**Some things will not go to the trash, and now they say so.** `~/Documents`,
+`~/Desktop`, `~/Library` and the rest of the folders macOS keeps inside a home
+directory cannot be trashed — and the refusal is not an error. `trashItem`
+returns without throwing, reports where the item supposedly landed, and leaves
+the folder exactly where it was. So every trash is checked afterwards rather
+than believed, and a selection that mixes the possible with the impossible does
+what it can and reports the rest:
+
+```text
+moved report.pdf to the trash; could not move Documents:
+macOS does not let this folder be moved to the trash
+```
 
 **Replacing never destroys.** Choosing Replace during a paste puts the existing
 item in the trash first and then copies. A wrong answer in that dialog is

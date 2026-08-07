@@ -129,5 +129,6 @@ TransferSuites.run()
 CommandLineSuites.run()
 FolderSizeSuites.run()
 DefaultHandlerSuites.run()
+OrderAndTrashSuites.run()
 
 Harness.finish()

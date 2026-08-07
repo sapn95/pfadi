@@ -27,6 +27,9 @@ final class PathBar: NSView {
 
     private let stack = NSStackView()
     private var componentButtons: [NSButton] = []
+    /// A sibling menu that has been asked for and is waiting to see whether a
+    /// second click is coming.
+    private var pendingMenu: DispatchWorkItem?
     private let overflow = NSButton()
     private let descend = NSButton()
 
@@ -101,14 +104,23 @@ final class PathBar: NSView {
     ///
     /// Through the button's own action rather than around it, so what is being
     /// checked is the thing that actually runs when somebody clicks.
-    func clickComponent(path: String) -> Bool {
+    func clickComponent(path: String, clicks: Int = 1) -> Bool {
         guard let button = componentButtons.first(where: { $0.identifier?.rawValue == path })
         else { return false }
-        componentClicked(button)
+        handle(button, clicks: clicks)
         return true
     }
 
+    /// Whether a sibling menu is waiting for its double-click window to pass.
+    var isMenuPending: Bool { pendingMenu != nil }
+
     private func rebuild() {
+        // The path has changed, so a menu still waiting to open is about a
+        // folder nobody is looking at, anchored to a button about to be thrown
+        // away.
+        pendingMenu?.cancel()
+        pendingMenu = nil
+
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -199,12 +211,18 @@ final class PathBar: NSView {
     // MARK: - Clicks
 
     @objc fileprivate func componentClicked(_ sender: NSButton) {
+        handle(sender, clicks: NSApp.currentEvent?.clickCount ?? 1)
+    }
+
+    private func handle(_ sender: NSButton, clicks: Int) {
         guard let path = sender.identifier?.rawValue else { return }
         let url = URL(fileURLWithPath: path, isDirectory: true)
 
         // A double click goes there, a single one asks what else is at that
         // level. Both are useful and neither should need a modifier.
-        if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
+        if clicks >= 2 {
+            pendingMenu?.cancel()
+            pendingMenu = nil
             onChoose?(url)
             return
         }
@@ -217,7 +235,24 @@ final class PathBar: NSView {
             onChoose?(url)
             return
         }
-        present(folders(in: url.deletingLastPathComponent()), below: sender)
+
+        // Waited for, rather than opened now.
+        //
+        // A menu put up on the first click takes over event tracking, so the
+        // second click of a double click lands in the menu and the branch above
+        // never runs. Double-clicking a folder in the path did nothing at all,
+        // whatever it was written to do. Nothing can see a double click before
+        // the menu is up, so the menu has to come after the moment one is still
+        // possible — which is exactly what the system's own interval measures.
+        pendingMenu?.cancel()
+        let work = DispatchWorkItem { [weak self, weak sender] in
+            guard let self, let sender else { return }
+            pendingMenu = nil
+            present(folders(in: url.deletingLastPathComponent()), below: sender)
+        }
+        pendingMenu = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + NSEvent.doubleClickInterval, execute: work)
     }
 
     @objc private func descendClicked() {

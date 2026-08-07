@@ -64,6 +64,9 @@ final class BrowserViewController: NSViewController {
 
     /// Folder sizes, measured only for the rows on screen.
     private let folderSizes = FolderSizeQueue()
+    /// Whether a re-sort is already on its way, so measurements arriving in a
+    /// burst schedule one between them rather than one each.
+    private var resortScheduled = false
 
     /// Notification observers, removed on the way out. A block observer that is
     /// never removed keeps its closure, and with it this controller, alive for
@@ -167,6 +170,29 @@ final class BrowserViewController: NSViewController {
     func rowIndex(of name: String) -> Int? {
         entries.firstIndex { $0.name == name }
     }
+
+    /// The rows as they are ordered right now, for the checks.
+    var listedNames: [String] { entries.map(\.name) }
+
+    /// Clicks a column header, for the checks.
+    ///
+    /// The same thing AppKit does: take the column's prototype descriptor, flip
+    /// it when that column is already the one being sorted by, and hand the
+    /// result to the table. Setting `order` directly would prove the sort works
+    /// while the header that has to reach it stays broken.
+    @discardableResult
+    func clickColumnHeader(_ identifier: String) -> Bool {
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier(identifier))
+        guard index >= 0 else { return false }
+        let column = tableView.tableColumns[index]
+        guard let prototype = column.sortDescriptorPrototype else { return false }
+
+        let current = tableView.sortDescriptors.first
+        let ascending =
+            current?.key == prototype.key ? !(current?.ascending ?? true) : prototype.ascending
+        tableView.sortDescriptors = [NSSortDescriptor(key: prototype.key, ascending: ascending)]
+        return true
+    }
     /// What has been measured for a folder in this listing, if anything.
     func measuredSize(of name: String) -> FolderSize.Measurement? {
         entries.first { $0.name == name }.flatMap { folderSizes.cached($0.url) }
@@ -179,9 +205,12 @@ final class BrowserViewController: NSViewController {
 
     /// Clicks a folder in the path bar, for the checks.
     @discardableResult
-    func clickPathComponent(_ path: String) -> Bool {
-        pathBar.clickComponent(path: path)
+    func clickPathComponent(_ path: String, clicks: Int = 1) -> Bool {
+        pathBar.clickComponent(path: path, clicks: clicks)
     }
+
+    /// Whether a sibling menu is still waiting to open, for the checks.
+    var isPathMenuPending: Bool { pathBar.isMenuPending }
 
     func layoutReport() -> LayoutReport {
         view.layoutSubtreeIfNeeded()
@@ -253,7 +282,9 @@ final class BrowserViewController: NSViewController {
             ) { [weak self] _ in self?.measureVisibleFolders() })
 
         folderSizes.onMeasured = { [weak self] url, _ in
-            self?.redrawSize(of: url)
+            guard let self else { return }
+            redrawSize(of: url)
+            resortLater()
         }
 
         pathToggle.translatesAutoresizingMaskIntoConstraints = false
@@ -353,6 +384,11 @@ final class BrowserViewController: NSViewController {
         addColumn(id: "name", title: "Name", width: 420)
         addColumn(id: "size", title: "Size", width: 90)
         addColumn(id: "modified", title: "Modified", width: 160)
+        // Present but hidden unless asked for, rather than added and removed.
+        // A column that comes and goes loses its width every time, and the
+        // header cannot be sorted by something that is not there.
+        addColumn(id: "created", title: "Created", width: 160)
+        showCreatedColumn(preferences.showCreated)
 
         // Column widths are the other thing a person sets once and expects to
         // find again, and AppKit persists them itself once the table has a
@@ -526,6 +562,7 @@ final class BrowserViewController: NSViewController {
             let result = Result {
                 try DirectoryListing.read(directory, showHidden: showHidden, order: order)
             }
+
             DispatchQueue.main.async {
                 // A newer navigation has already been asked for, so this answer
                 // is about a folder nobody is looking at any more.
@@ -551,6 +588,7 @@ final class BrowserViewController: NSViewController {
             failure = "cannot read \(directory.path): \(error.localizedDescription)"
         }
 
+        allEntries = resorted(allEntries)
         entries = Self.filtered(allEntries, by: filter)
         loadedDirectory = directory
         tableView.reloadData()
@@ -884,6 +922,33 @@ final class BrowserViewController: NSViewController {
         reload(keepingSelection: true)
     }
 
+    /// ⇧⌘K. A fourth column of dates, for the people who want it.
+    @objc func toggleCreatedColumn(_ sender: Any?) {
+        let wanted = !preferences.showCreated
+        preferences.showCreated = wanted
+        showCreatedColumn(wanted)
+
+        // Sorting by a column that has just been taken away would leave the
+        // list in an order with nothing on screen to explain it.
+        if !wanted, order.key == .created {
+            order = ListingOrder(key: .name, ascending: true)
+            tableView.sortDescriptors = [NSSortDescriptor(key: "name", ascending: true)]
+        }
+        announce(wanted ? "showing when things were created" : "hiding the created column")
+    }
+
+    private func showCreatedColumn(_ visible: Bool) {
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("created"))
+        guard index >= 0 else { return }
+        tableView.tableColumns[index].isHidden = !visible
+    }
+
+    /// Whether the Created column is on screen, for the checks.
+    var showsCreatedColumn: Bool {
+        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("created"))
+        return index >= 0 && !tableView.tableColumns[index].isHidden
+    }
+
     /// ⌘R. The one place folder sizes are thrown away.
     ///
     /// Not on every reload: the watcher fires whenever anything in the folder
@@ -1169,40 +1234,47 @@ final class BrowserViewController: NSViewController {
         // What actually reached the trash, so undo puts back exactly that and
         // a failure part way through still restores the part that worked.
         var moved: [(original: URL, inTrash: URL)] = []
-        var failure: (any Error)?
+        var refused: [(name: String, reason: String)] = []
 
+        // Every one of them, rather than stopping at the first refusal, and
+        // through the checked call rather than the plain one: macOS will not
+        // let ~/Documents and its kind go to the trash, and it refuses by
+        // reporting success and doing nothing.
         for entry in selected {
-            do {
-                if let trashed = try FileOperations.trash(entry.url) {
-                    moved.append((original: entry.url, inTrash: trashed))
+            switch FileOperations.trashChecking(entry.url) {
+            case .moved(let landed):
+                if let landed {
+                    moved.append((original: entry.url, inTrash: landed))
                 }
-            } catch {
-                failure = error
-                break
+            case .refused(let reason):
+                refused.append((name: entry.name, reason: reason))
             }
         }
 
         registerTrashUndo(moved)
+        reload(keepingSelection: true)
 
-        if let failure {
-            report(
-                failure,
-                doing: "move \(selected.count == 1 ? selected[0].name : "everything selected")"
-                    + " to the trash")
-            return
+        var parts: [String] = []
+        if !moved.isEmpty {
+            parts.append(
+                moved.count == 1
+                    ? "moved \(moved[0].original.lastPathComponent) to the trash"
+                    : "moved \(moved.count) items to the trash")
         }
-        announce(
-            moved.count == 1
-                ? "moved \(moved[0].original.lastPathComponent) to the trash"
-                : "moved \(moved.count) items to the trash")
+        if !refused.isEmpty {
+            NSSound.beep()
+            // Named when there are few enough to read, counted when there are
+            // not, and the reason either way: "3 refused" on its own is a
+            // dead end.
+            let names =
+                refused.count <= 3
+                ? refused.map(\.name).joined(separator: ", ")
+                : "\(refused.count) items"
+            parts.append("could not move \(names): \(refused[0].reason)")
+        }
+        announce(parts.joined(separator: "; "))
     }
 
-    /// Undo for a trip to the trash, and the redo that follows it.
-    ///
-    /// Recursive because the trash renames: a file put back and trashed again
-    /// lands somewhere else the second time, so the redo has to record where
-    /// and register the next undo against that. Redoing twice used to try to
-    /// restore from the first run's paths, which are no longer there.
     private func registerTrashUndo(_ items: [(original: URL, inTrash: URL)]) {
         guard !items.isEmpty else { return }
         registerUndo("Move to Trash") { controller in
@@ -1293,6 +1365,9 @@ extension BrowserViewController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleHidden(_:)) {
             menuItem.state = showHidden ? .on : .off
+        }
+        if menuItem.action == #selector(toggleCreatedColumn(_:)) {
+            menuItem.state = preferences.showCreated ? .on : .off
         }
         if menuItem.action == #selector(goBack(_:)) { return history.canGoBack }
         if menuItem.action == #selector(goForward(_:)) { return history.canGoForward }
@@ -1386,8 +1461,49 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         case "modified":
             let text = entry.modified.map(Self.dateFormatter.string) ?? ""
             return textCell(text, in: tableView, aligned: .left)
+        case "created":
+            // Blank rather than a dash: not every filesystem records one, and
+            // an SMB share answering with nothing is normal rather than an
+            // error worth drawing attention to.
+            let text = entry.created.map(Self.dateFormatter.string) ?? ""
+            return textCell(text, in: tableView, aligned: .left)
         default:
             return nil
+        }
+    }
+
+    /// Sorts with the folder sizes this window has measured.
+    ///
+    /// PfadiCore cannot do it alone: a folder has no size on disk, so sorting
+    /// by size left every folder pinned to the top of the list in name order,
+    /// which looks exactly like a sort that does not work.
+    private func resorted(_ listing: [Entry]) -> [Entry] {
+        guard order.key == .size else {
+            return DirectoryListing.sorted(listing, by: order)
+        }
+        return DirectoryListing.sorted(listing, by: order) { [folderSizes] entry in
+            entry.isDirectory ? folderSizes.cached(entry.url)?.bytes : entry.size
+        }
+    }
+
+    /// Puts the rows back in order once a folder has been measured.
+    ///
+    /// Only while sorting by size, and coalesced: measurements arrive one per
+    /// folder, and re-sorting on each of them would have rows jumping under the
+    /// pointer all the way down a large folder.
+    private func resortLater() {
+        guard order.key == .size, !resortScheduled else { return }
+        resortScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self else { return }
+            resortScheduled = false
+            guard order.key == .size else { return }
+            let selected = selectedEntries().map(\.name)
+            allEntries = resorted(allEntries)
+            entries = Self.filtered(allEntries, by: filter)
+            tableView.reloadData()
+            let wanted = Set(selected)
+            select(rows: entries.indices.filter { wanted.contains(self.entries[$0].name) })
         }
     }
 
@@ -1411,6 +1527,14 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     /// Asks for the sizes of the folders somebody can currently see.
     private func measureVisibleFolders() {
+        // Sorting by size is the one case where the rows on screen are not
+        // enough: an order worked out from the folders that happen to be
+        // visible is not an order at all.
+        if order.key == .size {
+            folderSizes.want(entries.filter(\.isDirectory).map(\.url))
+            return
+        }
+
         var visible = tableView.rows(in: tableView.visibleRect)
         if visible.length == 0 {
             // Before the first layout pass there is no visible rect to speak
