@@ -120,3 +120,45 @@ extension PreferenceSuites {
         }
     }
 }
+
+extension PreferenceSuites {
+    /// What happens to somebody upgrading from the version before this one.
+    static func runUpgrade() {
+        Harness.suite("preferences: an upgrade keeps the Created column") {
+            // 0.26.0 had one switch rather than a list. Reading the new key,
+            // finding nothing and quietly falling back to the defaults would
+            // turn their column off for them, which makes an upgrade feel like
+            // a loss.
+            let store = MemoryStore()
+            store.set(true, forKey: "showCreated")
+            Harness.expectEqual(
+                Preferences(store: store).columns,
+                ListingColumn.byDefault + [.created],
+                "the old switch is honoured once, on the way past")
+        }
+
+        Harness.suite("preferences: an upgrade that never wanted it gets the defaults") {
+            let off = MemoryStore()
+            off.set(false, forKey: "showCreated")
+            Harness.expectEqual(
+                Preferences(store: off).columns, ListingColumn.byDefault,
+                "an explicit no stays no")
+
+            let never = MemoryStore()
+            Harness.expectEqual(
+                Preferences(store: never).columns, ListingColumn.byDefault,
+                "and somebody who never had either key gets the three")
+        }
+
+        Harness.suite("preferences: the new list wins over the old switch") {
+            // Once the list exists, the old key is history. Reading both would
+            // put a column back that was switched off after the upgrade.
+            let store = MemoryStore()
+            store.set(true, forKey: "showCreated")
+            store.set(["name", "size"], forKey: "columns")
+            Harness.expectEqual(
+                Preferences(store: store).columns, [.name, .size],
+                "the list is the answer, and the old switch is not consulted")
+        }
+    }
+}

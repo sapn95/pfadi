@@ -399,7 +399,7 @@ reports, and says so when the two disagree rather than claiming a win.
 
 The command every forum post recommends for this no longer exists:
 
-```
+```console
 $ lsregister -kill -r -domain user
 The -kill option has been removed because it was dangerous and no longer useful.
 ```

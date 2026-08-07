@@ -60,7 +60,11 @@ public final class Preferences {
         }
     }
 
-    /// Which columns are on, in the order they were chosen.
+    /// Which columns are on.
+    ///
+    /// Which, not what order: the order on screen belongs to AppKit, kept by
+    /// `autosaveTableColumns` along with the widths, so a second opinion about
+    /// it here would fight the header somebody just dragged.
     ///
     /// Three by default. The rest are there for the asking, and each one costs
     /// something per entry to fill in, which is why they are a list rather than
@@ -72,7 +76,14 @@ public final class Preferences {
     public var columns: [ListingColumn] {
         get {
             guard let stored = store.object(forKey: Key.columns) as? [String] else {
-                return ListingColumn.byDefault
+                // Nothing stored under the current key. Somebody upgrading
+                // from a version that had a single switch for Created had it
+                // written under the old one, and silently turning their column
+                // off is the kind of thing that makes an upgrade feel like a
+                // loss. Read once, on the way past.
+                let hadCreated = store.object(forKey: Key.legacyShowCreated) as? Bool ?? false
+                return hadCreated
+                    ? ListingColumn.byDefault + [.created] : ListingColumn.byDefault
             }
             var chosen = stored.compactMap(ListingColumn.init(rawValue:))
             // Emptiness is decided before name is forced back in, or an empty
@@ -123,5 +134,8 @@ public final class Preferences {
         static let sortKey = "sortKey"
         static let sortAscending = "sortAscending"
         static let columns = "columns"
+        /// The one switch that came before the list. Read when the list is
+        /// missing, never written.
+        static let legacyShowCreated = "showCreated"
     }
 }

@@ -120,6 +120,7 @@ Harness.suite("root: the top has no parent, so it has no siblings") {
 }
 PreferenceSuites.run()
 PreferenceSuites.runRemaining()
+PreferenceSuites.runUpgrade()
 SortingSuites.run()
 FavouriteSuites.run()
 WriteSuites.run()

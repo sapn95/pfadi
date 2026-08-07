@@ -520,12 +520,12 @@ final class BrowserViewController: NSViewController {
             return
         }
 
+        // Which columns, not what order: the order on screen is AppKit's,
+        // kept by autosaveTableColumns along with the widths, and a second
+        // opinion about it here would fight the header somebody just dragged.
         var chosen = preferences.columns
         let wanted = !chosen.contains(column)
         if wanted {
-            // Appended rather than slotted into the canonical order: somebody
-            // who has dragged their headers about has an order, and putting a
-            // new column in the middle of it would rearrange what they set.
             chosen.append(column)
         } else {
             chosen.removeAll { $0 == column }
@@ -550,6 +550,11 @@ final class BrowserViewController: NSViewController {
     }
 
     /// Hides everything nobody asked for, shows everything they did.
+    ///
+    /// By identifier, so it does not care what order the headers are in. That
+    /// order belongs to AppKit: `autosaveTableColumns` keeps it across a quit
+    /// along with the widths, which is why the stored list is about visibility
+    /// and nothing else.
     private func applyChosenColumns() {
         let chosen = Set(preferences.columns)
         for column in ListingColumn.allCases {
