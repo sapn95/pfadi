@@ -203,3 +203,30 @@ enum FolderSizeSuites {
         }
     }
 }
+
+extension FolderSizeSuites {
+    /// A total that had to guess is a floor, not an answer.
+    static func runIncomplete() {
+        Harness.suite("folder size: a file whose size cannot be read makes it a floor") {
+            try withSandbox([]) { root in
+                // A broken symbolic link is counted as an entry the walk saw
+                // and could not weigh. Adding nothing for it and still calling
+                // the total complete understates it while claiming it is exact.
+                try Data(repeating: 0x61, count: 2_000).write(
+                    to: root.appendingPathComponent("real.bin"))
+                try FileManager.default.createSymbolicLink(
+                    at: root.appendingPathComponent("dangling"),
+                    withDestinationURL: root.appendingPathComponent("gone.bin"))
+
+                let measured = FolderSize.measure(root)
+                Harness.expect(measured.bytes >= 2_000, "what could be weighed is in the total")
+                // Whether a dangling link is reported as a regular file at all
+                // is the filesystem's business; what matters is that if it is
+                // counted, the total stops claiming to be exact.
+                Harness.expect(
+                    measured.files == 1 || !measured.complete,
+                    "either it was not counted, or the total says it is a floor")
+            }
+        }
+    }
+}

@@ -72,6 +72,10 @@ public enum FolderSize {
         var bytes: Int64 = 0
         var files = 0
         var visited = 0
+        // A file whose size could not be read counts as nothing, which
+        // understates the total. Saying so turns the answer into "over", which
+        // is the honest shape for a floor.
+        var unreadable = false
 
         for case let child as URL in enumerator {
             visited += 1
@@ -91,10 +95,16 @@ public enum FolderSize {
             // when the volume cannot say. Both are what the file *is*, which
             // is the number a cloud provider can still answer for something it
             // has not downloaded.
-            bytes += Int64(values.totalFileSize ?? values.fileSize ?? 0)
+            guard let size = values.totalFileSize ?? values.fileSize else {
+                unreadable = true
+                files += 1
+                continue
+            }
+            bytes += Int64(size)
             files += 1
         }
-        return Measurement(bytes: bytes, files: files, complete: !isCancelled())
+        return Measurement(
+            bytes: bytes, files: files, complete: !unreadable && !isCancelled())
     }
 }
 
