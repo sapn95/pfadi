@@ -191,3 +191,116 @@ enum OrderAndTrashSuites {
         }
     }
 }
+
+extension OrderAndTrashSuites {
+    /// The columns, and the promise that only what is shown gets read.
+    static func runColumns() {
+        Harness.suite("columns: only what is on screen is read off the disk") {
+            // The whole reason columns are a type. Tags, owner and permissions
+            // each cost something per entry, and a folder of forty thousand
+            // files should not pay for a column nobody switched on.
+            Harness.expect(
+                ListingColumn.name.resourceKeys.isEmpty,
+                "a name needs nothing asked for")
+            Harness.expect(
+                ListingColumn.tags.resourceKeys.contains(.tagNamesKey),
+                "tags need the tag key")
+            Harness.expect(
+                ListingColumn.permissions.needsFileStatus,
+                "permissions need a stat rather than a resource key")
+            Harness.expect(
+                !ListingColumn.permissions.resourceKeys.contains(.fileSecurityKey),
+                "and deliberately not the resource key, which follows symlinks")
+        }
+
+        Harness.suite("columns: everything has a title and a width") {
+            for column in ListingColumn.allCases {
+                Harness.expect(!column.title.isEmpty, "\(column.rawValue) has a heading")
+                Harness.expect(column.width >= 80, "\(column.rawValue) is wide enough to read")
+            }
+        }
+
+        Harness.suite("columns: name is the one that cannot be switched off") {
+            Harness.expect(!ListingColumn.name.canBeHidden, "name stays")
+            for column in ListingColumn.allCases where column != .name {
+                Harness.expect(column.canBeHidden, "\(column.rawValue) can be switched off")
+            }
+        }
+
+        Harness.suite("columns: a sortable column maps to a key that exists") {
+            for column in ListingColumn.allCases {
+                guard let key = column.sortKey else { continue }
+                Harness.expect(
+                    ListingOrder.Key(rawValue: key.rawValue) == key,
+                    "\(column.rawValue) sorts by \(key.rawValue)")
+            }
+            // Files comes from a walk that finishes after the listing does.
+            // Sorting by it would put the rows in an order and then change it
+            // under the pointer.
+            Harness.expect(ListingColumn.files.sortKey == nil, "the file count is not sortable")
+        }
+
+        Harness.suite("columns: reading fills in what was asked for") {
+            try withSandbox(["note.txt", "sub"], directories: ["sub"]) { root in
+                let plain = try DirectoryListing.read(
+                    root, showHidden: true, columns: ListingColumn.byDefault)
+                Harness.expect(
+                    plain.allSatisfy { $0.permissions == nil },
+                    "nothing statted when no column needs it")
+
+                let full = try DirectoryListing.read(
+                    root, showHidden: true, columns: [.name, .permissions, .owner, .kind])
+                guard let folder = full.first(where: { $0.name == "sub" }),
+                    let file = full.first(where: { $0.name == "note.txt" })
+                else {
+                    Harness.expect(false, "both entries are listed")
+                    return
+                }
+                Harness.expect(
+                    folder.permissions?.hasPrefix("d") == true,
+                    "a folder reads as d..., got \(folder.permissions ?? "nothing")")
+                Harness.expect(
+                    file.permissions?.hasPrefix("-") == true,
+                    "and a file as -..., got \(file.permissions ?? "nothing")")
+                Harness.expect(
+                    file.permissions?.count == 10,
+                    "ten characters, like ls, got \(file.permissions?.count ?? 0)")
+                Harness.expect(file.owner != nil, "and somebody owns it")
+                Harness.expect(file.kind != nil, "with a kind the system named")
+            }
+        }
+
+        Harness.suite("columns: a symbolic link is described as the link") {
+            // The resource keys follow links. The interesting thing about a
+            // link is the link, which is why this reads lstat instead.
+            try withSandbox(["target.txt"]) { root in
+                let link = root.appendingPathComponent("pointer")
+                try FileManager.default.createSymbolicLink(
+                    at: link, withDestinationURL: root.appendingPathComponent("target.txt"))
+
+                let listed = try DirectoryListing.read(
+                    root, showHidden: true, columns: [.name, .permissions])
+                let found = listed.first { $0.name == "pointer" }
+                Harness.expect(
+                    found?.permissions?.hasPrefix("l") == true,
+                    "it reads as l..., got \(found?.permissions ?? "nothing")")
+            }
+        }
+
+        Harness.suite("columns: the column being sorted by is read even when hidden") {
+            // A sort restored from last launch can name a column somebody has
+            // since switched off. Sorting by a field that was never read puts
+            // the list in an order with no explanation at all.
+            try withSandbox(["b.txt", "a.txt"]) { root in
+                let listed = try DirectoryListing.read(
+                    root,
+                    showHidden: true,
+                    order: ListingOrder(key: .created, ascending: true),
+                    columns: [.name])
+                Harness.expect(
+                    listed.allSatisfy { $0.created != nil },
+                    "the creation dates are there despite the column being off")
+            }
+        }
+    }
+}

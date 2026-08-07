@@ -67,9 +67,11 @@ class Pfadi < Formula
 
       From a terminal it works without any of that:
 
-        pfadi                  # the current folder
+        pfadi                    # the current folder
         pfadi ~/git ~/Downloads  # two folders, as tabs of one window
-        pfadi -R ./report.pdf  # point at a file rather than opening it
+        pfadi -R ./report.pdf    # point at a file rather than opening it
+
+      Both commands have manual pages: `man pfadi`, `man pfadi-default`.
     CAVEATS
   end
 

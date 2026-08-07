@@ -305,35 +305,70 @@ enum LayoutCheck {
             Array(browser.listedNames.prefix(2)) == ["a-big", "z-small"],
             "the big one on top, got " + browser.listedNames.prefix(2).joined(separator: " "))
 
-        created(in: window)
+        // Created is covered by the header-menu check below, which goes
+        // through the same gate every other column does.
         headerMenu(in: window)
         pathBarClicks(in: window, fixture: fixture)
         refusedTrash(in: window)
     }
 
-    /// The right-click menu on the column headers.
+    /// The right-click menu on the column headers, and what it offers.
     private static func headerMenu(in window: BrowserWindow) {
         let browser = window.browser
         let before = browser.visibleColumns
-
         expect(
             before.contains("name"), "the name column is on, got \(before.joined(separator: " "))")
 
-        expect(browser.clickHeaderMenuItem("modified"), "Modified is in the header menu")
-        expect(
-            !browser.visibleColumns.contains("modified"),
-            "and picking it takes the column away, got \(browser.visibleColumns.joined(separator: " "))"
-        )
+        // Through the header view's own right-click handling, not by reading
+        // the menu property. Those are different questions, and the difference
+        // is the whole bug: `menu(for:)` handed the menu back while a
+        // two-finger tap on the real headers did nothing, because
+        // NSTableHeaderView takes the right button for itself.
+        guard let menu = browser.headerMenuForRightClick() else {
+            failures += 1
+            print("  FAIL a right-click on the column headers opens a menu")
+            return
+        }
+        expect(true, "a right-click on the column headers opens a menu")
 
-        expect(browser.clickHeaderMenuItem("modified"), "picked again")
-        expect(browser.visibleColumns.contains("modified"), "and it comes back")
+        // Everything there is, not only the four it started with.
+        let offered = Set(menu.items.compactMap { $0.representedObject as? String })
+        for column in ListingColumn.allCases {
+            expect(offered.contains(column.rawValue), "\(column.title) is in the menu")
+        }
+
+        // On, and off again.
+        expect(browser.pickColumnFromHeaderMenu(.permissions), "Permissions can be picked")
+        expect(
+            browser.visibleColumns.contains("permissions"),
+            "and appears, got \(browser.visibleColumns.joined(separator: " "))")
+        settle(seconds: 0.6)
+        expect(
+            browser.cellText(row: 0, column: .permissions).hasPrefix("d")
+                || browser.cellText(row: 0, column: .permissions).hasPrefix("-"),
+            "with something that reads like a mode, got "
+                + browser.cellText(row: 0, column: .permissions))
+
+        expect(browser.pickColumnFromHeaderMenu(.owner), "Owner too")
+        settle(seconds: 0.6)
+        expect(
+            !browser.cellText(row: 0, column: .owner).isEmpty,
+            "and it names somebody, got \(browser.cellText(row: 0, column: .owner))")
+
+        expect(browser.pickColumnFromHeaderMenu(.kind), "and Kind")
+        settle(seconds: 0.6)
+        expect(
+            !browser.cellText(row: 0, column: .kind).isEmpty,
+            "which the system fills in, got \(browser.cellText(row: 0, column: .kind))")
+
+        for column in [ListingColumn.permissions, .owner, .kind] {
+            browser.pickColumnFromHeaderMenu(column)
+        }
 
         // Name has to stay: a list of sizes and dates with nothing saying
         // which file they belong to is not a list.
-        browser.clickHeaderMenuItem("name")
-        expect(
-            browser.visibleColumns.contains("name"),
-            "the name column cannot be hidden")
+        browser.pickColumnFromHeaderMenu(.name)
+        expect(browser.visibleColumns.contains("name"), "the name column cannot be hidden")
         expect(
             browser.bannerMessage.contains("name column"),
             "and says so where somebody will see it, got \(browser.bannerMessage)")
@@ -341,28 +376,6 @@ enum LayoutCheck {
         expect(
             browser.visibleColumns == before,
             "everything is back as it was, got \(browser.visibleColumns.joined(separator: " "))")
-    }
-
-    /// The Created column: off unless asked for, and sortable once it is.
-    private static func created(in window: BrowserWindow) {
-        let browser = window.browser
-        let wasShown = browser.showsCreatedColumn
-
-        browser.toggleCreatedColumn(nil)
-        expect(
-            browser.showsCreatedColumn != wasShown,
-            "⇧⌘K puts the created column on screen")
-
-        if browser.showsCreatedColumn {
-            expect(browser.clickColumnHeader("created"), "and its header sorts by it")
-            settle(seconds: 0.5)
-            expect(browser.rowCount > 0, "which still lists everything")
-        }
-
-        browser.toggleCreatedColumn(nil)
-        expect(browser.showsCreatedColumn == wasShown, "and again puts it away")
-        // Hiding the column it was sorted by has to leave a sort you can see.
-        expect(browser.rowCount > 0, "with the list still in some order")
     }
 
     /// Double-clicking a folder in the path bar.

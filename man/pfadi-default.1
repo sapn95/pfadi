@@ -102,15 +102,28 @@ Print the version and exit.
 .Sh WHAT MACOS REFUSES
 Double-clicking a folder inside Finder opens Finder, and no setting changes it.
 .Pp
-.Fn LSSetDefaultRoleHandlerForContentType
-returns
+.Sy NSWorkspace.setDefaultApplication(at:toOpen:) ,
+which is the current interface, answers
+.Sy NSCocoaErrorDomain 256
+wrapping
 .Er paramErr
 .Pq -50
 for
-.Sy public.folder
-whatever the application declares in its
+.Sy public.folder .
+The deprecated
+.Fn LSSetDefaultRoleHandlerForContentType
+answers
+.Er paramErr
+directly.
+The answer does not change with what the application declares in its
 .Va CFBundleDocumentTypes ,
-and the same for the
+nor with the
+.Va LSHandlerRank
+it declares it at, and
+.Xr lsregister 8
+.Fl dump
+confirms the claim is registered and refused anyway.
+The same for the
 .Sy file
 URL scheme.
 Writing the handler into

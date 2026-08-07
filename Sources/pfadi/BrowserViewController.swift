@@ -218,8 +218,36 @@ final class BrowserViewController: NSViewController {
     /// Whether a sibling menu is still waiting to open, for the checks.
     var isPathMenuPending: Bool { pathBar.isMenuPending }
 
+    /// What a right-click on the column headers would actually open.
+    ///
+    /// Through `menu(for:)`, which is the method AppKit calls, rather than
+    /// reading the property we set. Those are not the same question: a menu can
+    /// be assigned to a view that never offers it.
+    func headerMenuForRightClick() -> NSMenu? {
+        (tableView.headerView as? ColumnHeaderView)?.menuForRightClick()
+    }
+
+    /// Turns a column on or off the way the header menu does, for the checks.
+    @discardableResult
+    func pickColumnFromHeaderMenu(_ column: ListingColumn) -> Bool {
+        guard let menu = headerMenu,
+            let item = menu.items.first(where: {
+                $0.representedObject as? String == column.rawValue
+            })
+        else { return false }
+        menuNeedsUpdate(menu)
+        toggleColumn(item)
+        return true
+    }
+
     /// What the banner is saying, for the checks. Empty when it is not showing.
     var bannerMessage: String { banner.message }
+
+    /// What a cell actually says, for the checks.
+    func cellText(row: Int, column: ListingColumn) -> String {
+        guard entries.indices.contains(row) else { return "" }
+        return text(for: entries[row], in: column)
+    }
 
     /// The columns on screen, in the order they are drawn, for the checks.
     var visibleColumns: [String] {
@@ -420,20 +448,23 @@ final class BrowserViewController: NSViewController {
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
 
-        addColumn(id: "name", title: "Name", width: 420)
-        addColumn(id: "size", title: "Size", width: 90)
-        addColumn(id: "modified", title: "Modified", width: 160)
-        // Present but hidden unless asked for, rather than added and removed.
-        // A column that comes and goes loses its width every time, and the
-        // header cannot be sorted by something that is not there.
-        addColumn(id: "created", title: "Created", width: 160)
-        setColumn("created", visible: preferences.showCreated)
+        // Every column exists; the ones nobody asked for are hidden. Added and
+        // removed instead, they would lose their width every time and the
+        // header could not be sorted by something that is not there.
+        for column in ListingColumn.allCases {
+            addColumn(column)
+        }
+        applyChosenColumns()
 
-        // Right-click the header for what else there is to show. A column you
-        // cannot discover is a column nobody has.
+        // Right-click the headers for what else there is to show. A column you
+        // cannot discover is a column nobody has. Through our own header view,
+        // because NSTableHeaderView handles the right button itself and never
+        // gets as far as putting a menu up.
         let header = makeHeaderMenu()
         headerMenu = header
-        tableView.headerView?.menu = header
+        let headerView = ColumnHeaderView()
+        headerView.menu = header
+        tableView.headerView = headerView
         // Drag a header to move it. On by default in AppKit, set here because
         // it is a decision rather than an accident, and the autosave keeps the
         // order across a quit.
@@ -463,13 +494,13 @@ final class BrowserViewController: NSViewController {
     private func makeHeaderMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
-        for column in tableView.tableColumns {
+        for column in ListingColumn.allCases {
             let item = menu.addItem(
                 withTitle: column.title,
                 action: #selector(toggleColumn(_:)),
                 keyEquivalent: "")
             item.target = self
-            item.representedObject = column.identifier.rawValue
+            item.representedObject = column.rawValue
         }
         menu.addItem(.separator())
         let hint = menu.addItem(
@@ -479,35 +510,54 @@ final class BrowserViewController: NSViewController {
     }
 
     @objc func toggleColumn(_ sender: NSMenuItem) {
-        guard let identifier = sender.representedObject as? String else { return }
-        // Name is what every row is identified by. A list of sizes and dates
-        // with nothing to say which file they belong to is not a list.
-        guard identifier != "name" else {
+        guard let identifier = sender.representedObject as? String,
+            let column = ListingColumn(rawValue: identifier)
+        else { return }
+
+        guard column.canBeHidden else {
             NSSound.beep()
             warn("the name column cannot be hidden")
             return
         }
 
-        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier(identifier))
-        guard index >= 0 else { return }
-        let wanted = tableView.tableColumns[index].isHidden
-        setColumn(identifier, visible: wanted)
-
-        if identifier == "created" {
-            preferences.showCreated = wanted
+        var chosen = preferences.columns
+        let wanted = !chosen.contains(column)
+        if wanted {
+            // Appended rather than slotted into the canonical order: somebody
+            // who has dragged their headers about has an order, and putting a
+            // new column in the middle of it would rearrange what they set.
+            chosen.append(column)
+        } else {
+            chosen.removeAll { $0 == column }
         }
+        preferences.columns = chosen
+        applyChosenColumns()
+
         // Sorting by a column that has just been taken away would leave the
         // list in an order with nothing on screen to explain it.
-        if !wanted, order.key.rawValue == identifier {
+        if !wanted, order.key == column.sortKey {
             sortByName()
         }
-        announce(wanted ? "showing \(sender.title)" : "hiding \(sender.title)")
+        announce(wanted ? "showing \(column.title)" : "hiding \(column.title)")
+        // Only when the new column needs something the listing did not read.
+        // Switching one off, or on when its values are already in hand, is a
+        // redraw rather than a trip to the disk.
+        if wanted, !column.resourceKeys.isEmpty || column.needsFileStatus {
+            reload(keepingSelection: true)
+        } else {
+            tableView.reloadData()
+        }
     }
 
-    private func setColumn(_ identifier: String, visible: Bool) {
-        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier(identifier))
-        guard index >= 0 else { return }
-        tableView.tableColumns[index].isHidden = !visible
+    /// Hides everything nobody asked for, shows everything they did.
+    private func applyChosenColumns() {
+        let chosen = Set(preferences.columns)
+        for column in ListingColumn.allCases {
+            let index = tableView.column(
+                withIdentifier: NSUserInterfaceItemIdentifier(column.rawValue))
+            guard index >= 0 else { continue }
+            tableView.tableColumns[index].isHidden = !chosen.contains(column)
+        }
     }
 
     private func sortByName() {
@@ -545,13 +595,18 @@ final class BrowserViewController: NSViewController {
         return menu
     }
 
-    private func addColumn(id: String, title: String, width: CGFloat) {
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
-        column.title = title
-        column.width = width
+    private func addColumn(_ listed: ListingColumn) {
+        let column = NSTableColumn(
+            identifier: NSUserInterfaceItemIdentifier(listed.rawValue))
+        column.title = listed.title
+        column.width = listed.width
         // The prototype is what makes the header clickable and draws the
-        // arrow. AppKit only reports the change; the sorting is ours.
-        column.sortDescriptorPrototype = NSSortDescriptor(key: id, ascending: true)
+        // arrow. AppKit only reports the change; the sorting is ours. A column
+        // with no sort key gets no prototype, so its header does not pretend
+        // to be clickable.
+        column.sortDescriptorPrototype = listed.sortKey.map {
+            NSSortDescriptor(key: $0.rawValue, ascending: true)
+        }
         tableView.addTableColumn(column)
     }
 
@@ -668,10 +723,15 @@ final class BrowserViewController: NSViewController {
         let directory = self.directory
         let showHidden = self.showHidden
         let order = self.order
+        // Only what is on screen is read off the disk: tags, owner and
+        // permissions each cost something per entry, and a folder of forty
+        // thousand files should not pay for a column nobody switched on.
+        let columns = preferences.columns
 
         listingQueue.async { [weak self] in
             let result = Result {
-                try DirectoryListing.read(directory, showHidden: showHidden, order: order)
+                try DirectoryListing.read(
+                    directory, showHidden: showHidden, order: order, columns: columns)
             }
 
             DispatchQueue.main.async {
@@ -1042,23 +1102,16 @@ final class BrowserViewController: NSViewController {
         reload(keepingSelection: true)
     }
 
-    /// ⇧⌘K. A fourth column of dates, for the people who want it.
+    /// ⇧⌘K, and the View menu. The same switch the header menu offers, put
+    /// somewhere it can be found without knowing to right-click a header.
     @objc func toggleCreatedColumn(_ sender: Any?) {
-        let wanted = !preferences.showCreated
-        preferences.showCreated = wanted
-        setColumn("created", visible: wanted)
-
-        if !wanted, order.key == .created {
-            sortByName()
-        }
-        announce(wanted ? "showing when things were created" : "hiding the created column")
+        let item = NSMenuItem()
+        item.representedObject = ListingColumn.created.rawValue
+        toggleColumn(item)
     }
 
     /// Whether the Created column is on screen, for the checks.
-    var showsCreatedColumn: Bool {
-        let index = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("created"))
-        return index >= 0 && !tableView.tableColumns[index].isHidden
-    }
+    var showsCreatedColumn: Bool { visibleColumns.contains("created") }
 
     /// ⌘R. The one place folder sizes are thrown away.
     ///
@@ -1498,7 +1551,7 @@ extension BrowserViewController: NSMenuItemValidation {
             menuItem.state = showHidden ? .on : .off
         }
         if menuItem.action == #selector(toggleCreatedColumn(_:)) {
-            menuItem.state = preferences.showCreated ? .on : .off
+            menuItem.state = preferences.columns.contains(.created) ? .on : .off
         }
         if menuItem.action == #selector(goBack(_:)) { return history.canGoBack }
         if menuItem.action == #selector(goForward(_:)) { return history.canGoForward }
@@ -1574,32 +1627,61 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
         guard let tableColumn, row < entries.count else { return nil }
         let entry = entries[row]
 
-        switch tableColumn.identifier.rawValue {
-        case "name":
+        guard let column = ListingColumn(rawValue: tableColumn.identifier.rawValue) else {
+            return nil
+        }
+        if column == .name {
             return nameCell(for: entry, in: tableView)
-        case "size":
+        }
+        return textCell(
+            text(for: entry, in: column),
+            in: tableView,
+            aligned: column.isRightAligned ? .right : .left)
+    }
+
+    /// What a cell says.
+    ///
+    /// Blank rather than a dash wherever the filesystem records nothing: not
+    /// every volume has a creation date or tags, and an SMB share answering
+    /// with nothing is normal rather than something worth drawing attention to.
+    private func text(for entry: Entry, in column: ListingColumn) -> String {
+        switch column {
+        case .name:
+            return entry.name
+        case .size:
             var text =
                 entry.isDirectory
                 ? folderSizeText(entry)
-                : entry.size.map(
-                    Self.sizeFormatter.string) ?? ""
+                : entry.size.map(Self.sizeFormatter.string) ?? ""
             // A placeholder has a size and no bytes. Saying so here is the
             // difference between copying a folder and downloading it.
             if entry.cloud.isCloud, !entry.cloud.isDownloaded {
                 text = "\u{2601} \(text)"
             }
-            return textCell(text, in: tableView, aligned: .right)
-        case "modified":
-            let text = entry.modified.map(Self.dateFormatter.string) ?? ""
-            return textCell(text, in: tableView, aligned: .left)
-        case "created":
-            // Blank rather than a dash: not every filesystem records one, and
-            // an SMB share answering with nothing is normal rather than an
-            // error worth drawing attention to.
-            let text = entry.created.map(Self.dateFormatter.string) ?? ""
-            return textCell(text, in: tableView, aligned: .left)
-        default:
-            return nil
+            return text
+        case .files:
+            // From the walk that measures the size, so it costs nothing extra
+            // and appears at the same moment.
+            guard entry.isDirectory, let measured = folderSizes.cached(entry.url) else { return "" }
+            return measured.complete ? "\(measured.files)" : "over \(measured.files)"
+        case .modified:
+            return entry.modified.map(Self.dateFormatter.string) ?? ""
+        case .created:
+            return entry.created.map(Self.dateFormatter.string) ?? ""
+        case .added:
+            return entry.added.map(Self.dateFormatter.string) ?? ""
+        case .opened:
+            return entry.opened.map(Self.dateFormatter.string) ?? ""
+        case .kind:
+            return entry.kind ?? ""
+        case .fileExtension:
+            return entry.url.pathExtension
+        case .tags:
+            return entry.tags.joined(separator: ", ")
+        case .permissions:
+            return entry.permissions ?? ""
+        case .owner:
+            return entry.owner ?? ""
         }
     }
 
@@ -1685,10 +1767,17 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
     /// Redraws one size cell, once its folder has been measured.
     private func redrawSize(of url: URL) {
         guard let row = entries.firstIndex(where: { $0.url == url }) else { return }
-        let column = tableView.column(withIdentifier: NSUserInterfaceItemIdentifier("size"))
-        guard column >= 0 else { return }
-        tableView.reloadData(
-            forRowIndexes: IndexSet(integer: row), columnIndexes: IndexSet(integer: column))
+        // Both columns the walk fills in, not only the size: the file count
+        // comes from the same measurement and was left blank until something
+        // else happened to redraw the row.
+        var columns = IndexSet()
+        for listed in [ListingColumn.size, .files] {
+            let index = tableView.column(
+                withIdentifier: NSUserInterfaceItemIdentifier(listed.rawValue))
+            if index >= 0 { columns.insert(index) }
+        }
+        guard !columns.isEmpty else { return }
+        tableView.reloadData(forRowIndexes: IndexSet(integer: row), columnIndexes: columns)
     }
 
     private func nameCell(for entry: Entry, in tableView: NSTableView) -> NSView {

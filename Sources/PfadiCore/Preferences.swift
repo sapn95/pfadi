@@ -60,14 +60,30 @@ public final class Preferences {
         }
     }
 
-    /// Whether the Created column is in the list.
+    /// Which columns are on, in the order they were chosen.
     ///
-    /// Off by default: most of the time the date that matters is when
-    /// something last changed, and a fourth column of dates on by default is
-    /// clutter for the people who do not want it.
-    public var showCreated: Bool {
-        get { store.object(forKey: Key.showCreated) as? Bool ?? false }
-        set { store.set(newValue, forKey: Key.showCreated) }
+    /// Three by default. The rest are there for the asking, and each one costs
+    /// something per entry to fill in, which is why they are a list rather than
+    /// a row of switches that are all secretly on.
+    ///
+    /// Name is forced back in: it can be dropped from the stored list by a
+    /// hand-edited preference or by a version that did not have this, and a
+    /// list of sizes and dates with no names is not a list.
+    public var columns: [ListingColumn] {
+        get {
+            guard let stored = store.object(forKey: Key.columns) as? [String] else {
+                return ListingColumn.byDefault
+            }
+            var chosen = stored.compactMap(ListingColumn.init(rawValue:))
+            // Emptiness is decided before name is forced back in, or an empty
+            // list would become a list of one and never reach the defaults.
+            // Nothing at all is not a choice somebody can make here, because
+            // name cannot be switched off: it is a value from somewhere else.
+            guard !chosen.isEmpty else { return ListingColumn.byDefault }
+            if !chosen.contains(.name) { chosen.insert(.name, at: 0) }
+            return chosen
+        }
+        set { store.set(newValue.map(\.rawValue), forKey: Key.columns) }
     }
 
     /// The sidebar folders, or nil when the person has never touched them and
@@ -106,6 +122,6 @@ public final class Preferences {
         static let showHidden = "showHidden"
         static let sortKey = "sortKey"
         static let sortAscending = "sortAscending"
-        static let showCreated = "showCreated"
+        static let columns = "columns"
     }
 }

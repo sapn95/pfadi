@@ -2,6 +2,7 @@ import AppKit
 import CoreServices
 import Foundation
 import PfadiCore
+import UniformTypeIdentifiers
 
 /// `pfadi-default` — put pfadi where Finder is, as far as macOS allows, and say
 /// exactly where that stops.
@@ -30,30 +31,83 @@ let finderBundleID = "com.apple.finder"
 
 /// A content type somebody might want pfadi to own.
 struct Claim {
-    let type: String
+    let type: UTType
     let what: String
 
     static let all = [
-        Claim(type: "public.folder", what: "folders"),
-        Claim(type: "public.directory", what: "directories"),
-        Claim(type: "public.volume", what: "volumes"),
+        Claim(type: .folder, what: "folders"),
+        Claim(type: .directory, what: "directories"),
+        Claim(type: .volume, what: "volumes"),
     ]
 
     var currentHandler: String? {
-        LSCopyDefaultRoleHandlerForContentType(type as CFString, .all)?
+        LSCopyDefaultRoleHandlerForContentType(type.identifier as CFString, .all)?
             .takeRetainedValue() as String?
     }
 
-    func setHandler(_ bundleID: String) -> OSStatus {
-        LSSetDefaultRoleHandlerForContentType(type as CFString, .all, bundleID as CFString)
-    }
-}
+    /// Asks through `NSWorkspace`, which is the interface macOS has had since
+    /// 12 and the one `LSSetDefaultRoleHandlerForContentType` was deprecated
+    /// in favour of.
+    ///
+    /// It matters which one is asked, because a refusal from a deprecated
+    /// function is a weaker claim than a refusal from the current one. It is
+    /// the same refusal: both come back with `paramErr` for a folder, the
+    /// newer one wrapped in `NSCocoaErrorDomain 256`. The old call is kept
+    /// underneath only for the status code, which the wrapper hides and which
+    /// is the part worth printing.
+    func setHandler(at application: URL) -> Outcome {
+        var failure: (any Error)?
+        let done = DispatchSemaphore(value: 0)
+        NSWorkspace.shared.setDefaultApplication(at: application, toOpen: type) { error in
+            failure = error
+            done.signal()
+        }
+        // Bounded, because a command that hangs on a preference is worse than
+        // one that reports it could not set it.
+        guard done.wait(timeout: .now() + 10) == .success else {
+            return .failed("the system did not answer")
+        }
+        guard let failure else { return .done }
 
-func describe(_ status: OSStatus) -> String {
-    switch status {
-    case 0: return "done"
-    case DefaultHandler.refusedByLaunchServices: return "refused by macOS"
-    default: return "failed, OSStatus \(status)"
+        let status = Self.underlyingStatus(of: failure)
+        if status == DefaultHandler.refusedByLaunchServices {
+            return .blocked
+        }
+        return .failed(
+            status.map { "OSStatus \($0)" } ?? failure.localizedDescription)
+    }
+
+    /// The OSStatus underneath a Cocoa error, when there is one.
+    ///
+    /// `NSCocoaErrorDomain 256` says nothing on its own. The number that says
+    /// what happened is in the error it wraps.
+    private static func underlyingStatus(of error: any Error) -> OSStatus? {
+        let outer = error as NSError
+        if outer.domain == NSOSStatusErrorDomain { return OSStatus(outer.code) }
+        guard let inner = outer.userInfo[NSUnderlyingErrorKey] as? NSError,
+            inner.domain == NSOSStatusErrorDomain
+        else { return nil }
+        return OSStatus(inner.code)
+    }
+
+    enum Outcome {
+        case done
+        /// macOS will not reassign this type, whichever interface asks.
+        case blocked
+        case failed(String)
+
+        var describedByPfadi: String {
+            switch self {
+            case .done: return "done"
+            case .blocked: return "blocked by macOS"
+            case .failed(let why): return "failed, \(why)"
+            }
+        }
+
+        var isBlocked: Bool {
+            if case .blocked = self { return true }
+            return false
+        }
     }
 }
 
@@ -317,22 +371,28 @@ func apply() throws {
     print("\nAsking LaunchServices to hand over what it will:")
     var refusedAny = false
     for claim in Claim.all {
-        let status = claim.setHandler(pfadiBundleID)
-        if status == DefaultHandler.refusedByLaunchServices { refusedAny = true }
-        row(claim.what, describe(status))
+        let outcome = claim.setHandler(at: bundle)
+        if outcome.isBlocked { refusedAny = true }
+        row(claim.what, outcome.describedByPfadi)
     }
 
     if refusedAny || Claim.all[0].currentHandler != pfadiBundleID {
         print(
             """
 
-            Double-clicking a folder in Finder still opens Finder, and that part
-            is not going to change. LSSetDefaultRoleHandlerForContentType returns
-            paramErr for public.folder whatever the application declares, and the
-            same for the file:// scheme; writing the handler into the preference
-            file directly is accepted and then ignored. Finder cannot be taken
-            out of the Dock either, short of turning off SIP and FileVault and
-            editing the sealed system volume, which is a bad trade for an icon.
+            Double-clicking a folder in Finder still opens Finder, and that
+            part is not going to change.
+
+            Asked through NSWorkspace, which is the current interface, macOS
+            answers NSCocoaErrorDomain 256 wrapping paramErr. Asked through the
+            deprecated LaunchServices call it answers paramErr directly. Same
+            refusal from both, whatever the application declares and whatever
+            rank it declares it at. Writing the handler into the preference file
+            by hand is accepted and then ignored.
+
+            Finder cannot be taken out of the Dock either, short of turning off
+            SIP and FileVault and editing the sealed system volume, which is a
+            bad trade for an icon.
 
             What you get instead is everything above: Reveal in Finder from any
             application, `open .` in a terminal, and Spotlight.
@@ -383,8 +443,13 @@ func undo() throws {
     }
 
     print("\nGiving the types back to Finder:")
+    guard let finder = NSWorkspace.shared.urlForApplication(withBundleIdentifier: finderBundleID)
+    else {
+        print("  could not find Finder, which is a sentence nobody expected to write")
+        return
+    }
     for claim in Claim.all where claim.currentHandler == pfadiBundleID {
-        row(claim.what, describe(claim.setHandler(finderBundleID)))
+        row(claim.what, claim.setHandler(at: finder).describedByPfadi)
     }
 }
 

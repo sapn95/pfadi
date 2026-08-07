@@ -77,6 +77,40 @@ Point at a file rather than opening it:
 .Sh AUTHORS
 .An Sebastian Winterberger
 .Aq Mt sapn95@users.noreply.github.com
+.Sh COLUMNS
+Twelve, of which
+.Sy Name , Sy Size No and Sy Modified
+are on to begin with.
+Right-click the column headers for the rest, or use
+.Sy View No \(en Sy Columns .
+Drag a header to move a column.
+.Pp
+.Bl -tag -width "Permissions" -compact
+.It Sy Name
+Cannot be switched off.
+.It Sy Size
+Files from the filesystem, folders by walking them.
+.It Sy Files
+How many are inside, from that same walk.
+.It Sy Modified , Sy Created , Sy Added , Sy Last Opened
+.Sy Added
+is when it arrived in this folder, which in a downloads folder is the only date
+that means anything.
+.It Sy Kind , Sy Extension , Sy Tags
+.It Sy Permissions , Sy Owner
+Read with
+.Xr lstat 2
+rather than through the resource keys, which follow symbolic links: a link
+shows as
+.Sy l...\&
+here, which is the useful answer.
+.El
+.Pp
+Only the columns on screen are read off the disk, plus whichever column is being
+sorted by even when it is hidden.
+Every header sorts except
+.Sy Files ,
+whose number arrives after the listing does.
 .Sh CAVEATS
 Folder sizes in the size column are measured by walking the folder, because the
 filesystem does not record them.

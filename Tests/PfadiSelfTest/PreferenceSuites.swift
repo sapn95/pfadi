@@ -63,16 +63,41 @@ extension PreferenceSuites {
     /// it, and a getter with the wrong key or the wrong default fails silently:
     /// the setting appears to work and is back to its old value next launch.
     static func runRemaining() {
-        Harness.suite("preferences: the created column is off until asked for") {
+        Harness.suite("preferences: three columns until somebody asks for more") {
             let store = MemoryStore()
-            let preferences = Preferences(store: store)
-            Harness.expect(!preferences.showCreated, "off by default")
-            preferences.showCreated = true
-            Harness.expect(
-                Preferences(store: store).showCreated,
-                "and on again after a relaunch, which is the whole point")
-            preferences.showCreated = false
-            Harness.expect(!Preferences(store: store).showCreated, "and off again")
+            Harness.expectEqual(
+                Preferences(store: store).columns, ListingColumn.byDefault,
+                "name, size and modified to begin with")
+
+            Preferences(store: store).columns = [.name, .size, .permissions, .owner]
+            Harness.expectEqual(
+                Preferences(store: store).columns, [.name, .size, .permissions, .owner],
+                "and the choice survives a relaunch, which is the whole point")
+        }
+
+        Harness.suite("preferences: name is put back however it was lost") {
+            // A hand-edited preference, or one written by a version that did
+            // not have this. A list of sizes and dates with nothing saying
+            // which file they belong to is not a list.
+            let store = MemoryStore()
+            store.set(["size", "modified"], forKey: "columns")
+            Harness.expectEqual(
+                Preferences(store: store).columns, [.name, .size, .modified],
+                "name goes back at the front")
+
+            let empty = MemoryStore()
+            empty.set([String](), forKey: "columns")
+            Harness.expectEqual(
+                Preferences(store: empty).columns, ListingColumn.byDefault,
+                "and nothing at all falls back to the defaults")
+        }
+
+        Harness.suite("preferences: a column that no longer exists is dropped") {
+            let store = MemoryStore()
+            store.set(["name", "size", "somethingRemoved"], forKey: "columns")
+            Harness.expectEqual(
+                Preferences(store: store).columns, [.name, .size],
+                "rather than crashing on a name from a future version")
         }
 
         Harness.suite("preferences: rewriting pasted addresses is on until turned off") {

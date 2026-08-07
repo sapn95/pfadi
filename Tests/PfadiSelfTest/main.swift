@@ -132,5 +132,6 @@ CommandLineSuites.run()
 FolderSizeSuites.run()
 DefaultHandlerSuites.run()
 OrderAndTrashSuites.run()
+OrderAndTrashSuites.runColumns()
 
 Harness.finish()
