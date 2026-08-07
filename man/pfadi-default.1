@@ -1,0 +1,166 @@
+.\" Manual page for pfadi-default.
+.Dd August 7, 2026
+.Dt PFADI-DEFAULT 1
+.Os
+.Sh NAME
+.Nm pfadi-default
+.Nd use pfadi in place of Finder, as far as macOS allows
+.Sh SYNOPSIS
+.Nm
+.Op Cm status | Cm apply | Cm undo
+.Nm
+.Op Fl h | Fl -help | Fl v | Fl -version
+.Sh DESCRIPTION
+.Nm
+puts
+.Xr pfadi 1
+where Finder is, and says exactly where that stops.
+Every claim it makes about what the system will accept comes from having just
+asked it, rather than from an assumption made when it was written.
+.Pp
+There are four mechanisms, and they are listed separately because they fail
+separately.
+.Bl -enum
+.It
+.Em The file viewer .
+The global user default
+.Va NSFileViewer
+decides what
+.Dq Finder
+means to AppKit.
+.Sy selectFile:inFileViewerRootedAtPath:\&
+\(em the call behind
+.Dq Reveal in Finder ,
+.Dq Show in Finder
+and
+.Dq Show in Enclosing Folder
+in other applications \(em reads it, and hands the file to that application
+instead of to Finder.
+This is the part that genuinely replaces Finder, and it is worth more than the
+rest put together.
+.It
+.Em The shell function .
+An
+.Ic open
+function is written into
+.Pa ~/.zshrc
+(or
+.Pa ~/.bash_profile ) ,
+so that
+.Ic open .\&
+and
+.Ic open Ar folder
+go to pfadi.
+One argument that is a folder goes to pfadi; everything else is handed to the
+real
+.Xr open 1 ,
+so
+.Ic open report.pdf
+and
+.Ic open -a Safari
+are unaffected.
+.It
+.Em The launcher .
+A small bundle in
+.Pa ~/Applications
+so that Spotlight can find pfadi.
+It holds the command rather than a copy of the application, so a
+.Xr brew 1
+upgrade cannot leave it pointing at a version that is no longer installed.
+.It
+.Em LaunchServices content types .
+.Sy public.volume
+is handed over.
+.Sy public.folder
+and
+.Sy public.directory
+are not: see
+.Sx WHAT MACOS REFUSES .
+.El
+.Sh COMMANDS
+.Bl -tag -width Ds
+.It Cm status
+What the system has now.
+Changes nothing.
+This is also what running
+.Nm
+with no command does.
+.It Cm apply
+All four mechanisms above.
+.It Cm undo
+All of it back.
+The launcher is removed only when its bundle identifier says pfadi put it there,
+and
+.Va NSFileViewer
+is cleared only when it still names pfadi: an application that is not ours is
+somebody's own decision and is left alone.
+.It Fl h , Fl -help
+Print the usage and exit.
+.It Fl v , Fl -version
+Print the version and exit.
+.El
+.Sh WHAT MACOS REFUSES
+Double-clicking a folder inside Finder opens Finder, and no setting changes it.
+.Pp
+.Fn LSSetDefaultRoleHandlerForContentType
+returns
+.Er paramErr
+.Pq -50
+for
+.Sy public.folder
+whatever the application declares in its
+.Va CFBundleDocumentTypes ,
+and the same for the
+.Sy file
+URL scheme.
+Writing the handler into
+.Pa ~/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist
+directly is accepted and then ignored:
+.Nm
+does write it, reads back what LaunchServices reports, and says so when the two
+disagree.
+.Pp
+Finder cannot be removed from the Dock either.
+It is not in
+.Va persistent-apps ;
+Dock.app draws it.
+Removing it means turning off System Integrity Protection and FileVault and
+editing the sealed system volume, which is a bad trade for an icon.
+.Sh ENVIRONMENT
+.Bl -tag -width Ds
+.It Ev PFADI_APP
+The application bundle to point everything at.
+Set this when running from a build directory rather than an install.
+.It Ev SHELL
+Decides which profile the shell function is written to:
+.Pa ~/.bash_profile
+for a shell whose name ends in
+.Sy bash ,
+.Pa ~/.zshrc
+otherwise.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa ~/.zshrc
+Holds the
+.Ic open
+function, between
+.Sy "# >>> pfadi instead of finder >>>"
+and its closing marker.
+.Cm undo
+cuts exactly that block out and leaves the rest byte for byte.
+.It Pa ~/Applications/Pfadi.app
+The launcher.
+.It Pa ~/Library/Preferences/.GlobalPreferences.plist
+Holds
+.Va NSFileViewer .
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Xr defaults 1 ,
+.Xr open 1 ,
+.Xr pfadi 1
+.Sh AUTHORS
+.An Sebastian Winterberger
+.Aq Mt sapn95@users.noreply.github.com

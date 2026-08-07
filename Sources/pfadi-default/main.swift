@@ -1,6 +1,7 @@
 import AppKit
 import CoreServices
 import Foundation
+import PfadiCore
 
 /// `pfadi-default` — put pfadi where Finder is, as far as macOS allows, and say
 /// exactly where that stops.
@@ -9,6 +10,21 @@ import Foundation
 /// refuses outright, and the difference is measured here at run time rather
 /// than assumed: every claim this tool makes about what the system will accept
 /// comes from having just asked it.
+///
+/// There are four separate mechanisms, and they are separate because they fail
+/// separately:
+///
+///   1. `NSFileViewer`, a global preference. This is the one that matters:
+///      "Reveal in Finder" in any other application goes to pfadi. Proven.
+///   2. A shell function, so `open .` in a terminal goes to pfadi.
+///   3. A launcher in ~/Applications, so Spotlight can find it.
+///   4. LaunchServices content types. `public.volume` is handed over;
+///      `public.folder` is refused by the API and ignored when written to the
+///      preference file directly. Double-clicking a folder in Finder stays
+///      Finder's, and no amount of asking changes that.
+
+let pfadiBundleID = "io.github.sapn95.pfadi"
+let finderBundleID = "com.apple.finder"
 
 // MARK: - What the system will and will not give up
 
@@ -33,19 +49,55 @@ struct Claim {
     }
 }
 
-let pfadiBundleID = "io.github.sapn95.pfadi"
-let finderBundleID = "com.apple.finder"
-
-/// paramErr. What LaunchServices returns for a type it will not reassign,
-/// which on this system is every type that means "a folder".
-let refused: OSStatus = -50
-
 func describe(_ status: OSStatus) -> String {
     switch status {
     case 0: return "done"
-    case refused: return "refused by macOS"
+    case DefaultHandler.refusedByLaunchServices: return "refused by macOS"
     default: return "failed, OSStatus \(status)"
     }
+}
+
+// MARK: - The global file viewer
+
+/// Who AppKit currently thinks "Finder" is.
+func fileViewer() -> String? {
+    CFPreferencesCopyValue(
+        DefaultHandler.fileViewerKey as CFString,
+        kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost
+    ) as? String
+}
+
+/// Sets, or with nil clears, the global file viewer.
+///
+/// Written through CFPreferences rather than by editing
+/// ~/Library/Preferences/.GlobalPreferences.plist: the file is cached by
+/// cfprefsd, and a process that writes it behind cfprefsd's back has its change
+/// overwritten the next time anything else touches the domain.
+@discardableResult
+func setFileViewer(_ bundleID: String?) -> Bool {
+    CFPreferencesSetValue(
+        DefaultHandler.fileViewerKey as CFString,
+        bundleID as CFPropertyList?,
+        kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+    return CFPreferencesAppSynchronize(kCFPreferencesAnyApplication)
+}
+
+// MARK: - The LaunchServices handler list
+
+func launchServiceHandlers() -> [[String: Any]] {
+    CFPreferencesCopyAppValue(
+        DefaultHandler.handlersKey as CFString,
+        DefaultHandler.launchServicesDomain as CFString
+    ) as? [[String: Any]] ?? []
+}
+
+@discardableResult
+func setLaunchServiceHandlers(_ handlers: [[String: Any]]) -> Bool {
+    CFPreferencesSetAppValue(
+        DefaultHandler.handlersKey as CFString,
+        handlers as CFPropertyList,
+        DefaultHandler.launchServicesDomain as CFString)
+    return CFPreferencesAppSynchronize(DefaultHandler.launchServicesDomain as CFString)
 }
 
 // MARK: - Finding the application
@@ -68,29 +120,17 @@ func findBundle() -> URL? {
         .map { URL(fileURLWithPath: $0) }
 }
 
-/// A string safe to drop into shell source.
-///
-/// Single quotes, with any single quote in the value closed, escaped and
-/// reopened. A path is somebody else's data: it can hold a quote, a dollar or a
-/// backtick, and this text becomes a function in their profile.
-func shellQuoted(_ value: String) -> String {
-    "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-}
-
 /// The command, not the bundle: it is what stays correct across an upgrade,
 /// because brew rewrites it to point at whatever it just installed.
 func launchCommand() -> String {
     for candidate in ["/opt/homebrew/bin/pfadi", "/usr/local/bin/pfadi"]
     where FileManager.default.isExecutableFile(atPath: candidate) {
-        return shellQuoted(candidate)
+        return DefaultHandler.shellQuoted(candidate)
     }
-    return findBundle().map { "/usr/bin/open -a \(shellQuoted($0.path))" } ?? "pfadi"
+    return findBundle().map { "/usr/bin/open -a \(DefaultHandler.shellQuoted($0.path))" } ?? "pfadi"
 }
 
 // MARK: - The shell function
-
-let markerStart = "# >>> pfadi instead of finder >>>"
-let markerEnd = "# <<< pfadi instead of finder <<<"
 
 func profileURL() -> URL {
     let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
@@ -98,44 +138,18 @@ func profileURL() -> URL {
     return URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(name)
 }
 
-func shellBlock() -> String {
-    """
-    \(markerStart)
-    # `open .` and `open <folder>` go to pfadi. Everything else is untouched,
-    # so `open report.pdf` still opens whatever owns a PDF.
-    open() {
-      if [ $# -eq 1 ] && [ -d "$1" ]; then
-        command \(launchCommand()) "$1"
-      else
-        command open "$@"
-      fi
-    }
-    \(markerEnd)
-    """
-}
-
 func profileHasBlock() -> Bool {
-    (try? String(contentsOf: profileURL(), encoding: .utf8))?.contains(markerStart) ?? false
+    (try? String(contentsOf: profileURL(), encoding: .utf8))?
+        .contains(DefaultHandler.markerStart) ?? false
 }
 
 func writeShellBlock() throws {
     let url = profileURL()
     var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-    text = removingBlock(from: text)
+    text = DefaultHandler.removingBlock(from: text)
     if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
-    text += "\n" + shellBlock() + "\n"
+    text += "\n" + DefaultHandler.shellBlock(command: launchCommand()) + "\n"
     try text.write(to: url, atomically: true, encoding: .utf8)
-}
-
-func removingBlock(from text: String) -> String {
-    guard let start = text.range(of: markerStart),
-        let end = text.range(of: markerEnd)
-    else { return text }
-    var cut = text
-    // Through the end of the marker line, and the newline after it.
-    let upTo = text.index(end.upperBound, offsetBy: 1, limitedBy: text.endIndex) ?? end.upperBound
-    cut.removeSubrange(start.lowerBound..<upTo)
-    return cut
 }
 
 // MARK: - The launcher
@@ -228,24 +242,48 @@ func register(_ bundle: URL) {
     process.waitUntilExit()
 }
 
+// MARK: - Printing
+
+func row(_ label: String, _ value: String) {
+    print("  \(label.padding(toLength: 12, withPad: " ", startingAt: 0)) \(value)")
+}
+
 // MARK: - Commands
 
 func status() {
     print("pfadi:    \(findBundle()?.path ?? "not found")")
     print("command:  \(launchCommand())")
+    let launcher = FileManager.default.fileExists(atPath: launcherURL().path)
+    print("launcher: \(launcher ? launcherURL().path : "not installed")")
+    print("shell:    \(profileURL().path), \(profileHasBlock() ? "installed" : "not installed")")
+
+    let viewer = fileViewer()
     print(
-        "launcher: \(FileManager.default.fileExists(atPath: launcherURL().path) ? launcherURL().path : "not installed")"
-    )
-    print(
-        "shell:    \(profileHasBlock() ? "\(profileURL().path), installed" : "\(profileURL().path), not installed")"
-    )
+        "viewer:   \(viewer ?? "com.apple.finder (unset)")"
+            + (viewer == pfadiBundleID ? "  <- pfadi" : ""))
+
     print("")
-    print("What opens what, as the system has it now:")
+    print("Reveal in Finder, from any other application:")
+    print(
+        viewer == pfadiBundleID
+            ? "  goes to pfadi"
+            : "  goes to Finder")
+
+    print("")
+    print("What opens what, as LaunchServices has it now:")
     for claim in Claim.all {
         let handler = claim.currentHandler ?? "nothing"
-        let mine = handler == pfadiBundleID ? "  <- pfadi" : ""
-        print(
-            "  \(claim.what.padding(toLength: 12, withPad: " ", startingAt: 0)) \(handler)\(mine)")
+        row(claim.what, handler + (handler == pfadiBundleID ? "  <- pfadi" : ""))
+    }
+
+    // What the preference file says, when that differs from what LaunchServices
+    // will admit to. The gap is the whole story for folders, so it is reported
+    // rather than hidden.
+    let written = DefaultHandler.handler(in: launchServiceHandlers(), for: "public.folder")
+    if let written, written != Claim.all[0].currentHandler {
+        print("")
+        print("  the preference file asks for \(written) on folders,")
+        print("  and LaunchServices is ignoring it. See `man pfadi-default`.")
     }
 }
 
@@ -263,25 +301,41 @@ func apply() throws {
     try writeShellBlock()
     print("==> `open .` in \(profileURL().lastPathComponent) now goes to pfadi")
 
+    // The one that actually replaces Finder for something people do all day.
+    setFileViewer(pfadiBundleID)
+    let viewerTook = fileViewer() == pfadiBundleID
+    print(
+        viewerTook
+            ? "==> Reveal in Finder, from every application, now opens pfadi"
+            : "==> could not set \(DefaultHandler.fileViewerKey); Reveal in Finder stays Finder's")
+
+    setLaunchServiceHandlers(
+        DefaultHandler.setting(
+            launchServiceHandlers(), contentType: "public.folder", to: pfadiBundleID))
+    print("==> asked the preference file for folders too")
+
     print("\nAsking LaunchServices to hand over what it will:")
     var refusedAny = false
     for claim in Claim.all {
         let status = claim.setHandler(pfadiBundleID)
-        if status == refused { refusedAny = true }
-        print(
-            "  \(claim.what.padding(toLength: 12, withPad: " ", startingAt: 0)) \(describe(status))"
-        )
+        if status == DefaultHandler.refusedByLaunchServices { refusedAny = true }
+        row(claim.what, describe(status))
     }
 
-    if refusedAny {
+    if refusedAny || Claim.all[0].currentHandler != pfadiBundleID {
         print(
             """
 
-            macOS will not let anything but Finder be the default for a folder.
-            That is not a missing feature here: LSSetDefaultRoleHandlerForContentType
-            returns paramErr for public.folder whatever the application declares,
-            and the same for the file:// scheme. The shell function above exists
-            because of it, and Finder cannot be taken out of the Dock either.
+            Double-clicking a folder in Finder still opens Finder, and that part
+            is not going to change. LSSetDefaultRoleHandlerForContentType returns
+            paramErr for public.folder whatever the application declares, and the
+            same for the file:// scheme; writing the handler into the preference
+            file directly is accepted and then ignored. Finder cannot be taken
+            out of the Dock either, short of turning off SIP and FileVault and
+            editing the sealed system volume, which is a bad trade for an icon.
+
+            What you get instead is everything above: Reveal in Finder from any
+            application, `open .` in a terminal, and Spotlight.
             """)
     }
     print("\nOpen a new terminal, or run: source \(profileURL().path)")
@@ -298,21 +352,57 @@ func undo() throws {
     }
 
     let url = profileURL()
-    if let text = try? String(contentsOf: url, encoding: .utf8), text.contains(markerStart) {
-        try removingBlock(from: text).write(to: url, atomically: true, encoding: .utf8)
+    if let text = try? String(contentsOf: url, encoding: .utf8),
+        text.contains(DefaultHandler.markerStart)
+    {
+        try DefaultHandler.removingBlock(from: text)
+            .write(to: url, atomically: true, encoding: .utf8)
         print("==> removed the shell function from \(url.lastPathComponent)")
     } else {
         print("==> \(url.lastPathComponent) had nothing of ours in it")
     }
 
+    // Only when it is ours. Somebody may have pointed the file viewer at a
+    // different browser since, and taking that away would be this tool
+    // undoing a decision it did not make.
+    if fileViewer() == pfadiBundleID {
+        setFileViewer(nil)
+        print("==> Reveal in Finder goes back to Finder")
+    } else {
+        print("==> \(DefaultHandler.fileViewerKey) was not ours, left alone")
+    }
+
+    let handlers = launchServiceHandlers()
+    let cleaned = DefaultHandler.removing(
+        handlers, contentType: "public.folder", ownedBy: pfadiBundleID)
+    if cleaned.count != handlers.count
+        || DefaultHandler.handler(in: handlers, for: "public.folder") == pfadiBundleID
+    {
+        setLaunchServiceHandlers(cleaned)
+        print("==> took the folder request back out of the preference file")
+    }
+
     print("\nGiving the types back to Finder:")
     for claim in Claim.all where claim.currentHandler == pfadiBundleID {
-        let status = claim.setHandler(finderBundleID)
-        print(
-            "  \(claim.what.padding(toLength: 12, withPad: " ", startingAt: 0)) \(describe(status))"
-        )
+        row(claim.what, describe(claim.setHandler(finderBundleID)))
     }
 }
+
+let usage = """
+    pfadi-default — put pfadi where Finder is, as far as macOS allows.
+
+      pfadi-default            what the system has now, changing nothing
+      pfadi-default apply      the file viewer, the launcher, the shell
+                               function, and every content type macOS will
+                               actually hand over
+      pfadi-default undo       all of it back
+      pfadi-default --help     this
+      pfadi-default --version  the version
+
+    The one that matters is the file viewer: with it set, Reveal in Finder in
+    every other application opens pfadi. Double-clicking a folder inside Finder
+    is Finder's and stays Finder's. See `man pfadi-default`.
+    """
 
 // MARK: - Entry
 
@@ -333,15 +423,11 @@ case "status", nil:
     if arguments.first == nil {
         print("\nNothing has been changed. `pfadi-default apply` does it, `undo` puts it back.")
     }
+case "-h", "--help", "help":
+    print(usage)
+case "-v", "--version":
+    print("pfadi-default \(pfadiVersion)")
 default:
-    print(
-        """
-        pfadi-default — put pfadi where Finder is, as far as macOS allows.
-
-          pfadi-default            what the system has now, changing nothing
-          pfadi-default apply      the launcher, the shell function, and every
-                                   content type macOS will actually hand over
-          pfadi-default undo       all of it back
-        """)
+    print(usage)
     exit(1)
 }

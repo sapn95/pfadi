@@ -22,8 +22,17 @@ let package = Package(
             dependencies: ["PfadiCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // The `pfadi` command. A separate executable from the application
+        // because it must return the moment LaunchServices has been asked,
+        // rather than holding the terminal until the window is closed.
+        .executableTarget(
+            name: "pfadi-cli",
+            dependencies: ["PfadiCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .executableTarget(
             name: "pfadi-default",
+            dependencies: ["PfadiCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(

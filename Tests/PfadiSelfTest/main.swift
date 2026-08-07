@@ -126,5 +126,8 @@ HistorySuites.run()
 InfoSuites.run()
 ShareSuites.run()
 TransferSuites.run()
+CommandLineSuites.run()
+FolderSizeSuites.run()
+DefaultHandlerSuites.run()
 
 Harness.finish()

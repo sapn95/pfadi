@@ -1,4 +1,5 @@
 import AppKit
+import PfadiCore
 
 /// `pfadi --layout-check`: builds the real window off-screen at several sizes,
 /// forces a layout pass, and says whether anything ended up somewhere useless.
@@ -170,6 +171,216 @@ enum LayoutCheck {
         expect(browser.isFavourite != wasFavourite, "⌘D changes whether it is a favourite")
         browser.toggleFavourite(nil)
         expect(browser.isFavourite == wasFavourite, "and ⌘D again puts it back")
+
+        revealing(in: window, fixture: start)
+        sizing(in: window, fixture: start)
+        selecting(in: window, fixture: start)
+    }
+
+    /// More than one row at a time.
+    ///
+    /// The table refused to hold a second selected row at all, so every action
+    /// below was written against one file and quietly stayed that way. These go
+    /// through the table's own selection, which is the thing that was wrong.
+    private static func selecting(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        browser.navigate(to: fixture)
+        settle(until: { browser.listedDirectory?.path == fixture.path })
+
+        let all = browser.rowCount
+        guard all >= 3 else {
+            failures += 1
+            print("  FAIL the fixture has enough rows to select several, got \(all)")
+            return
+        }
+
+        // ⇧↓ from the top: a run of rows.
+        browser.selectRange(0..<3)
+        expect(
+            browser.selectedNames.count == 3,
+            "⇧↓ holds three rows, got \(browser.selectedNames.count)")
+
+        // ⌘-click one more, which is the other half of what was missing.
+        browser.selectRange(0..<1)
+        browser.addToSelection(row: 2)
+        expect(
+            browser.selectedNames.count == 2,
+            "⌘-click adds a row without losing the first, got \(browser.selectedNames.count)")
+
+        browser.selectRange(0..<3)
+        expect(
+            browser.statusLine.contains("3 of"),
+            "the status line counts them, got \(browser.statusLine)")
+
+        // The clipboard, because a selection that cannot be copied is a
+        // selection that does nothing.
+        browser.copy(nil)
+        let copied =
+            NSPasteboard.general.readObjects(forClasses: [NSURL.self]) as? [URL] ?? []
+        expect(copied.count == 3, "⌘C copies all three, got \(copied.count)")
+
+        // And it survives a reload, which is what the watcher does whenever
+        // anything in the folder is written.
+        browser.refresh(nil)
+        settle(until: { browser.selectedNames.count == 3 })
+        expect(
+            browser.selectedNames.count == 3,
+            "a reload keeps them selected, got \(browser.selectedNames.count)")
+
+        dropping(in: window, fixture: fixture)
+    }
+
+    /// Dropping several files at once, copy and move.
+    ///
+    /// The drag itself is AppKit's: it asks for one pasteboard writer per
+    /// selected row, so a five-row drag really does arrive with five URLs. What
+    /// is checked here is everything after that, which is ours.
+    private static func dropping(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+        let source = fixture.appendingPathComponent("from")
+        let into = fixture.appendingPathComponent("into")
+        try? manager.createDirectory(at: source, withIntermediateDirectories: true)
+        try? manager.createDirectory(at: into, withIntermediateDirectories: true)
+
+        let files = ["one.txt", "two.txt", "three.txt"].map {
+            source.appendingPathComponent($0)
+        }
+        for file in files { manager.createFile(atPath: file.path, contents: Data("x".utf8)) }
+
+        browser.navigate(to: fixture)
+        // For the row, not for the folder: this window is already showing this
+        // folder, so waiting on `listedDirectory` is satisfied at once by the
+        // listing taken before these folders were made.
+        browser.refresh(nil)
+        settle(until: { browser.rowIndex(of: "into") != nil })
+
+        // Dropping on a folder row targets that folder; dropping between rows
+        // targets the folder on screen.
+        guard let intoRow = browser.rowIndex(of: "into") else {
+            failures += 1
+            print("  FAIL the destination folder is in the list")
+            return
+        }
+        // Resolved on both sides: the listing's URLs come back through
+        // /private/var and the fixture's do not, because /var is a symlink.
+        // Comparing the two spellings is a check failing over nothing.
+        let onFolder = browser.dropDestination(row: intoRow, operation: .on)
+        expect(
+            same(onFolder, into),
+            "a drop on a folder row goes into that folder, got \(onFolder.path)")
+        expect(
+            same(browser.dropDestination(row: intoRow, operation: .above), fixture),
+            "and a drop between rows goes into the folder on screen")
+
+        expect(
+            browser.drop(files, into: into, kind: .copy),
+            "three files dropped at once are accepted")
+        settle(until: { browser.statusLine.contains("3 items") }, seconds: 10)
+        expect(
+            browser.statusLine.contains("3 items"),
+            "and all three arrive, got \(browser.statusLine)")
+        expect(
+            (try? manager.contentsOfDirectory(atPath: into.path).count) == 3,
+            "which is what is actually on the disk")
+
+        // And a move, because that is the other half of a drag and it is the
+        // half that can lose files rather than merely duplicate them.
+        let elsewhere = fixture.appendingPathComponent("moved")
+        try? manager.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        expect(
+            browser.drop(files, into: elsewhere, kind: .move),
+            "and three moved at once are accepted too")
+        settle(
+            until: { (try? manager.contentsOfDirectory(atPath: elsewhere.path).count) == 3 },
+            seconds: 10)
+        expect(
+            (try? manager.contentsOfDirectory(atPath: elsewhere.path).count) == 3,
+            "all three arrive")
+        expect(
+            (try? manager.contentsOfDirectory(atPath: source.path).count) == 0,
+            "and none is left behind where they came from")
+    }
+
+    /// What another application's "Reveal in Finder" ends up doing here.
+    ///
+    /// The path it takes is the same one: a URL arrives, the delegate decides
+    /// what it means, and the window is asked to show it. Going through
+    /// `AppDelegate.target(for:)` rather than calling `reveal` directly is the
+    /// point — the decision is the part that was worth getting wrong.
+    private static func revealing(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let file = fixture.appendingPathComponent("notes.txt")
+
+        // From somewhere else entirely, so this is not passing because the
+        // folder was already on screen.
+        browser.navigate(to: FileManager.default.homeDirectoryForCurrentUser)
+        settle(seconds: 0.3)
+
+        guard let target = AppDelegate.target(for: PfadiURL.reveal(file)) else {
+            failures += 1
+            print("  FAIL a pfadi://reveal URL is understood")
+            return
+        }
+        expect(target == .file(file.standardizedFileURL), "a reveal URL names the file")
+
+        window.go(to: target)
+        settle(until: { browser.selectedName == "notes.txt" })
+        expect(
+            browser.currentDirectory.path == fixture.path,
+            "revealing opens the folder holding it, got \(browser.currentDirectory.path)")
+        expect(
+            browser.selectedName == "notes.txt",
+            "and selects the file, got \(browser.selectedName ?? "nothing")")
+
+        // A plain file URL, which is what a drop on the Dock icon sends.
+        let dropped = AppDelegate.target(for: fixture.appendingPathComponent("report.txt"))
+        expect(dropped != nil, "a dropped file is understood too")
+        if let dropped {
+            window.go(to: dropped)
+            settle(until: { browser.selectedName == "report.txt" })
+            expect(browser.selectedName == "report.txt", "and it is the one selected")
+        }
+
+        // A folder URL means open, not select. The two are indistinguishable
+        // once they are both file URLs, which is why the scheme exists.
+        expect(
+            AppDelegate.target(for: fixture) == .directory(PathCompletion.directoryURL(fixture)),
+            "a folder URL still means open it")
+    }
+
+    /// Folder sizes: measured for what is on screen, and nothing blocking.
+    private static func sizing(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+        let sub = fixture.appendingPathComponent("measured")
+        try? manager.createDirectory(at: sub, withIntermediateDirectories: true)
+        try? Data(repeating: 0x61, count: 8192)
+            .write(to: sub.appendingPathComponent("payload.bin"))
+
+        browser.refresh(nil)
+        settle(until: { browser.rowCount == 5 })
+        expect(browser.rowCount == 5, "the new folder is listed, got \(browser.rowCount)")
+
+        settle(until: { browser.measuredSize(of: "measured") != nil }, seconds: 5)
+        guard let measured = browser.measuredSize(of: "measured") else {
+            failures += 1
+            print("  FAIL the folder on screen gets measured")
+            return
+        }
+        expect(measured.complete, "a small folder is measured completely")
+        expect(
+            measured.bytes >= 8192,
+            "and reports what is in it, got \(measured.bytes) of at least 8192")
+
+        // Left in place: the whole fixture goes at the end of behaviour(), and
+        // deleting it here pulled a row out from under the selection check
+        // that runs next, which then failed for the wrong reason.
+    }
+
+    /// Whether two URLs are the same place, symlinks and all.
+    private static func same(_ left: URL, _ right: URL) -> Bool {
+        left.resolvingSymlinksInPath().path == right.resolvingSymlinksInPath().path
     }
 
     private static func ambiguousViews(in view: NSView?) -> [String] {
