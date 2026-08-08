@@ -20,8 +20,49 @@ extension UserDefaults: KeyValueStore {}
 public final class Preferences {
     private let store: KeyValueStore
 
-    public init(store: KeyValueStore = UserDefaults.standard) {
+    public init(store: KeyValueStore = Preferences.shared) {
         self.store = store
+    }
+
+    /// The one place every part of pfadi keeps its settings.
+    ///
+    /// `UserDefaults.standard` is a different file in each of them: the app
+    /// bundle writes io.github.sapn95.pfadi.plist, the `pfadi-default` command
+    /// writes pfadi-default.plist, and an unbundled build writes pfadi.plist.
+    /// Three processes, three files, and a setting written by one that the
+    /// others never see — which is exactly what `pfadi-default credentials`
+    /// did on the day it was written.
+    ///
+    /// A named suite rather than the bundle identifier: Apple says not to pass
+    /// your own identifier to `suiteName`, and the app would be reading its own
+    /// domain twice under two names.
+    public static let shared: UserDefaults = {
+        guard let suite = UserDefaults(suiteName: suiteName) else {
+            return UserDefaults.standard
+        }
+        migrateIfNeeded(into: suite)
+        return suite
+    }()
+
+    public static let suiteName = "io.github.sapn95.pfadi.settings"
+
+    /// Brings across what earlier versions wrote to the app's own domain.
+    ///
+    /// Once, and only when the suite is empty: somebody who has set columns,
+    /// favourites and an appearance should not lose them to a bug fix. The
+    /// old domain is left alone rather than cleaned up, so a downgrade still
+    /// finds what it wrote.
+    private static func migrateIfNeeded(into suite: UserDefaults) {
+        guard suite.object(forKey: Key.migrated) == nil else { return }
+        suite.set(true, forKey: Key.migrated)
+
+        for domain in ["io.github.sapn95.pfadi", "pfadi"] {
+            guard let old = UserDefaults(suiteName: domain)?.persistentDomain(forName: domain)
+            else { continue }
+            for (key, value) in old where suite.object(forKey: key) == nil {
+                suite.set(value, forKey: key)
+            }
+        }
     }
 
     /// Where the last window was looking.
@@ -68,6 +109,19 @@ public final class Preferences {
                 .flatMap(Appearance.init(rawValue:)) ?? .dark
         }
         set { store.set(newValue.rawValue, forKey: Key.appearance) }
+    }
+
+    /// A command that hands back the password for a share, or nothing.
+    ///
+    /// Off unless somebody sets it. pfadi asks the system first and only
+    /// reaches for this when the system says it needs credentials, so an
+    /// unset one costs nothing and a set one is never consulted for a share
+    /// the keychain already knows.
+    public var credentialCommand: CredentialCommand? {
+        get {
+            (store.object(forKey: Key.credentialCommand) as? String).flatMap(CredentialCommand.init)
+        }
+        set { store.set(newValue?.text, forKey: Key.credentialCommand) }
     }
 
     /// Which columns are on.
@@ -145,6 +199,8 @@ public final class Preferences {
         static let sortAscending = "sortAscending"
         static let columns = "columns"
         static let appearance = "appearance"
+        static let credentialCommand = "credentialCommand"
+        static let migrated = "migratedToSharedSuite"
         /// The one switch that came before the list. Read when the list is
         /// missing, never written.
         static let legacyShowCreated = "showCreated"

@@ -1150,7 +1150,8 @@ final class BrowserViewController: NSViewController {
     func connect(to share: URL) {
         announce("connecting to \(share.host ?? share.absoluteString)…")
 
-        ShareMounter.mount(share) { [weak self] result in
+        ShareMounter.mount(share, credentials: preferences.credentialCommand) {
+            [weak self] result in
             guard let self else { return }
             switch result {
             case .alreadyMounted(let url):
@@ -1162,6 +1163,12 @@ final class BrowserViewController: NSViewController {
                 favourites.rememberServer(share)
                 onFavouritesChanged?()
                 navigate(to: url)
+            case .credentialCommandFailed(let why):
+                NSSound.beep()
+                announce("the credential command could not help: \(why)")
+                // Still handed to the system afterwards: a manager that has no
+                // entry is not a reason to refuse to connect at all.
+                ShareMounter.askSystemToConnect(share)
             case .needsCredentials:
                 // The system already has a connect sheet with keychain and
                 // guest handling in it. A second one would be worse.

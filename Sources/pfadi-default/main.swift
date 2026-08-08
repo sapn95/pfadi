@@ -453,6 +453,59 @@ func undo() throws {
     }
 }
 
+// MARK: - The credential command
+
+/// Shows, sets or clears the command pfadi asks for a share's password.
+///
+/// Here rather than in a preferences window, because this is a thing somebody
+/// sets once from a terminal after installing a password manager, and the
+/// terminal is where the command they want to paste already is.
+func credentialCommand(_ argument: String?) {
+    let preferences = Preferences()
+
+    guard let argument else {
+        if let existing = preferences.credentialCommand {
+            print("credential command: \(existing.text)")
+        } else {
+            print("credential command: not set")
+            print("")
+            print("pfadi asks the system first, which answers for anything in your")
+            print("keychain. This is only reached when the system says it needs")
+            print("credentials, and it works with whatever prints a password on")
+            print("stdout:")
+            print("")
+            print("  pfadi-default credentials \\")
+            print(
+                "    'pass-cli item view --vault-name Filers --item-title {host} --field password'")
+            print("")
+            print("  pfadi-default credentials 'op read op://Private/{host}/password'")
+            print("  pfadi-default credentials 'pass show filers/{host}'")
+            print("")
+            print("{host}, {share}, {user}, {scheme} and {url} are filled in. It is")
+            print("not a shell: no pipes, no variables, no substitution. Quote an")
+            print("argument that contains a space; put anything cleverer in a script")
+            print("and point this at that.")
+        }
+        return
+    }
+
+    if argument == "off" || argument.isEmpty {
+        preferences.credentialCommand = nil
+        print("credential command cleared. pfadi will ask the system as before.")
+        return
+    }
+
+    guard let command = CredentialCommand(argument) else {
+        print("that is not a command I can split — check the quotes.")
+        exit(1)
+    }
+    preferences.credentialCommand = command
+    print("credential command: \(command.text)")
+    print("")
+    print("Asked only when the system says a share needs credentials.")
+    print("`pfadi-default credentials off` puts it back.")
+}
+
 let usage = """
     pfadi-default — put pfadi where Finder is, as far as macOS allows.
 
@@ -461,6 +514,9 @@ let usage = """
                                function, and every content type macOS will
                                actually hand over
       pfadi-default undo       all of it back
+      pfadi-default credentials [command | off]
+                               a command to ask for a share's password,
+                               for Proton Pass, 1Password, pass, anything
       pfadi-default --help     this
       pfadi-default --version  the version
 
@@ -472,6 +528,18 @@ let usage = """
 // MARK: - Entry
 
 let arguments = CommandLine.arguments.dropFirst()
+
+// Two words, because the command is the second one. Everything else here takes
+// none.
+if arguments.first == "credentials" {
+    guard arguments.count <= 2 else {
+        print("one command at a time, quoted: pfadi-default credentials '…'")
+        exit(1)
+    }
+    credentialCommand(arguments.dropFirst().first)
+    exit(0)
+}
+
 if arguments.count > 1 {
     // Silently ignoring the rest is how `apply --dry-run` quietly applies.
     print("one command at a time: \(arguments.joined(separator: " "))")
