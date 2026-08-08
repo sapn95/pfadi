@@ -308,30 +308,28 @@ enum LayoutCheck {
                 continue
             }
 
-            let shown = FileIcons.icon(for: file, isDirectory: false)
-            let expected = NSWorkspace.shared.icon(forFile: application.path)
-            expected.size = FileIcons.listSize
             expect(
-                shown.tiffRepresentation == expected.tiffRepresentation,
+                sameImage(
+                    FileIcons.icon(for: file, isDirectory: false),
+                    NSWorkspace.shared.icon(forFile: application.path)),
                 "\(file.lastPathComponent) shows \(application.lastPathComponent), which opens it")
 
             // The substantive claim, and the one that does not depend on which
             // application happens to be installed: it is not the document icon
             // any more.
-            let document = NSWorkspace.shared.icon(forFile: file.path)
-            document.size = FileIcons.listSize
             expect(
-                shown.tiffRepresentation != document.tiffRepresentation,
+                !sameImage(
+                    FileIcons.icon(for: file, isDirectory: false),
+                    NSWorkspace.shared.icon(forFile: file.path)),
                 "and not the document icon it used to show")
         }
 
         // And a folder keeps its own, because no application opens a folder
         // and the folder icon carries its colour and its emoji.
-        let folderIcon = FileIcons.icon(for: folder, isDirectory: true)
-        let systemFolder = NSWorkspace.shared.icon(forFile: folder.path)
-        systemFolder.size = FileIcons.listSize
         expect(
-            folderIcon.tiffRepresentation == systemFolder.tiffRepresentation,
+            sameImage(
+                FileIcons.icon(for: folder, isDirectory: true),
+                NSWorkspace.shared.icon(forFile: folder.path)),
             "and a folder keeps the one macOS gives it")
 
         try? manager.removeItem(at: folder)
@@ -969,6 +967,39 @@ enum LayoutCheck {
         // Left in place: the whole fixture goes at the end of behaviour(), and
         // deleting it here pulled a row out from under the selection check
         // that runs next, which then failed for the wrong reason.
+    }
+
+    /// Whether two icons draw the same thing.
+    ///
+    /// Rendered into identical bitmaps rather than compared as TIFF data. An
+    /// NSImage carries many representations, `icon(forFile:)` hands back a
+    /// shared instance, and setting `size` on one mutates it for everybody —
+    /// so comparing the data compares bookkeeping as much as pixels, and did:
+    /// the same pair matched here and differed on a runner.
+    private static func sameImage(_ left: NSImage, _ right: NSImage) -> Bool {
+        guard let a = pixels(of: left), let b = pixels(of: right) else { return false }
+        return a == b
+    }
+
+    private static func pixels(of image: NSImage) -> Data? {
+        let size = NSSize(width: 32, height: 32)
+        guard
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { return nil }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        // A copy, so the shared instance NSWorkspace handed over is not
+        // resized underneath whoever else is drawing it.
+        let copy = image.copy() as? NSImage ?? image
+        copy.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+
+        return rep.representation(using: .png, properties: [:])
     }
 
     /// Whether two URLs are the same place, symlinks and all.
