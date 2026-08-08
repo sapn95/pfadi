@@ -20,6 +20,20 @@ brew install sapn95/tap/pfadi
 pfadi-default apply
 ```
 
+![The pfadi window: a clickable path bar along the top, a filterable sidebar
+down the left, and a file list showing each file with the icon of whatever
+opens it](assets/screenshots/browsing.png)
+
+Dark by default, an address bar you can click into and type, and every file
+showing the icon of the application that opens it.
+
+![A OneDrive folder in pfadi: every subfolder showing a real size, and the
+status line reporting 72 files that are online only](assets/screenshots/cloud.png)
+
+A cloud folder. The sizes are measured by walking, so a folder of placeholders
+reports what is in it rather than the nothing it occupies on disk, and the
+status line counts what has not been downloaded.
+
 ## The problem
 
 Finder gives you three ways to see where you are and none to say where you want
