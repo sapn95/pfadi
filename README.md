@@ -365,6 +365,53 @@ sorting by it would put the rows in an order and then change it under the
 pointer. Hiding the column being sorted by falls back to name. Widths, order and
 the sort all survive a quit.
 
+## Passwords for shares
+
+macOS answers first, and for anything Finder has ever connected to that is the
+end of it: `NetFSMountURLSync` reads the keychain itself, so a saved share
+mounts with no prompt and pfadi does nothing clever.
+
+When the system says it needs credentials, pfadi can ask a command instead of
+putting a dialog up:
+
+```bash
+pfadi-default credentials \
+  'pass-cli item view --vault-name Filers --item-title {host} --field password'
+
+pfadi-default credentials 'op read op://Private/{host}/password'
+pfadi-default credentials 'pass show filers/{host}'
+pfadi-default credentials off
+```
+
+`{host}`, `{share}`, `{user}`, `{scheme}` and `{url}` are filled in.
+
+**Deliberately not "Proton Pass support".** pfadi knows nothing about any
+password manager and never will — it runs a command and reads one line. Proton
+Pass has an official CLI as of November 2025 and it is the only programmatic
+route it offers; 1Password, `pass` and Bitwarden all have one too, and so does
+a shell script somebody writes themselves. Naming one of them in the code would
+be a dependency on a company. It is the shape `git config credential.helper`
+has, for the same reason.
+
+Three things about it are deliberate:
+
+- **It is argv, never a shell line.** A share on a host called
+  `filer; rm -rf ~` is a hostname, and with `execve` there is no parser between
+  here and the program that could disagree. Quoting is honoured so a vault
+  called `"Work Filers"` survives; nothing else is. Anything cleverer belongs
+  in a script you point this at.
+- **What it prints on stdout is the password and goes nowhere else.** Not into
+  the status line, not into an error, not into a log. If the command echoes it
+  on stderr too, that line is replaced rather than shown.
+- **It is given thirty seconds**, because a password manager may want Touch ID,
+  and then killed. The first version read the command's output before waiting,
+  which blocks until the command exits — so the timeout was unreachable and a
+  command that hung held the mount for as long as it liked. A test found that,
+  not a person.
+
+Silence is a normal answer: a manager with no entry for this host has answered,
+and the system's own dialog is the right next step rather than an error.
+
 ## Writing to disk
 
 Everything that changes anything is reversible. ⌘Z puts back a trashed file,

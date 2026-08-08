@@ -8,6 +8,10 @@ enum ShareMounter {
         case alreadyMounted(URL)
         case mounted(URL)
         case needsCredentials
+        /// The configured credential command ran and could not help. Its own
+        /// words, never the password: what a password manager prints on stdout
+        /// is the secret and never reaches here.
+        case credentialCommandFailed(String)
         case failed(String)
     }
 
@@ -16,7 +20,16 @@ enum ShareMounter {
     /// `NetFSMountURLSync` blocks until the server answers, and an unreachable
     /// server takes as long as the timeout: never on the main thread, or the
     /// application freezes for a typo.
-    static func mount(_ url: URL, then report: @escaping (Result) -> Void) {
+    /// - Parameter credentials: a command to ask for a password when the
+    ///   system says it needs one. Asked second, never first: the keychain
+    ///   already answers for anything Finder has connected to, and running
+    ///   somebody's password manager for a share that needed no password would
+    ///   be a prompt nobody asked for.
+    static func mount(
+        _ url: URL,
+        credentials: CredentialCommand? = nil,
+        then report: @escaping (Result) -> Void
+    ) {
         if let existing = NetworkShare.existingMount(for: url, in: NetworkShare.currentMounts()) {
             report(.alreadyMounted(existing))
             return
@@ -40,7 +53,11 @@ enum ShareMounter {
                         for: url, in: NetworkShare.currentMounts())
                     report(found.map(Result.mounted) ?? .failed("mounted, but not where it said"))
                 } else if isAuthentication(status) {
-                    report(.needsCredentials)
+                    guard let credentials else {
+                        report(.needsCredentials)
+                        return
+                    }
+                    askAndRetry(url, credentials: credentials, then: report)
                 } else {
                     report(.failed(message(for: status)))
                 }
@@ -52,6 +69,53 @@ enum ShareMounter {
     /// authenticate sheet Finder uses.
     static func askSystemToConnect(_ url: URL) {
         NSWorkspace.shared.open(url)
+    }
+
+    /// Runs the configured command and tries the mount again with what it
+    /// said.
+    ///
+    /// On its own queue, because a password manager may put a Touch ID prompt
+    /// on screen and that is not something to do on the main thread.
+    private static func askAndRetry(
+        _ url: URL,
+        credentials: CredentialCommand,
+        then report: @escaping (Result) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = CredentialRunner.run(credentials, for: url)
+            switch outcome {
+            case .nothing:
+                // No entry for this host is a normal answer. The system's own
+                // dialog is the right next step, not an error.
+                DispatchQueue.main.async { report(.needsCredentials) }
+            case .failed(let why):
+                DispatchQueue.main.async { report(.credentialCommandFailed(why)) }
+            case .password(let password):
+                var mountpoints: Unmanaged<CFArray>?
+                let user = url.user
+                let status = NetFSMountURLSync(
+                    url as CFURL, nil, user as CFString?, password as CFString,
+                    nil, nil, &mountpoints)
+                let mounted = (mountpoints?.takeRetainedValue() as? [String])?.first
+
+                DispatchQueue.main.async {
+                    if status == 0, let mounted {
+                        report(.mounted(URL(fileURLWithPath: mounted, isDirectory: true)))
+                    } else if status == 0 {
+                        let found = NetworkShare.existingMount(
+                            for: url, in: NetworkShare.currentMounts())
+                        report(found.map(Result.mounted) ?? .needsCredentials)
+                    } else if isAuthentication(status) {
+                        // It answered and the answer was wrong. Saying so
+                        // beats a second dialog that looks like the first one
+                        // failed for no reason.
+                        report(.credentialCommandFailed("the password it gave was not accepted"))
+                    } else {
+                        report(.failed(message(for: status)))
+                    }
+                }
+            }
+        }
     }
 
     private static func isAuthentication(_ status: Int32) -> Bool {

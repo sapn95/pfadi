@@ -94,6 +94,24 @@ and
 .Va NSFileViewer
 is cleared only when it still names pfadi: an application that is not ours is
 somebody's own decision and is left alone.
+.It Cm credentials Op Ar command | Cm off
+A command to ask for a share's password when the system says it needs one.
+With no argument, prints what is set.
+.Pp
+Not a shell: the command is split on whitespace, honouring quotes, and run
+through
+.Xr execve 2 .
+.Sy {host} , {share} , {user} , {scheme}
+and
+.Sy {url}
+are substituted per argument, so a value containing spaces cannot become two
+arguments.
+What the command prints on standard output is the password and appears nowhere
+else.
+It is given thirty seconds and then killed.
+.Pp
+Printing nothing is a normal answer and hands the share to the system's own
+dialog rather than reporting an error.
 .It Fl h , Fl -help
 Print the usage and exit.
 .It Fl v , Fl -version

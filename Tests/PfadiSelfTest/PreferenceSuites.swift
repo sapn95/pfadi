@@ -209,3 +209,34 @@ extension PreferenceSuites {
         }
     }
 }
+
+extension PreferenceSuites {
+    /// One settings store, shared by every part of pfadi.
+    static func runSharedStore() {
+        Harness.suite("preferences: every process reads the same file") {
+            // UserDefaults.standard is a different file in each of them: the
+            // app bundle writes io.github.sapn95.pfadi.plist, pfadi-default
+            // writes pfadi-default.plist, an unbundled build writes
+            // pfadi.plist. `pfadi-default credentials` wrote to one the window
+            // never read, and the setting silently did nothing.
+            Harness.expectEqual(
+                Preferences.suiteName, "io.github.sapn95.pfadi.settings",
+                "a named suite every one of them can open")
+            Harness.expect(
+                Preferences.suiteName != "io.github.sapn95.pfadi",
+                "and not the bundle identifier, which Apple says not to pass to suiteName")
+        }
+
+        Harness.suite("preferences: the shared store is what a Preferences() uses") {
+            // The default argument, because a Preferences() built with no
+            // store is what every call site in the application uses.
+            let key = "selftest-\(UUID().uuidString)"
+            Preferences.shared.set("written", forKey: key)
+            defer { Preferences.shared.removeObject(forKey: key) }
+
+            Harness.expectEqual(
+                UserDefaults(suiteName: Preferences.suiteName)?.string(forKey: key), "written",
+                "so a second process opening the suite by name finds it")
+        }
+    }
+}
