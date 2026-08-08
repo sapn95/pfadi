@@ -104,7 +104,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-    outputs:
     steps:
       - uses: actions/checkout@v7
         with:
