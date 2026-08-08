@@ -179,6 +179,22 @@ final class BrowserViewController: NSViewController {
         tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: true)
     }
 
+    /// Picks an item out of the list's right-click menu, for the checks.
+    ///
+    /// Through the menu, because "New Folder exists as a method" and "New
+    /// Folder is in the menu people right-click for it" are different claims
+    /// and only the second one was ever in doubt.
+    @discardableResult
+    func clickContextMenuItem(_ title: String) -> Bool {
+        guard let menu = tableView.menu,
+            let item = menu.items.first(where: { $0.title == title }),
+            let action = item.action
+        else { return false }
+        menuNeedsUpdate(menu)
+        NSApp.sendAction(action, to: item.target, from: item)
+        return true
+    }
+
     /// Deselects everything, for the checks.
     ///
     /// With nothing selected the actions work on the folder on screen, which
@@ -635,6 +651,16 @@ final class BrowserViewController: NSViewController {
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
+
+        // First, because right-clicking the empty part of a folder is how
+        // most people ask for these and there was nothing there at all.
+        for (title, action) in [
+            ("New Folder", #selector(newFolder(_:))),
+            ("New File", #selector(newFile(_:))),
+        ] {
+            menu.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
+        }
+        menu.addItem(.separator())
 
         let openWith = menu.addItem(withTitle: "Open With", action: nil, keyEquivalent: "")
         openWith.submenu = openWithMenu
@@ -1470,6 +1496,35 @@ final class BrowserViewController: NSViewController {
             pendingRename = created
         } catch {
             report(error, doing: "create a folder")
+        }
+    }
+
+    /// ⌃⌘N. Empty, named untitled.txt, with the cursor already in the name.
+    ///
+    /// An extension rather than none, because a file with no extension opens in
+    /// nothing and the first thing anybody would do is add one. It is selected
+    /// along with the rest of the name, so typing over it costs nothing.
+    @objc func newFile(_ sender: Any?) {
+        let name = FileOperations.availableName("untitled.txt", in: directory)
+        do {
+            let created = try FileOperations.createFile(named: name, in: directory)
+            registerUndo("New File") { controller in
+                controller.attempt("undo the new file") {
+                    _ = try FileOperations.trash(created)
+                }
+                controller.registerUndo("New File") { controller in
+                    controller.attempt("redo the new file") {
+                        _ = try FileOperations.createFile(named: name, in: controller.directory)
+                    }
+                }
+            }
+            announce("created \(name)")
+            // Normally the watcher brings the row in. On a folder it could not
+            // attach to, nothing would ever arrive and the rename never starts.
+            reload(keepingSelection: true)
+            pendingRename = created
+        } catch {
+            report(error, doing: "create a file")
         }
     }
 

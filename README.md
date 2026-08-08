@@ -65,6 +65,7 @@ drag     a column header to move it
 ⌘T ⌘N    a new tab, a new window
 ⌘C ⌘V    copy, then paste, with ⌥⌘V to move instead
 ⇧⌘N      new folder, with the cursor already in its name
+⌃⌘N      new file, likewise
 F2       rename
 ⌘⌫       move to the trash
 ⌘Z       undo any of that
@@ -328,6 +329,17 @@ and it is the right place for how many items there are; it is the wrong place
 for "that did not happen", which read from where anybody is actually looking as
 nothing happening at all. The band stays until it is dismissed or until you go
 somewhere else.
+
+**New Folder and New File are in the right-click menu**, not only in the File
+menu, because right-clicking the empty part of a folder is how most people ask
+for them. Both open with the cursor in the name, because nobody wants a folder
+called "untitled folder".
+
+A new file is `untitled.txt` rather than `untitled`: a file with no extension
+opens in nothing, and the extension is selected along with the rest of the name
+so typing over it costs nothing. A second one is `untitled 2.txt` — the number
+goes before the extension, never after it, because "untitled.txt 2" is a name
+with a space and a digit inside its extension.
 
 **Some things will not go to the trash, and now they say so.** `~/Documents`,
 `~/Desktop`, `~/Library` and the rest of the folders macOS keeps inside a home

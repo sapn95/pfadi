@@ -280,6 +280,41 @@ enum LayoutCheck {
         sorting(in: window, fixture: fixture)
         showingInFinder(in: window, fixture: fixture)
         openingFolders(in: window, fixture: fixture)
+        creating(in: window, fixture: fixture)
+    }
+
+    /// Making a folder and making a file, from the menu people reach for.
+    private static func creating(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let made = fixture.appendingPathComponent("made-here")
+        try? FileManager.default.createDirectory(at: made, withIntermediateDirectories: true)
+
+        browser.navigate(to: made)
+        settle(until: { browser.listedDirectory?.path == made.path })
+        expect(browser.rowCount == 0, "an empty folder to make things in")
+
+        expect(browser.clickContextMenuItem("New Folder"), "New Folder is in the right-click menu")
+        settle(until: { browser.rowIndex(of: "untitled folder") != nil }, seconds: 5)
+        expect(
+            browser.rowIndex(of: "untitled folder") != nil,
+            "and makes one, rows are \(browser.listedNames.joined(separator: ", "))")
+
+        expect(browser.clickContextMenuItem("New File"), "New File is there too")
+        settle(until: { browser.rowIndex(of: "untitled.txt") != nil }, seconds: 5)
+        expect(
+            browser.rowIndex(of: "untitled.txt") != nil,
+            "and makes one, rows are \(browser.listedNames.joined(separator: ", "))")
+
+        // Twice, because the number goes before the extension and getting that
+        // wrong produces "untitled.txt 2", which is a name with a space and a
+        // digit inside its extension.
+        expect(browser.clickContextMenuItem("New File"), "asked for a second file")
+        settle(until: { browser.rowIndex(of: "untitled 2.txt") != nil }, seconds: 5)
+        expect(
+            browser.rowIndex(of: "untitled 2.txt") != nil,
+            "the second is untitled 2.txt, rows are \(browser.listedNames.joined(separator: ", "))")
+
+        try? FileManager.default.removeItem(at: made)
     }
 
     /// A double click on a folder goes into it.
