@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// The icon for a row.
 ///
@@ -43,13 +44,25 @@ enum FileIcons {
         return NSWorkspace.shared.icon(forFile: application.path)
     }
 
-    /// Which application opens this, cached by extension.
+    /// Which application opens this kind of file, cached by extension.
     ///
-    /// The answer is a property of the type, not of the file, and asking
-    /// LaunchServices is a round trip. A folder of forty thousand files has a
-    /// handful of extensions between them.
+    /// Asked about the *type*, not about the file. Asking about the file looked
+    /// equivalent and was not: a path that has since been deleted answers nil,
+    /// and caching that nil under its extension told every later .txt that
+    /// nothing opens it. Which is exactly what happened — every text file in
+    /// the window lost its icon because one temporary file had been cleaned up
+    /// first.
+    ///
+    /// The answer is a property of the type anyway, so this is also the
+    /// question that was meant. A folder of forty thousand files has a handful
+    /// of extensions between them.
     private static func opener(for url: URL) -> URL? {
         let key = url.pathExtension.lowercased()
+        guard !key.isEmpty else {
+            // No extension, so there is no type to ask about and the answer
+            // belongs to this one file. Not cached for the same reason.
+            return NSWorkspace.shared.urlForApplication(toOpen: url)
+        }
 
         lock.lock()
         if let known = openers[key] {
@@ -58,10 +71,8 @@ enum FileIcons {
         }
         lock.unlock()
 
-        let found = NSWorkspace.shared.urlForApplication(toOpen: url)
-        // An extensionless file is not a type, so its answer is about that one
-        // file and must not be remembered for every other one like it.
-        guard !key.isEmpty else { return found }
+        let found = UTType(filenameExtension: key)
+            .flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) }
 
         lock.lock()
         openers[key] = found
