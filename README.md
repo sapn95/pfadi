@@ -45,6 +45,7 @@ click    a folder in the path: everything beside it, with a filter
 2×click  a folder in the path: go there
 ›        the arrow after the last folder: everything inside it
 ⌘F       filter the folder you are in
+         and there is a filter at the top of the sidebar too
 space    Quick Look, and again to close it
 2×click  open a folder, or hand a file to whatever owns it
 return   the same, for whatever is selected
@@ -186,6 +187,29 @@ It understands what people actually paste:
 It says when it rewrote something, quoting both back, and a checkbox turns that
 off. An already-mounted share is found rather than mounted again, which is how
 people end up with `share-1` through `share-4`.
+
+## One match, everywhere
+
+Every filter in pfadi uses the same rule, and it is not `contains`. Somebody
+with thirty favourites types the initials of the one they want, and `dwn`
+matches nothing at all under a substring search.
+
+The rule is **subsequence**: every character of the query appears in the name,
+in order, not necessarily together. What makes that usable rather than merely
+permissive is the score — letters next to each other, and letters starting a
+word, count for more. So `doc` puts `Dock` and `Documents` above
+`undocumented`, which it also matches. Accents and case fold away, so `zurich`
+finds `Zürich`.
+
+| Where | Ordering |
+| --- | --- |
+| The sidebar filter | Best first, within each section |
+| The path bar's folder menu | Best first |
+| The file list, ⌘F | **Left alone.** This list is in whatever order its sort column says, and reordering it by score would fight the header you just clicked |
+
+The sidebar's filter keeps `Connect to Server…` whatever you type, because a way
+in that disappears when you search is not a way in, and it says `No match`
+rather than showing you an empty panel.
 
 ## Several at once
 

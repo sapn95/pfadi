@@ -959,13 +959,14 @@ final class BrowserViewController: NSViewController {
         return text + (showHidden ? ", hidden shown" : "")
     }
 
-    /// Substring rather than prefix, and blind to case and accents. Looking for
-    /// `config` should find `.eslintrc.config.js`, which a prefix match misses.
+    /// The same match every filter in pfadi uses.
+    ///
+    /// Matching only, not ranking: this list is in whatever order its sort
+    /// column says, and reordering it by how well each name scored would fight
+    /// the header somebody just clicked.
     private static func filtered(_ entries: [Entry], by text: String) -> [Entry] {
         guard !text.isEmpty else { return entries }
-        return entries.filter {
-            $0.name.range(of: text, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-        }
+        return entries.filter { FuzzyMatch.matches(text, $0.name) }
     }
 
     /// The bar and the field share a slot. The bar is what you look at and

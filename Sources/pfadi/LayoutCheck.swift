@@ -281,6 +281,39 @@ enum LayoutCheck {
         showingInFinder(in: window, fixture: fixture)
         openingFolders(in: window, fixture: fixture)
         creating(in: window, fixture: fixture)
+        sidebarFilter(in: window)
+    }
+
+    /// The sidebar's filter, and that it is the same match as everywhere else.
+    private static func sidebarFilter(in window: BrowserWindow) {
+        let sidebar = window.sidebar
+        let all = sidebar.drawnRows()
+        expect(all.contains("Downloads"), "Downloads is in the sidebar to begin with")
+
+        // Letters from the middle, not a prefix and not a run: this is the
+        // whole reason the filter is fuzzy rather than `contains`, and thirty
+        // favourites is when it matters.
+        sidebar.filter(by: "dwn")
+        let narrowed = sidebar.drawnRows()
+        expect(
+            narrowed.contains("Downloads"),
+            "dwn finds Downloads, got \(narrowed.joined(separator: ", "))")
+        expect(
+            narrowed.count < all.count,
+            "and leaves out the rest, \(all.count) rows became \(narrowed.count)")
+        expect(
+            narrowed.contains("(connect)"),
+            "Connect to Server stays reachable whatever was typed")
+
+        sidebar.filter(by: "zzzznothing")
+        expect(
+            sidebar.drawnRows().contains("[No match]"),
+            "nothing matching says so, got \(sidebar.drawnRows().joined(separator: ", "))")
+
+        sidebar.filter(by: "")
+        expect(
+            sidebar.drawnRows() == all,
+            "and clearing it puts everything back, \(sidebar.drawnRows().count) of \(all.count)")
     }
 
     /// Making a folder and making a file, from the menu people reach for.

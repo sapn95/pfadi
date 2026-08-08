@@ -3,4 +3,4 @@
 /// Checked against the VERSION file by the self-test, and VERSION is in turn
 /// checked against the tag by the release workflow. Three copies of a number
 /// only stay equal if something fails when they stop being.
-public let pfadiVersion = "0.30.0"
+public let pfadiVersion = "0.31.0"
