@@ -29,7 +29,6 @@ final class PathBar: NSView {
     private var componentButtons: [NSButton] = []
     /// A sibling menu that has been asked for and is waiting to see whether a
     /// second click is coming.
-    private var pendingMenu: DispatchWorkItem?
     private let overflow = NSButton()
     private let descend = NSButton()
 
@@ -111,15 +110,10 @@ final class PathBar: NSView {
         return true
     }
 
-    /// Whether a sibling menu is waiting for its double-click window to pass.
-    var isMenuPending: Bool { pendingMenu != nil }
-
     private func rebuild() {
         // The path has changed, so a menu still waiting to open is about a
         // folder nobody is looking at, anchored to a button about to be thrown
         // away.
-        pendingMenu?.cancel()
-        pendingMenu = nil
 
         for view in stack.arrangedSubviews {
             stack.removeArrangedSubview(view)
@@ -221,8 +215,6 @@ final class PathBar: NSView {
         // A double click goes there, a single one asks what else is at that
         // level. Both are useful and neither should need a modifier.
         if clicks >= 2 {
-            pendingMenu?.cancel()
-            pendingMenu = nil
             onChoose?(url)
             return
         }

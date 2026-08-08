@@ -21,12 +21,132 @@ enum LayoutCheck {
         }
 
         appearance()
+        shortcuts()
         behaviour()
         print(failures == 0 ? "\nall checks ok" : "\n\(failures) problems")
         exit(failures == 0 ? 0 : 1)
     }
 
-    /// Dark, and dark by default.
+    /// Every key the README promises exists in the menu.
+    ///
+    /// Two of them did not. ⌘F and ⌘K were in the Keys table, both handlers
+    /// were written, and neither had ever been given a menu item — so the
+    /// documented key did nothing and the handler was dead code. Nothing
+    /// noticed, because nothing compared the two.
+    private static func shortcuts() {
+        print("\nshortcuts")
+
+        guard let root = MainMenu.build() as NSMenu? else {
+            failures += 1
+            print("  FAIL there is a main menu")
+            return
+        }
+
+        // Read out of the README itself, so adding a row there without wiring
+        // it is what fails rather than what ships.
+        guard let readme = repositoryFile("README.md") else {
+            failures += 1
+            print("  FAIL README.md is where it should be")
+            return
+        }
+
+        let promised = documentedKeys(in: readme)
+        expect(promised.count >= 12, "the Keys table was found, got \(promised.count) rows")
+
+        let wired = Set(keyEquivalents(in: root))
+        for key in promised.sorted() {
+            expect(wired.contains(key), "\(key) is in the menu, not only in the README")
+        }
+    }
+
+    /// A file from the checkout, found relative to this source file.
+    ///
+    /// The check runs from wherever SwiftPM put the binary, so a path relative
+    /// to the working directory would find nothing.
+    private static func repositoryFile(_ path: String) -> String? {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // pfadi
+            .deletingLastPathComponent()  // Sources
+            .deletingLastPathComponent()  // the checkout
+        return try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    /// The shortcuts the README's `## Keys` block promises, normalised.
+    private static func documentedKeys(in readme: String) -> [String] {
+        guard let block = readme.range(of: "## Keys"),
+            let fence = readme.range(of: "```text", range: block.upperBound..<readme.endIndex),
+            let end = readme.range(of: "```", range: fence.upperBound..<readme.endIndex)
+        else { return [] }
+
+        var found: Set<String> = []
+        for line in readme[fence.upperBound..<end.lowerBound].split(separator: "\n") {
+            guard let token = line.split(separator: " ").first.map(String.init) else { continue }
+            // Only the ones that are a modifier plus a key. Bare letters are
+            // type-ahead, and words like "click" and "return" are not keys a
+            // menu carries.
+            guard token.contains("⌘") else { continue }
+            // A key, not a gesture. The table also lists ⌘click and ⇧click,
+            // which no menu carries and which are described in prose below it.
+            let normalised = normalise(token)
+            let bare = normalised.drop { "⌃⌥⇧⌘".contains($0) }
+            guard bare.count == 1 else { continue }
+            found.insert(normalised)
+        }
+        return Array(found)
+    }
+
+    /// Every key equivalent the menu actually carries, in the same spelling.
+    private static func keyEquivalents(in menu: NSMenu) -> [String] {
+        var found: [String] = []
+        for item in menu.items {
+            if !item.keyEquivalent.isEmpty {
+                var text = ""
+                if item.keyEquivalentModifierMask.contains(.control) { text += "⌃" }
+                if item.keyEquivalentModifierMask.contains(.option) { text += "⌥" }
+                if item.keyEquivalentModifierMask.contains(.shift) { text += "⇧" }
+                if item.keyEquivalentModifierMask.contains(.command) { text += "⌘" }
+                found.append(normalise(text + item.keyEquivalent))
+            }
+            if let submenu = item.submenu {
+                found += keyEquivalents(in: submenu)
+            }
+        }
+        return found
+    }
+
+    /// One spelling for a shortcut.
+    ///
+    /// The README writes a letter in capitals by the usual macOS convention —
+    /// ⌘D is command and D, not command-shift-D — so case carries no meaning
+    /// and is folded away. Only a written ⇧ is shift. AppKit stores the arrows
+    /// and delete as function-key code points, which are mapped back to the
+    /// symbols the README uses.
+    private static func normalise(_ token: String) -> String {
+        let modifiers = "⌃⌥⇧⌘"
+        var flags = Set<Character>()
+        var key = ""
+        for character in token {
+            if modifiers.contains(character) {
+                flags.insert(character)
+            } else {
+                key.append(character)
+            }
+        }
+
+        let special: [Character: Character] = [
+            Character(UnicodeScalar(NSUpArrowFunctionKey)!): "↑",
+            Character(UnicodeScalar(NSDownArrowFunctionKey)!): "↓",
+            Character(UnicodeScalar(NSLeftArrowFunctionKey)!): "←",
+            Character(UnicodeScalar(NSRightArrowFunctionKey)!): "→",
+            Character(UnicodeScalar(UInt32(NSBackspaceCharacter))!): "⌫",
+        ]
+        key = String(key.map { special[$0] ?? $0 })
+
+        let ordered = modifiers.filter { flags.contains($0) }
+        return String(ordered) + key.lowercased()
+    }
+
+    /// Dark, and dark by default.    /// Dark, and dark by default.
     ///
     /// Checked on NSApp rather than on a window: a window can be told to be
     /// dark while every panel and menu around it stays light, which is the
@@ -758,9 +878,6 @@ enum LayoutCheck {
         expect(
             same(browser.currentDirectory, parent),
             "a double click goes straight there, got \(browser.currentDirectory.path)")
-        expect(
-            !browser.isPathMenuPending,
-            "and no menu was left waiting to open on top of it")
     }
 
     /// Trashing a selection where the system refuses part of it.
