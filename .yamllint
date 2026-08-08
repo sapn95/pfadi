@@ -1,12 +1,18 @@
----
 extends: default
+
 rules:
   line-length:
     max: 100
     level: warning
   truthy:
+    # `on:` in a workflow is the trigger block, not the boolean.
     check-keys: false
   comments:
     min-spaces-from-content: 1
+  # GitHub's own workflow examples carry no `---`, and neither do the other
+  # repositories here. Requiring it would mean keeping one file in step with a
+  # rule that has nothing behind it.
+  document-start: disable
+
 ignore: |
   .build/
