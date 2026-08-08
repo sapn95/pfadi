@@ -327,6 +327,9 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.imageView?.image = NSImage(
                 systemSymbolName: "network", accessibilityDescription: nil)
             cell.textField?.stringValue = "Connect to Server…"
+            // Cleared, because this cell was last used for a row that had one
+            // and a reused view keeps whatever it was given.
+            cell.textField?.toolTip = nil
             return cell
 
         case .place(let url, let title, let section):

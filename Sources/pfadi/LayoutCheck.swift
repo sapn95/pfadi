@@ -312,6 +312,22 @@ enum LayoutCheck {
             shown.tiffRepresentation == expected.tiffRepresentation,
             "a file shows the icon of \(browser.lastPathComponent), which opens it")
 
+        // A second type, so this cannot pass because every icon happens to be
+        // the same one.
+        let text = folder.appendingPathComponent("note.txt")
+        if let editor = NSWorkspace.shared.urlForApplication(toOpen: text) {
+            let expectedText = NSWorkspace.shared.icon(forFile: editor.path)
+            expectedText.size = FileIcons.listSize
+            expect(
+                FileIcons.icon(for: text, isDirectory: false).tiffRepresentation
+                    == expectedText.tiffRepresentation,
+                "and a .txt shows \(editor.lastPathComponent)")
+            expect(
+                editor.path != browser.path
+                    || expected.tiffRepresentation != expectedText.tiffRepresentation,
+                "two types either open in different applications or share one on purpose")
+        }
+
         // And a folder keeps its own, because no application opens a folder
         // and the folder icon carries its colour and its emoji.
         let folderIcon = FileIcons.icon(for: folder, isDirectory: true)
@@ -418,6 +434,15 @@ enum LayoutCheck {
         expect(
             !browser.hasEditableColumn,
             "no column claims to be editable, which is what silences doubleAction")
+
+        // That the table is wired to us at all, which is the part a patch
+        // removed and this restores.
+        let wiring = browser.doubleClickWiring
+        expect(
+            wiring.action == #selector(BrowserViewController.openSelection),
+            "the table's double-click action is the one that opens things, got "
+                + (wiring.action.map(NSStringFromSelector) ?? "none"))
+        expect(wiring.target === browser, "and it is sent to this window")
         expect(
             !browser.wouldBeginEditing(row: row),
             "and clicking an already-selected row does not start a rename, "

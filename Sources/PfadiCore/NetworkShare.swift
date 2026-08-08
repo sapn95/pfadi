@@ -18,7 +18,9 @@ public enum NetworkShare {
         guard let share, !share.isEmpty else {
             return url.host ?? url.absoluteString
         }
-        return share.removingPercentEncoding ?? share
+        // Not decoded again: pathComponents has already done it, and a second
+        // pass turns a share genuinely named "100%25" into "100%".
+        return share
     }
 
     /// cifs is smb under an older name, and both turn up in people's notes.

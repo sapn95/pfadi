@@ -224,3 +224,16 @@ extension ShareSuites {
         }
     }
 }
+
+extension ShareSuites {
+    /// A share name that contains a percent sign.
+    static func runEscaping() {
+        Harness.suite("sidebar: a share is decoded once, not twice") {
+            // pathComponents already decodes. Decoding again turns a share
+            // genuinely named "100%25" into "100%", which is a different name.
+            Harness.expectEqual(
+                NetworkShare.title(for: URL(string: "smb://filer/100%2525")!), "100%25",
+                "the name on the filer, not one percent-decode further")
+        }
+    }
+}

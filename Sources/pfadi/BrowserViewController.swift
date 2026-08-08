@@ -225,6 +225,12 @@ final class BrowserViewController: NSViewController {
         return tableView.shouldBeginEditing?(field) ?? false
     }
 
+    /// Whether the table will send its double-click action to us, and which,
+    /// for the checks. The wiring is the thing that was broken.
+    var doubleClickWiring: (target: AnyObject?, action: Selector?) {
+        (tableView.target as AnyObject?, tableView.doubleAction)
+    }
+
     /// Whether any column claims to be editable, for the checks.
     ///
     /// An editable column stops NSTableView sending its double-click action at
