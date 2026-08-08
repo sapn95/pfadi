@@ -6,6 +6,23 @@ import Foundation
 /// A share is an address, so it belongs in the same field rather than behind a
 /// separate dialog with its own history and its own idea of what you meant.
 public enum NetworkShare {
+    /// What a share is called in a sidebar 170 points wide.
+    ///
+    /// The share name, not the host. `smb://testfiler-prod-01.filer.sigma.sbb.ch/projects`
+    /// arrives on screen as `testfiler-pr…ma.sbb.ch`, which has lost both the
+    /// part that says which filer and the part that says which share. The share
+    /// name is short and it is what somebody was looking for; the whole address
+    /// goes on the tooltip.
+    public static func title(for url: URL) -> String {
+        let share = url.pathComponents.first { $0 != "/" && !$0.isEmpty }
+        guard let share, !share.isEmpty else {
+            return url.host ?? url.absoluteString
+        }
+        // Not decoded again: pathComponents has already done it, and a second
+        // pass turns a share genuinely named "100%25" into "100%".
+        return share
+    }
+
     /// cifs is smb under an older name, and both turn up in people's notes.
     public static let schemes = ["smb", "cifs", "nfs", "afp", "ftp", "ftps", "http", "https"]
 

@@ -12,7 +12,13 @@ final class SidebarViewController: NSViewController {
     private let favourites: Favourites
     private let home = FileManager.default.homeDirectoryForCurrentUser
     private let tableView = NSTableView()
+    private let searchField = NSSearchField()
     private var rows: [Row] = []
+    /// Everything there is, before the filter narrows it. Kept so typing does
+    /// not have to ask the kernel for the mounted volumes again on every
+    /// keystroke.
+    private var allRows: [Row] = []
+    private var query = ""
 
     /// A sidebar is a list of headings and things under them, and AppKit's
     /// table wants one flat array, so the two are spelled out as one type.
@@ -93,9 +99,26 @@ final class SidebarViewController: NSViewController {
         )
         tableView.menu = menu
 
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchField.placeholderString = "Filter"
+        searchField.sendsSearchStringImmediately = true
+        searchField.sendsWholeSearchString = false
+        searchField.controlSize = .small
+        searchField.font = .systemFont(ofSize: 11)
+        searchField.target = self
+        searchField.action = #selector(searchChanged(_:))
+
+        view.addSubview(searchField)
         view.addSubview(scrollView)
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            // Above the list rather than floating over it: thirty favourites is
+            // exactly when you need to see both the box and what it left.
+            searchField.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
+            searchField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            searchField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+
+            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 6),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -185,12 +208,78 @@ final class SidebarViewController: NSViewController {
         // that only appears once you already have one is no way in at all.
         built.append(.heading("Servers"))
         built += favourites.servers().map {
-            .place($0, title: $0.host ?? $0.absoluteString, section: .servers)
+            .place($0, title: NetworkShare.title(for: $0), section: .servers)
         }
         built.append(.connect)
 
-        rows = built
+        allRows = built
+        applyFilter()
+    }
+
+    @objc private func searchChanged(_ sender: NSSearchField) {
+        query = sender.stringValue.trimmingCharacters(in: .whitespaces)
+        applyFilter()
+    }
+
+    /// Narrows the sidebar to what was typed, headings and all.
+    ///
+    /// The same match every other filter in pfadi uses, so `dwn` finds
+    /// Downloads here exactly as it does in the file list. Ranked, because a
+    /// sidebar has no sort order of its own to protect — but only within a
+    /// section, so a favourite cannot jump above a heading it does not belong
+    /// under.
+    private func applyFilter() {
+        guard !query.isEmpty else {
+            rows = allRows
+            tableView.reloadData()
+            return
+        }
+
+        var narrowed: [Row] = []
+        var section: [Row] = []
+        var heading: Row?
+
+        func flush() {
+            let kept = FuzzyMatch.filter(section, query: query) { row in
+                if case .place(_, let title, _) = row { return title }
+                return ""
+            }
+            // A heading with nothing under it says only that a section exists,
+            // which is not what somebody filtering wants to read.
+            guard !kept.isEmpty else { return }
+            if let heading { narrowed.append(heading) }
+            narrowed += kept
+        }
+
+        for row in allRows {
+            switch row {
+            case .heading:
+                flush()
+                heading = row
+                section = []
+            case .place:
+                section.append(row)
+            case .connect:
+                // Always reachable, whatever was typed: a way in that
+                // disappears when you search is not a way in.
+                continue
+            }
+        }
+        flush()
+
+        if narrowed.isEmpty {
+            narrowed.append(.heading("No match"))
+        }
+        narrowed.append(.connect)
+
+        rows = narrowed
         tableView.reloadData()
+    }
+
+    /// Types into the sidebar's filter, for the checks.
+    func filter(by text: String) {
+        searchField.stringValue = text
+        searchChanged(searchField)
     }
 
     @objc private func removeClickedRow(_ sender: Any?) {
@@ -238,15 +327,29 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.imageView?.image = NSImage(
                 systemSymbolName: "network", accessibilityDescription: nil)
             cell.textField?.stringValue = "Connect to Server…"
+            // Cleared, because this cell was last used for a row that had one
+            // and a reused view keeps whatever it was given.
+            cell.textField?.toolTip = nil
             return cell
 
-        case .place(let url, let title, _):
+        case .place(let url, let title, let section):
             let id = NSUserInterfaceItemIdentifier("favouriteCell")
             let cell =
                 tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
                 ?? Self.makeCell(id: id)
-            cell.imageView?.image = NSWorkspace.shared.icon(forFile: url.path)
+            // A server is an address, not a file. Asking the filesystem for its
+            // icon gets the blank page it gives anything it cannot find, which
+            // is what a share that is not mounted looks like from here.
+            cell.imageView?.image =
+                section == .servers
+                ? NSImage(
+                    systemSymbolName: "externaldrive.connected.to.line.below",
+                    accessibilityDescription: nil)
+                : NSWorkspace.shared.icon(forFile: url.path)
             cell.textField?.stringValue = title
+            // The whole address, because the short form above deliberately
+            // drops the part that makes two shares on one filer look alike.
+            cell.textField?.toolTip = section == .servers ? url.absoluteString : url.path
             return cell
         }
     }

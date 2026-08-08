@@ -45,6 +45,7 @@ click    a folder in the path: everything beside it, with a filter
 2×click  a folder in the path: go there
 ›        the arrow after the last folder: everything inside it
 ⌘F       filter the folder you are in
+         and there is a filter at the top of the sidebar too
 space    Quick Look, and again to close it
 2×click  open a folder, or hand a file to whatever owns it
 return   the same, for whatever is selected
@@ -187,6 +188,29 @@ It says when it rewrote something, quoting both back, and a checkbox turns that
 off. An already-mounted share is found rather than mounted again, which is how
 people end up with `share-1` through `share-4`.
 
+## One match, everywhere
+
+Every filter in pfadi uses the same rule, and it is not `contains`. Somebody
+with thirty favourites types the initials of the one they want, and `dwn`
+matches nothing at all under a substring search.
+
+The rule is **subsequence**: every character of the query appears in the name,
+in order, not necessarily together. What makes that usable rather than merely
+permissive is the score — letters next to each other, and letters starting a
+word, count for more. So `doc` puts `Dock` and `Documents` above
+`undocumented`, which it also matches. Accents and case fold away, so `zurich`
+finds `Zürich`.
+
+| Where | Ordering |
+| --- | --- |
+| The sidebar filter | Best first, within each section |
+| The path bar's folder menu | Best first |
+| The file list, ⌘F | **Left alone.** This list is in whatever order its sort column says, and reordering it by score would fight the header you just clicked |
+
+The sidebar's filter keeps `Connect to Server…` whatever you type, because a way
+in that disappears when you search is not a way in, and it says `No match`
+rather than showing you an empty panel.
+
 ## Several at once
 
 ⇧↑ and ⇧↓ extend the selection, ⌘-click adds and removes one, shift-click takes
@@ -271,6 +295,27 @@ The appearance is set on the application, not on each window, so panels, menus,
 the Open With dialog and every window opened later agree with each other.
 Setting it per window is the half-done version that looks worse than not doing
 it at all.
+
+## Icons
+
+A file shows the icon of **whatever opens it**, not its document icon. What you
+want from a file list is to know what happens when you press return, and macOS's
+document icons only sometimes say: a `.sketch` file carries Sketch's branding,
+while half of everything else is the same white page.
+
+The trade is real and worth stating: a `.png` and a `.jpg` now look alike,
+because they open in the same thing. The **Kind** column is there for when that
+difference matters.
+
+Folders keep the icon macOS gives them — no application opens a folder, and on
+Tahoe that icon carries the folder's colour and emoji. `~/.Trash` is the one
+exception in the other direction: ask LaunchServices for it and you get a blank
+document sheet composited over a folder, so pfadi substitutes the wastebasket,
+which is what Finder does too.
+
+Which application opens what is cached by extension, because the answer is a
+property of the type rather than of the file, and asking is a round trip. ⌘R
+forgets it, for when something has just been installed.
 
 ## Columns
 

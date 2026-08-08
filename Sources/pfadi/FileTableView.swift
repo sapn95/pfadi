@@ -12,44 +12,36 @@ final class FileTableView: NSTableView {
     }
 
     var onReturn: (() -> Void)?
-    /// A double click on a row.
+    /// Whether a click may put a cell into editing.
     ///
-    /// Not `doubleAction`, which asks NSTableView whether both clicks belonged
-    /// to the same row by its own bookkeeping. That bookkeeping is disturbed by
-    /// anything that touches the rows in between — a cell rebuilt as a folder
-    /// measurement lands, a reload from the watcher — so opening a folder in a
-    /// busy directory became a matter of luck. `clickCount` is on the event
-    /// itself and does not care what the table did with its views.
-    var onDoubleClick: ((Int) -> Void)?
+    /// Answered by the controller, which knows whether a rename was asked for.
+    /// This is the hook AppKit provides for it, and using it is what lets the
+    /// table go back to deciding double clicks for itself.
+    var shouldBeginEditing: ((NSResponder) -> Bool)?
     var onTypeAhead: ((String) -> Void)?
     var onSpace: (() -> Void)?
 
     private var buffer = ""
     private var lastKeystroke: TimeInterval = 0
 
-    override func mouseDown(with event: NSEvent) {
-        // A bare double click only. ⌘-clicking the same row twice quickly is
-        // somebody toggling it out of a selection and back, and opening it for
-        // them would be infuriating; ⇧ is extending a range.
-        guard event.clickCount >= 2,
-            !event.modifierFlags.intersects([.command, .shift, .option, .control])
-        else {
-            super.mouseDown(with: event)
-            return
+    /// AppKit asks this before letting a click start editing a cell.
+    ///
+    /// Its default says yes for any view in a selected row, so clicking the
+    /// name of a row that is already selected begins a rename — and the click
+    /// that started it is consumed, which is why a double click on a selected
+    /// folder sometimes did nothing at all. Renaming here is asked for
+    /// deliberately, with F2 or from the menu, so nothing else may start one.
+    override func validateProposedFirstResponder(
+        _ responder: NSResponder,
+        for event: NSEvent?
+    ) -> Bool {
+        // Not a mouse event: the field editor being installed by editColumn,
+        // or the keyboard moving focus. Neither is a click to be protected
+        // from.
+        guard let event, event.type == .leftMouseDown || event.type == .rightMouseDown else {
+            return super.validateProposedFirstResponder(responder, for: event)
         }
-        let row = self.row(at: convert(event.locationInWindow, from: nil))
-        // On a row, not on the empty space below the last one, which would
-        // otherwise open whatever happened to still be selected.
-        guard row >= 0 else {
-            super.mouseDown(with: event)
-            return
-        }
-
-        // Deliberately without calling super. The first click already selected
-        // the row, and NSTableView's mouseDown runs a tracking loop for drag
-        // detection that has nothing to do here and would only wait for a
-        // mouse-up that has already been and gone.
-        onDoubleClick?(row)
+        return shouldBeginEditing?(responder) ?? false
     }
 
     override func keyDown(with event: NSEvent) {

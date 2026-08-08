@@ -193,3 +193,47 @@ enum ShareSuites {
         }
     }
 }
+
+extension ShareSuites {
+    /// What a share is called in a sidebar 170 points wide.
+    static func runTitles() {
+        Harness.suite("sidebar: a share is named by its share, not its host") {
+            // The host does not fit. What arrived on screen was
+            // "testfiler-pr…ma.sbb.ch", which has lost both the part saying
+            // which filer and the part saying which share.
+            Harness.expectEqual(
+                NetworkShare.title(
+                    for: URL(string: "smb://testfiler-prod-01.filer.sigma.sbb.ch/projects")!),
+                "projects", "the share name")
+            Harness.expectEqual(
+                NetworkShare.title(for: URL(string: "nfs://filer/export/data")!),
+                "export", "the first component, not the whole path")
+        }
+
+        Harness.suite("sidebar: a host with no share falls back to the host") {
+            Harness.expectEqual(
+                NetworkShare.title(for: URL(string: "smb://filer.example.com")!),
+                "filer.example.com", "there is nothing else to call it")
+        }
+
+        Harness.suite("sidebar: an escaped share name is readable") {
+            Harness.expectEqual(
+                NetworkShare.title(
+                    for: URL(string: "smb://filer/team%20share")!),
+                "team share", "rather than showing the percent signs")
+        }
+    }
+}
+
+extension ShareSuites {
+    /// A share name that contains a percent sign.
+    static func runEscaping() {
+        Harness.suite("sidebar: a share is decoded once, not twice") {
+            // pathComponents already decodes. Decoding again turns a share
+            // genuinely named "100%25" into "100%", which is a different name.
+            Harness.expectEqual(
+                NetworkShare.title(for: URL(string: "smb://filer/100%2525")!), "100%25",
+                "the name on the filer, not one percent-decode further")
+        }
+    }
+}

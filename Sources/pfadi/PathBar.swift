@@ -303,13 +303,10 @@ final class PathBar: NSView {
             let keep = 2
             while menu.numberOfItems > keep { menu.removeItem(at: keep) }
 
-            let matching =
-                text.isEmpty
-                ? folders
-                : folders.filter {
-                    $0.lastPathComponent.range(
-                        of: text, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-                }
+            // Ranked, unlike the file list: this menu has no order of its own
+            // to protect, so the closest match belongs at the top where the
+            // keyboard already is.
+            let matching = FuzzyMatch.filter(folders, query: text) { $0.lastPathComponent }
 
             guard !matching.isEmpty else {
                 let empty = menu.addItem(
