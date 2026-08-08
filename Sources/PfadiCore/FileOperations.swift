@@ -41,21 +41,62 @@ public enum FileOperations {
     ///
     /// Matches what Finder does, including starting at 2 rather than 1: the
     /// first one has no number, so `untitled folder 1` would be the second.
+    /// A name nothing in `directory` is already using.
+    ///
+    /// The number goes before the extension, not after it: "untitled 2.txt",
+    /// never "untitled.txt 2". A name whose extension has a space and a digit
+    /// in the middle of it is not a name macOS or anything else understands.
     public static func availableName(
         _ base: String,
         in directory: URL,
         fileManager: FileManager = .default
     ) -> String {
-        var candidate = base
+        guard fileManager.fileExists(atPath: directory.appendingPathComponent(base).path) else {
+            return base
+        }
+
+        // Split on the last dot rather than through URL, which would treat a
+        // dotfile like ".zshrc" as all extension and no name.
+        let url = URL(fileURLWithPath: base)
+        let ext = url.pathExtension
+        let stem =
+            ext.isEmpty || base.hasPrefix(".")
+            ? base : url.deletingPathExtension().lastPathComponent
+
         var counter = 2
-        while fileManager.fileExists(atPath: directory.appendingPathComponent(candidate).path) {
-            candidate = "\(base) \(counter)"
+        while true {
+            let candidate =
+                ext.isEmpty || base.hasPrefix(".")
+                ? "\(stem) \(counter)"
+                : "\(stem) \(counter).\(ext)"
+            guard fileManager.fileExists(atPath: directory.appendingPathComponent(candidate).path)
+            else { return candidate }
             counter += 1
         }
-        return candidate
     }
 
     @discardableResult
+    /// Makes an empty file and hands back where it landed.
+    ///
+    /// Refuses rather than truncating when something is already there: a
+    /// "new file" that silently emptied an existing one would be the worst
+    /// command in the application.
+    public static func createFile(
+        named name: String,
+        in directory: URL,
+        fileManager: FileManager = .default
+    ) throws -> URL {
+        let url = directory.appendingPathComponent(name)
+        guard !fileManager.fileExists(atPath: url.path) else {
+            throw CocoaError(
+                .fileWriteFileExists, userInfo: [NSFilePathErrorKey: url.path])
+        }
+        guard fileManager.createFile(atPath: url.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
+        }
+        return url.standardizedFileURL
+    }
+
     public static func createFolder(
         named name: String,
         in directory: URL,

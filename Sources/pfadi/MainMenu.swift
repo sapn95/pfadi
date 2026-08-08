@@ -78,6 +78,13 @@ enum MainMenu {
 
         menu.addItem(.separator())
 
+        let file = menu.addItem(
+            withTitle: "New File",
+            action: #selector(BrowserViewController.newFile(_:)),
+            keyEquivalent: "n"
+        )
+        file.keyEquivalentModifierMask = [.command, .control]
+
         let folder = menu.addItem(
             withTitle: "New Folder",
             action: #selector(BrowserViewController.newFolder(_:)),

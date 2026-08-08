@@ -132,3 +132,64 @@ enum WriteSuites {
         }
     }
 }
+
+extension WriteSuites {
+    /// Making a file, and naming things that already exist.
+    static func runCreating() {
+        Harness.suite("create: a file is made empty and refuses to replace one") {
+            try withSandbox([]) { root in
+                let made = try FileOperations.createFile(named: "notes.txt", in: root)
+                Harness.expect(
+                    FileManager.default.fileExists(atPath: made.path), "it is there")
+                Harness.expectEqual(
+                    (try? Data(contentsOf: made))?.count, 0, "and empty")
+
+                // The worst command in the application would be a "new file"
+                // that silently emptied one that was already there.
+                try Data("keep me".utf8).write(to: root.appendingPathComponent("real.txt"))
+                var refused = false
+                do {
+                    _ = try FileOperations.createFile(named: "real.txt", in: root)
+                } catch {
+                    refused = true
+                }
+                Harness.expect(refused, "making one over an existing file is refused")
+                Harness.expectEqual(
+                    try String(
+                        contentsOf: root.appendingPathComponent("real.txt"), encoding: .utf8),
+                    "keep me", "and the existing one is untouched")
+            }
+        }
+
+        Harness.suite("create: the number goes before the extension") {
+            try withSandbox(["untitled.txt"]) { root in
+                Harness.expectEqual(
+                    FileOperations.availableName("untitled.txt", in: root), "untitled 2.txt",
+                    "not untitled.txt 2, which puts a space and a digit in the extension")
+
+                try Data().write(to: root.appendingPathComponent("untitled 2.txt"))
+                Harness.expectEqual(
+                    FileOperations.availableName("untitled.txt", in: root), "untitled 3.txt",
+                    "and it keeps counting")
+            }
+        }
+
+        Harness.suite("create: a name with no extension just counts") {
+            try withSandbox(["untitled folder"], directories: ["untitled folder"]) { root in
+                Harness.expectEqual(
+                    FileOperations.availableName("untitled folder", in: root),
+                    "untitled folder 2", "nothing to put a number in front of")
+            }
+        }
+
+        Harness.suite("create: a dotfile is a name, not an extension") {
+            // URL says ".zshrc" is all extension and no name. Splitting on that
+            // would produce " 2.zshrc", which is not what anybody meant.
+            try withSandbox([".zshrc"]) { root in
+                Harness.expectEqual(
+                    FileOperations.availableName(".zshrc", in: root), ".zshrc 2",
+                    "counted whole")
+            }
+        }
+    }
+}
