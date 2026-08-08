@@ -296,36 +296,33 @@ enum LayoutCheck {
         }
 
         let html = folder.appendingPathComponent("page.html")
-        let browser = NSWorkspace.shared.urlForApplication(toOpen: html)
-        guard let browser else {
-            print("  ..   nothing opens .html here, skipped")
-            return
-        }
-
-        // The same image the application's own icon is, not merely "some
-        // image": a document icon would also be non-nil and would look like
-        // this working.
-        let shown = FileIcons.icon(for: html, isDirectory: false)
-        let expected = NSWorkspace.shared.icon(forFile: browser.path)
-        expected.size = FileIcons.listSize
-        expect(
-            shown.tiffRepresentation == expected.tiffRepresentation,
-            "a file shows the icon of \(browser.lastPathComponent), which opens it")
-
-        // A second type, so this cannot pass because every icon happens to be
-        // the same one.
         let text = folder.appendingPathComponent("note.txt")
-        if let editor = NSWorkspace.shared.urlForApplication(toOpen: text) {
-            let expectedText = NSWorkspace.shared.icon(forFile: editor.path)
-            expectedText.size = FileIcons.listSize
+
+        // Against the same resolution the icon uses. The first version of this
+        // asked LaunchServices itself, which is a different question — it
+        // passed here and failed on a runner where the two disagreed about
+        // .txt.
+        for file in [html, text] {
+            guard let application = FileIcons.openingApplication(for: file) else {
+                print("  ..   nothing opens \(file.lastPathComponent) here, skipped")
+                continue
+            }
+
+            let shown = FileIcons.icon(for: file, isDirectory: false)
+            let expected = NSWorkspace.shared.icon(forFile: application.path)
+            expected.size = FileIcons.listSize
             expect(
-                FileIcons.icon(for: text, isDirectory: false).tiffRepresentation
-                    == expectedText.tiffRepresentation,
-                "and a .txt shows \(editor.lastPathComponent)")
+                shown.tiffRepresentation == expected.tiffRepresentation,
+                "\(file.lastPathComponent) shows \(application.lastPathComponent), which opens it")
+
+            // The substantive claim, and the one that does not depend on which
+            // application happens to be installed: it is not the document icon
+            // any more.
+            let document = NSWorkspace.shared.icon(forFile: file.path)
+            document.size = FileIcons.listSize
             expect(
-                editor.path != browser.path
-                    || expected.tiffRepresentation != expectedText.tiffRepresentation,
-                "two types either open in different applications or share one on purpose")
+                shown.tiffRepresentation != document.tiffRepresentation,
+                "and not the document icon it used to show")
         }
 
         // And a folder keeps its own, because no application opens a folder

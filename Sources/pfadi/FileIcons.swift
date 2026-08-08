@@ -56,6 +56,14 @@ enum FileIcons {
     /// The answer is a property of the type anyway, so this is also the
     /// question that was meant. A folder of forty thousand files has a handful
     /// of extensions between them.
+    /// Which application opens this, for the checks and for anything that
+    /// wants to name it. The same resolution the icon uses, so a check cannot
+    /// accidentally ask a different question — which one did, and passed here
+    /// while failing on a runner where the two disagreed.
+    static func openingApplication(for url: URL) -> URL? {
+        opener(for: url)
+    }
+
     private static func opener(for url: URL) -> URL? {
         let key = url.pathExtension.lowercased()
         guard !key.isEmpty else {
