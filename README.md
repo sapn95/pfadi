@@ -385,6 +385,11 @@ pfadi-default credentials off
 
 `{host}`, `{share}`, `{user}`, `{scheme}` and `{url}` are filled in.
 
+**[docs/credentials.md](docs/credentials.md)** is the long version: setting up
+Proton Pass step by step, the recipes for 1Password, `pass`, Bitwarden and
+KeePassXC, when to wrap it in a script, and how to check it against your own
+manager.
+
 **Deliberately not "Proton Pass support".** pfadi knows nothing about any
 password manager and never will — it runs a command and reads one line. Proton
 Pass has an official CLI as of November 2025 and it is the only programmatic

@@ -192,3 +192,39 @@ enum CredentialSuites {
         }
     }
 }
+
+extension CredentialSuites {
+    /// The whole path, against a real password manager.
+    ///
+    /// Skipped unless PFADI_CREDENTIAL_CHECK names a command, because a check
+    /// cannot assume anybody has one installed, let alone logged in. What it
+    /// proves when it does run is the only thing the unit tests above cannot:
+    /// that a real manager's output is what this code expects.
+    static func runAgainstRealManager() {
+        guard let template = ProcessInfo.processInfo.environment["PFADI_CREDENTIAL_CHECK"],
+            let host = ProcessInfo.processInfo.environment["PFADI_CREDENTIAL_HOST"]
+        else { return }
+
+        Harness.suite("credentials: a real password manager answers") {
+            guard let command = CredentialCommand(template) else {
+                Harness.expect(false, "PFADI_CREDENTIAL_CHECK parses as a command")
+                return
+            }
+            let share = URL(string: "smb://\(host)/share")!
+            switch CredentialRunner.run(command, for: share) {
+            case .password(let password):
+                // The length, never the password. A check that printed it
+                // would put it in a CI log.
+                Harness.expect(
+                    !password.isEmpty, "it answered with \(password.count) characters")
+                Harness.expect(
+                    !password.contains("\n"),
+                    "on one line, which is what the mount is handed")
+            case .nothing:
+                Harness.expect(false, "it found nothing for \(host)")
+            case .failed(let why):
+                Harness.expect(false, "it failed: \(why)")
+            }
+        }
+    }
+}
