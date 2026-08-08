@@ -64,20 +64,23 @@ enum ConnectSheet {
             "Turns \\\\server\\share and //server/share into an address. "
             + "Off means only a real smb:// or nfs:// is accepted."
 
-        let previous = NSPopUpButton()
-        previous.addItem(withTitle: "Recent servers")
-        for url in recents {
-            previous.addItem(withTitle: url.absoluteString)
-        }
-        previous.isHidden = recents.isEmpty
+        // A list, not a popup button.
+        //
+        // The popup showed each address as its whole absoluteString, changed
+        // its own title to whatever was picked so the label was gone after the
+        // first use, and could only be reached with the mouse. With a dozen
+        // filers it was the worst control in the application.
+        let known = KnownConnections(servers: recents)
+        known.isHidden = recents.isEmpty
 
         // The controls talk to each other rather than to the caller, so the
         // sheet stays a value in and a value out.
-        let coordinator = Coordinator(picker: picker, field: field, hint: hint, previous: previous)
+        let coordinator = Coordinator(picker: picker, field: field, hint: hint)
         picker.target = coordinator
         picker.action = #selector(Coordinator.schemeChanged)
-        previous.target = coordinator
-        previous.action = #selector(Coordinator.recentChosen)
+        known.onChoose = { [weak coordinator] url in
+            coordinator?.use(url)
+        }
 
         // Grouped rather than evenly spaced: the field belongs to the protocol
         // above it and the hint belongs to the field, so those sit close and
@@ -88,14 +91,14 @@ enum ConnectSheet {
         entry.spacing = 6
         entry.setCustomSpacing(10, after: picker)
 
-        let stack = NSStackView(views: [entry, previous, magic])
+        let stack = NSStackView(views: [entry, known, magic])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 16
         stack.edgeInsets = NSEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
         stack.translatesAutoresizingMaskIntoConstraints = false
         field.widthAnchor.constraint(equalToConstant: 360).isActive = true
-        previous.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        known.widthAnchor.constraint(equalToConstant: 360).isActive = true
         hint.widthAnchor.constraint(lessThanOrEqualToConstant: 360).isActive = true
 
         // Sized to what it holds, then given that as a frame. An accessory
@@ -147,16 +150,11 @@ enum ConnectSheet {
         private let picker: NSSegmentedControl
         private let field: NSTextField
         private let hint: NSTextField
-        private let previous: NSPopUpButton
 
-        init(
-            picker: NSSegmentedControl, field: NSTextField, hint: NSTextField,
-            previous: NSPopUpButton
-        ) {
+        init(picker: NSSegmentedControl, field: NSTextField, hint: NSTextField) {
             self.picker = picker
             self.field = field
             self.hint = hint
-            self.previous = previous
         }
 
         @objc func schemeChanged() {
@@ -165,19 +163,21 @@ enum ConnectSheet {
             hint.stringValue = scheme.hint
         }
 
-        @objc func recentChosen() {
-            guard previous.indexOfSelectedItem > 0,
-                let title = previous.titleOfSelectedItem,
-                let url = URL(string: title)
-            else { return }
-
-            // Set the button to match what was picked, so the field and the
-            // button never disagree about which protocol this is.
+        /// Fills the field in from something picked out of the list.
+        func use(_ url: URL) {
+            // The button follows, so the field and the button never disagree
+            // about which protocol this is.
             if let index = ConnectSheet.schemes.firstIndex(where: { $0.scheme == url.scheme }) {
                 picker.selectedSegment = index
                 schemeChanged()
             }
-            field.stringValue = (url.host ?? "") + url.path
+            // The user with it. It was dropped, so picking a share you connect
+            // to as somebody else put you back to guessing, or to the wrong
+            // account.
+            let user = url.user.map { "\($0)@" } ?? ""
+            field.stringValue = user + (url.host ?? "") + url.path
+            field.window?.makeFirstResponder(field)
+            field.currentEditor()?.selectAll(nil)
         }
     }
 }

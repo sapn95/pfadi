@@ -237,3 +237,80 @@ extension ShareSuites {
         }
     }
 }
+
+extension ShareSuites {
+    /// What the path bar may and may not read as a server.
+    static func runPathBarReading() {
+        Harness.suite("path bar: a UNC path is a server") {
+            Harness.expectEqual(
+                NetworkShare.unambiguousShare(from: "\\\\filer\\share", rewriting: true)?
+                    .url.absoluteString,
+                "smb://filer/share",
+                "which is the whole reason this exists: it worked in the sheet and "
+                    + "did nothing in the bar")
+            Harness.expectEqual(
+                NetworkShare.unambiguousShare(from: "\\\\filer\\team share\\docs", rewriting: true)?
+                    .url.absoluteString,
+                "smb://filer/team%20share/docs", "spaces and all")
+        }
+
+        Harness.suite("path bar: a relative path is NOT a server") {
+            // The regression this nearly shipped with. The connect sheet reads
+            // `filer/share` as a share because you are already naming a server
+            // there; in the path bar the same text is a folder, and reading it
+            // as smb:// would take somebody typing Sources/PfadiCore to a
+            // machine called Sources.
+            for local in ["Sources/PfadiCore", "docs/credentials.md", "a/b/c", "Downloads"] {
+                Harness.expect(
+                    NetworkShare.unambiguousShare(from: local, rewriting: true) == nil,
+                    "\(local) is a path, not a server")
+            }
+        }
+
+        Harness.suite("path bar: an address that names its scheme is taken as one") {
+            Harness.expectEqual(
+                NetworkShare.unambiguousShare(from: "smb://filer/share", rewriting: false)?
+                    .url.absoluteString,
+                "smb://filer/share", "even with rewriting off, because nothing was rewritten")
+            Harness.expect(
+                NetworkShare.unambiguousShare(from: "\\\\filer\\share", rewriting: false) == nil,
+                "and with rewriting off a UNC path is left alone")
+        }
+    }
+}
+
+extension ShareSuites {
+    /// The list of servers you have connected to before.
+    static func runKnownServers() {
+        Harness.suite("servers: one can be forgotten") {
+            // There was no way to. A server typed once with a spelling mistake
+            // stayed in the list for good.
+            let store = MemoryStore()
+            let favourites = Favourites(preferences: Preferences(store: store))
+            favourites.rememberServer(URL(string: "smb://filer97.sbb.ch/projects")!)
+            favourites.rememberServer(URL(string: "smb://typo-filer/share")!)
+            Harness.expectEqual(favourites.servers().count, 2, "both remembered")
+
+            Harness.expect(
+                favourites.forgetServer(URL(string: "smb://typo-filer/share")!),
+                "and the mistake can go")
+            Harness.expectEqual(
+                favourites.servers().map(\.absoluteString), ["smb://filer97.sbb.ch/projects"],
+                "leaving the other alone")
+            Harness.expect(
+                !favourites.forgetServer(URL(string: "smb://never-seen/x")!),
+                "forgetting one that was never there changes nothing and says so")
+        }
+
+        Harness.suite("servers: the user is part of the address") {
+            // It was dropped when a recent was picked, so connecting to a share
+            // you reach as somebody else put you back to guessing.
+            let store = MemoryStore()
+            let favourites = Favourites(preferences: Preferences(store: store))
+            let withUser = URL(string: "smb://sapn@filer97.sbb.ch/projects")!
+            favourites.rememberServer(withUser)
+            Harness.expectEqual(
+                favourites.servers().first?.user, "sapn", "remembered with it")
+        }
+    }
+}
