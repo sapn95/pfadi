@@ -296,6 +296,27 @@ the Open With dialog and every window opened later agree with each other.
 Setting it per window is the half-done version that looks worse than not doing
 it at all.
 
+## Icons
+
+A file shows the icon of **whatever opens it**, not its document icon. What you
+want from a file list is to know what happens when you press return, and macOS's
+document icons only sometimes say: a `.sketch` file carries Sketch's branding,
+while half of everything else is the same white page.
+
+The trade is real and worth stating: a `.png` and a `.jpg` now look alike,
+because they open in the same thing. The **Kind** column is there for when that
+difference matters.
+
+Folders keep the icon macOS gives them — no application opens a folder, and on
+Tahoe that icon carries the folder's colour and emoji. `~/.Trash` is the one
+exception in the other direction: ask LaunchServices for it and you get a blank
+document sheet composited over a folder, so pfadi substitutes the wastebasket,
+which is what Finder does too.
+
+Which application opens what is cached by extension, because the answer is a
+property of the type rather than of the file, and asking is a round trip. ⌘R
+forgets it, for when something has just been installed.
+
 ## Columns
 
 Twelve of them. Three are on to begin with.

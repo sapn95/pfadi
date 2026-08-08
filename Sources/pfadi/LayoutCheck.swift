@@ -282,6 +282,46 @@ enum LayoutCheck {
         openingFolders(in: window, fixture: fixture)
         creating(in: window, fixture: fixture)
         sidebarFilter(in: window)
+        icons(in: window, fixture: fixture)
+    }
+
+    /// A file shows the icon of whatever opens it.
+    private static func icons(in window: BrowserWindow, fixture: URL) {
+        let manager = FileManager.default
+        let folder = fixture.appendingPathComponent("iconable")
+        try? manager.createDirectory(at: folder, withIntermediateDirectories: true)
+        for name in ["page.html", "note.txt"] {
+            manager.createFile(
+                atPath: folder.appendingPathComponent(name).path, contents: Data("x".utf8))
+        }
+
+        let html = folder.appendingPathComponent("page.html")
+        let browser = NSWorkspace.shared.urlForApplication(toOpen: html)
+        guard let browser else {
+            print("  ..   nothing opens .html here, skipped")
+            return
+        }
+
+        // The same image the application's own icon is, not merely "some
+        // image": a document icon would also be non-nil and would look like
+        // this working.
+        let shown = FileIcons.icon(for: html, isDirectory: false)
+        let expected = NSWorkspace.shared.icon(forFile: browser.path)
+        expected.size = FileIcons.listSize
+        expect(
+            shown.tiffRepresentation == expected.tiffRepresentation,
+            "a file shows the icon of \(browser.lastPathComponent), which opens it")
+
+        // And a folder keeps its own, because no application opens a folder
+        // and the folder icon carries its colour and its emoji.
+        let folderIcon = FileIcons.icon(for: folder, isDirectory: true)
+        let systemFolder = NSWorkspace.shared.icon(forFile: folder.path)
+        systemFolder.size = FileIcons.listSize
+        expect(
+            folderIcon.tiffRepresentation == systemFolder.tiffRepresentation,
+            "and a folder keeps the one macOS gives it")
+
+        try? manager.removeItem(at: folder)
     }
 
     /// The sidebar's filter, and that it is the same match as everywhere else.
@@ -371,12 +411,20 @@ enum LayoutCheck {
             print("  FAIL the folder to open is listed")
             return
         }
-        // A real event through the table's own mouseDown, not a call to the
-        // action behind it. NSTableView's doubleAction asks its own bookkeeping
-        // whether both clicks belonged to the same row, and that bookkeeping is
-        // disturbed by anything touching the rows in between — which made
-        // opening a folder in a busy directory a matter of luck.
-        expect(browser.doubleClickRow(row), "the row can be double-clicked")
+        // The two things that were actually wrong, asked directly. A synthetic
+        // double click cannot be checked here: NSTableView's mouseDown runs a
+        // tracking loop waiting for a mouse-up only the window server can
+        // deliver, so driving it hangs.
+        expect(
+            !browser.hasEditableColumn,
+            "no column claims to be editable, which is what silences doubleAction")
+        expect(
+            !browser.wouldBeginEditing(row: row),
+            "and clicking an already-selected row does not start a rename, "
+                + "which is what ate the click")
+
+        browser.selectRange(row..<(row + 1))
+        browser.activateSelection()
         settle(until: { browser.listedDirectory?.path == inside.path }, seconds: 5)
         expect(
             same(browser.currentDirectory, inside),
@@ -391,7 +439,8 @@ enum LayoutCheck {
         settle(until: { browser.rowIndex(of: "openable") != nil })
         guard let again = browser.rowIndex(of: "openable") else { return }
         browser.reloadAsWatcherWould()
-        browser.doubleClickRow(again)
+        browser.selectRange(again..<(again + 1))
+        browser.activateSelection()
         settle(until: { browser.listedDirectory?.path == inside.path }, seconds: 5)
         expect(
             same(browser.currentDirectory, inside),
@@ -405,7 +454,7 @@ enum LayoutCheck {
         if browser.rowCount >= 2 {
             browser.selectRange(0..<2)
             let picked = browser.selectedNames
-            browser.doubleClickRow(0)
+            browser.activateSelection()
             settle(seconds: 0.4)
             expect(
                 browser.selectedNames == picked || browser.listedDirectory?.path != fixture.path,

@@ -113,6 +113,20 @@ The item is then not selected, only its folder opened:
 goes through the same preference and is redirected too, and the only remaining
 route that selects needs an automation permission that a menu item has no
 business asking for.
+.Sh ICONS
+A file shows the icon of the application that opens it rather than its document
+icon, because what a file list is for is knowing what pressing return will do.
+A
+.Pa .png
+and a
+.Pa .jpg
+therefore look alike; the
+.Sy Kind
+column distinguishes them.
+.Pp
+Folders keep the icon macOS gives them.
+The answer is cached per extension and forgotten by
+.Ic \(**R .
 .Sh COLUMNS
 Twelve, of which
 .Sy Name , Sy Size No and Sy Modified

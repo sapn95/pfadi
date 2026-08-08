@@ -208,7 +208,7 @@ final class SidebarViewController: NSViewController {
         // that only appears once you already have one is no way in at all.
         built.append(.heading("Servers"))
         built += favourites.servers().map {
-            .place($0, title: $0.host ?? $0.absoluteString, section: .servers)
+            .place($0, title: NetworkShare.title(for: $0), section: .servers)
         }
         built.append(.connect)
 
@@ -329,13 +329,24 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.textField?.stringValue = "Connect to Server…"
             return cell
 
-        case .place(let url, let title, _):
+        case .place(let url, let title, let section):
             let id = NSUserInterfaceItemIdentifier("favouriteCell")
             let cell =
                 tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
                 ?? Self.makeCell(id: id)
-            cell.imageView?.image = NSWorkspace.shared.icon(forFile: url.path)
+            // A server is an address, not a file. Asking the filesystem for its
+            // icon gets the blank page it gives anything it cannot find, which
+            // is what a share that is not mounted looks like from here.
+            cell.imageView?.image =
+                section == .servers
+                ? NSImage(
+                    systemSymbolName: "externaldrive.connected.to.line.below",
+                    accessibilityDescription: nil)
+                : NSWorkspace.shared.icon(forFile: url.path)
             cell.textField?.stringValue = title
+            // The whole address, because the short form above deliberately
+            // drops the part that makes two shares on one filer look alike.
+            cell.textField?.toolTip = section == .servers ? url.absoluteString : url.path
             return cell
         }
     }

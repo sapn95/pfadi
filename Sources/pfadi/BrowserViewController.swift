@@ -203,32 +203,37 @@ final class BrowserViewController: NSViewController {
         tableView.deselectAll(nil)
     }
 
-    /// Double-clicks a row the way a mouse does, for the checks.
+    /// Whether a click on this row would be allowed to start a rename.
     ///
-    /// A real event through the table's own `mouseDown`, not a call to the
-    /// action behind it. What was broken was the path between the two, and a check
-    /// that steps over it proves nothing.
-    @discardableResult
-    func doubleClickRow(_ row: Int) -> Bool {
+    /// The bug, in one question. AppKit's default answer is yes for any view in
+    /// a selected row, so clicking the name of an already-selected folder began
+    /// an edit and consumed the click that started it — which is why it took
+    /// three tries and why it depended on whether the row was selected already.
+    ///
+    /// Asked rather than clicked because a synthetic double click cannot be
+    /// checked here: NSTableView's mouseDown runs a tracking loop waiting for a
+    /// mouse-up that only the window server can deliver, so driving it directly
+    /// hangs. What can be checked is the thing that was wrong.
+    func wouldBeginEditing(row: Int) -> Bool {
         guard entries.indices.contains(row) else { return false }
-        let rect = tableView.rect(ofRow: row)
-        let point = NSPoint(x: rect.midX, y: rect.midY)
-        let event = NSEvent.mouseEvent(
-            with: .leftMouseDown,
-            location: tableView.convert(point, to: nil),
-            modifierFlags: [],
-            timestamp: 0,
-            windowNumber: tableView.window?.windowNumber ?? 0,
-            context: nil,
-            eventNumber: 0,
-            clickCount: 2,
-            pressure: 1)
-        guard let event else { return false }
-        tableView.mouseDown(with: event)
-        return true
+        select(row: row)
+        guard
+            let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: true)
+                as? NSTableCellView,
+            let field = cell.textField
+        else { return false }
+        return tableView.shouldBeginEditing?(field) ?? false
     }
 
-    /// A reload of the kind the watcher asks for, for the checks.
+    /// Whether any column claims to be editable, for the checks.
+    ///
+    /// An editable column stops NSTableView sending its double-click action at
+    /// all. Renaming goes through editColumn, which does not need the flag.
+    var hasEditableColumn: Bool {
+        tableView.tableColumns.contains { $0.isEditable }
+    }
+
+    /// A reload of the kind the watcher asks for, for the checks.    /// A reload of the kind the watcher asks for, for the checks.
     ///
     /// Not `refresh`, which also throws the measured folder sizes away on
     /// purpose. The watcher fires whenever anything in the folder is written
@@ -503,16 +508,20 @@ final class BrowserViewController: NSViewController {
         tableView.dataSource = self
         tableView.delegate = self
         tableView.target = self
-        tableView.onDoubleClick = { [weak self] row in
-            guard let self else { return }
-            // Double-clicking one of several selected rows opens all of them,
-            // the way it does everywhere else. Only a click outside the
-            // selection narrows it to the row under the pointer — which also
-            // covers a reload having moved the selection between the clicks.
-            if !tableView.selectedRowIndexes.contains(row) {
-                select(row: row)
-            }
-            openSelection()
+        // The mechanism AppKit provides, back again. It was replaced by an
+        // override of mouseDown because it fired unreliably — and the reason
+        // it fired unreliably is two lines below, not in the mechanism.
+        tableView.doubleAction = #selector(openSelection)
+        tableView.shouldBeginEditing = { [weak self] responder in
+            // Only the field of the row a rename was actually asked for. The
+            // default says yes for any view in a selected row, so clicking the
+            // name of an already-selected folder began an edit and swallowed
+            // the click that started it.
+            guard let self, let renaming else { return false }
+            guard let row = entries.firstIndex(where: { $0.url == renaming }) else { return false }
+            let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
+            return responder === cell?.subviews.first { $0 is NSTextField }
+                || responder === (cell as? NSTableCellView)?.textField
         }
         tableView.onReturn = { [weak self] in self?.openSelection() }
         tableView.onTypeAhead = { [weak self] prefix in self?.typeAhead(prefix) }
@@ -700,6 +709,10 @@ final class BrowserViewController: NSViewController {
         column.sortDescriptorPrototype = listed.sortKey.map {
             NSSortDescriptor(key: $0.rawValue, ascending: true)
         }
+        // The documented reason a double-click action does not fire: an
+        // editable column suppresses it. Renaming here goes through
+        // editColumn, which does not need this flag, so nothing is lost.
+        column.isEditable = false
         tableView.addTableColumn(column)
     }
 
@@ -1080,7 +1093,7 @@ final class BrowserViewController: NSViewController {
         openSelection()
     }
 
-    @objc private func openSelection() {
+    @objc func openSelection() {
         let selected = selectedEntries()
         guard !selected.isEmpty else { return }
 
@@ -1237,6 +1250,8 @@ final class BrowserViewController: NSViewController {
     /// by asking, which is what this is.
     @objc func refresh(_ sender: Any?) {
         folderSizes.forget()
+        // Something can be installed while a window is open.
+        FileIcons.forgetOpeners()
         reload(keepingSelection: true)
     }
 
