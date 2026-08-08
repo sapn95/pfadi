@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "The tag to release, for example v0.24.0"
+        description: "The tag to release, for example v0.31.1"
         required: true
         type: string
 
@@ -19,8 +19,9 @@ permissions:
   contents: read
 
 concurrency:
-  # Two tags pushed together would race over the formula, and the loser
-  # publishes a release the tap was never pointed at.
+  # Two tags pushed together would race: the second would publish while the
+  # first was still uploading its assets, and a release with half its files on
+  # it is worse than one that waited.
   group: release
   cancel-in-progress: false
 
@@ -40,7 +41,11 @@ jobs:
           # the two routes cannot drift apart.
           ASKED_FOR: ${{ inputs.tag }}
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+          # On the event, not on the ref type. A workflow_dispatch launched
+          # from a tag has GITHUB_REF_TYPE=tag too, so branching on that
+          # ignored the tag somebody had just typed into the box and released
+          # whatever ref they happened to be standing on.
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
             resolved="${GITHUB_REF_NAME}"
           else
             resolved="${ASKED_FOR}"
@@ -100,7 +105,6 @@ jobs:
     permissions:
       contents: write
     outputs:
-      sha256: ${{ steps.tarball.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -117,21 +121,15 @@ jobs:
           else
             gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
           fi
-      - name: checksum of the source tarball
-        id: tarball
-        env:
-          TAG: ${{ needs.guard.outputs.tag }}
-        # The formula builds from source, so the only asset that matters is the
-        # tarball GitHub generates for the tag. It exists once the release does.
-        run: |
-          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
-          curl -fsSL --retry 5 --retry-delay 3 -o source.tar.gz "$url"
-          sha="$(sha256sum source.tar.gz | cut -d' ' -f1)"
-          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
-          echo "tarball sha256: $sha"
 
   sign:
     name: sign and notarise
+    # contents: write, because the last step uploads the signed bundle to the
+    # release. It has never bitten because that step is gated on a certificate
+    # nobody has yet, which makes it a trap set for the day one is bought
+    # rather than the absence of a problem.
+    permissions:
+      contents: write
     needs: [guard, publish]
     runs-on: macos-latest
     timeout-minutes: 30

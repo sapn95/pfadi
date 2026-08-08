@@ -39,12 +39,12 @@ enum WriteSuites {
                     FileOperations.availableName("untitled folder", in: root),
                     "untitled folder", "the first one has no number")
 
-                try FileOperations.createFolder(named: "untitled folder", in: root)
+                _ = try FileOperations.createFolder(named: "untitled folder", in: root)
                 Harness.expectEqual(
                     FileOperations.availableName("untitled folder", in: root),
                     "untitled folder 2", "the second starts at 2, as Finder does")
 
-                try FileOperations.createFolder(named: "untitled folder 2", in: root)
+                _ = try FileOperations.createFolder(named: "untitled folder 2", in: root)
                 Harness.expectEqual(
                     FileOperations.availableName("untitled folder", in: root),
                     "untitled folder 3", "and it keeps counting")

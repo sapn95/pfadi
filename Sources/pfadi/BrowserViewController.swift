@@ -294,9 +294,6 @@ final class BrowserViewController: NSViewController {
         pathBar.clickComponent(path: path, clicks: clicks)
     }
 
-    /// Whether a sibling menu is still waiting to open, for the checks.
-    var isPathMenuPending: Bool { pathBar.isMenuPending }
-
     /// What a right-click on the column headers would actually open.
     ///
     /// Through `menu(for:)`, which is the method AppKit calls, rather than
@@ -331,20 +328,6 @@ final class BrowserViewController: NSViewController {
     /// The columns on screen, in the order they are drawn, for the checks.
     var visibleColumns: [String] {
         tableView.tableColumns.filter { !$0.isHidden }.map { $0.identifier.rawValue }
-    }
-
-    /// Picks a column out of the header menu, for the checks.
-    @discardableResult
-    func clickHeaderMenuItem(_ identifier: String) -> Bool {
-        guard let menu = headerMenu,
-            let item = menu.items.first(where: { $0.representedObject as? String == identifier })
-        else { return false }
-        // Through the delegate first, so the state the menu would show is the
-        // state being checked.
-        menuNeedsUpdate(menu)
-        guard item.isEnabled || identifier == "name" else { return false }
-        toggleColumn(item)
-        return true
     }
 
     func layoutReport() -> LayoutReport {
@@ -515,8 +498,11 @@ final class BrowserViewController: NSViewController {
         tableView.delegate = self
         tableView.target = self
         // The mechanism AppKit provides, back again. It was replaced by an
-        // override of mouseDown because it fired unreliably — and the reason
-        // it fired unreliably is two lines below, not in the mechanism.
+        // override of mouseDown because it fired unreliably, and neither
+        // reason was in the mechanism: an editable column silences this action
+        // entirely (see addColumn, which sets isEditable false), and the
+        // default first-responder rule below let a click start a rename and
+        // swallowed itself.
         tableView.doubleAction = #selector(openSelection)
         tableView.shouldBeginEditing = { [weak self] responder in
             // Only the field of the row a rename was actually asked for. The
@@ -1240,22 +1226,6 @@ final class BrowserViewController: NSViewController {
         navigate(to: FileManager.default.homeDirectoryForCurrentUser)
     }
 
-    @objc func toggleHidden(_ sender: Any?) {
-        showHidden.toggle()
-        reload(keepingSelection: true)
-    }
-
-    /// ⇧⌘K, and the View menu. The same switch the header menu offers, put
-    /// somewhere it can be found without knowing to right-click a header.
-    @objc func toggleCreatedColumn(_ sender: Any?) {
-        let item = NSMenuItem()
-        item.representedObject = ListingColumn.created.rawValue
-        toggleColumn(item)
-    }
-
-    /// Whether the Created column is on screen, for the checks.
-    var showsCreatedColumn: Bool { visibleColumns.contains("created") }
-
     /// ⌘R. The one place folder sizes are thrown away.
     ///
     /// Not on every reload: the watcher fires whenever anything in the folder
@@ -1267,6 +1237,19 @@ final class BrowserViewController: NSViewController {
         // Something can be installed while a window is open.
         FileIcons.forgetOpeners()
         reload(keepingSelection: true)
+    }
+
+    @objc func toggleHidden(_ sender: Any?) {
+        showHidden.toggle()
+        reload(keepingSelection: true)
+    }
+
+    /// ⇧⌘K, and the View menu. The same switch the header menu offers, put
+    /// somewhere it can be found without knowing to right-click a header.
+    @objc func toggleCreatedColumn(_ sender: Any?) {
+        let item = NSMenuItem()
+        item.representedObject = ListingColumn.created.rawValue
+        toggleColumn(item)
     }
 
     // MARK: - Quick Look control
@@ -1512,17 +1495,17 @@ final class BrowserViewController: NSViewController {
                 }
                 controller.registerUndo("New Folder") { controller in
                     controller.attempt("redo the new folder") {
-                        try FileOperations.createFolder(named: name, in: controller.directory)
+                        _ = try FileOperations.createFolder(named: name, in: controller.directory)
                     }
                 }
             }
             announce("created \(name)")
-            // Normally the watcher brings the row in. On a folder it could not
-            // attach to, nothing would ever arrive and the rename never starts.
+            // Reloaded rather than waited for. The watcher would normally
+            // bring the row in on its own, but on a folder it could not attach
+            // to nothing ever arrives and the rename never starts.
             reload(keepingSelection: true)
-            // The listing is watched, so the row will arrive on its own. Wait
-            // for it, then put the cursor straight into its name: nobody wants
-            // a folder called "untitled folder".
+            // Then the cursor goes straight into the name, because nobody
+            // wants a folder called "untitled folder".
             pendingRename = created
         } catch {
             report(error, doing: "create a folder")

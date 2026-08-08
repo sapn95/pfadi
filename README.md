@@ -102,17 +102,6 @@ filter at the top and already focused, whichever part was clicked and however
 few folders are in it. A menu that is sometimes a plain list and sometimes a
 searchable one means looking first and reacting second, every single time.
 
-A **double click** on a folder in the bar goes straight there without the menu.
-That needs the menu to wait for the system's double-click interval before it
-opens: a menu takes over event tracking the moment it appears, so one opened on
-the first click swallows the second, and the double click could never happen
-however it was written.
-
-Clicking the leftmost folder goes straight there, because the root has no
-siblings to offer. When the path is too long, folders fold into an ellipsis
-that still opens them, and they give way in a deliberate order: the ones just
-below the root first, then the root, and never the last one.
-
 The menu opens the moment you click, and a double click on a folder goes
 straight there. Those two are harder to have together than they look: a menu
 takes over event tracking the instant it appears, so the second click lands
@@ -488,7 +477,6 @@ ForkLift use.
 | Volumes | Handed over |
 | Folders | **Blocked** |
 | Directories | **Blocked** |
-| The `file://` scheme | **Blocked** |
 
 Blocked by macOS itself, not by a missing declaration, and asked through the
 interface that is current rather than the one that is deprecated:
@@ -549,8 +537,10 @@ the rest of the profile survives byte for byte.
 Once pfadi is the system's file viewer, the polite call for this —
 `activateFileViewerSelecting` — comes straight back to pfadi. A menu item inside
 pfadi that opens pfadi is a command that does nothing and looks like a bug, so
-**Show in Finder addresses Finder by name** when pfadi holds `NSFileViewer`, and
-uses the polite call when it does not.
+**Show in Finder addresses Finder by name** whenever the system's file viewer is
+something other than Finder — pfadi, usually, though the same reasoning holds if
+you have pointed it at Path Finder — and uses the polite call when Finder still
+has it.
 
 The cost is that the item is not selected, only its folder opened. `open -R`
 goes through the same preference and is hijacked too; the only route left that
@@ -615,8 +605,8 @@ swift run pfadi --layout-check  # the window, clicked through
 ./scripts/make-app.sh           # build/Pfadi.app
 ```
 
-`PFADI_CHECK_FOLDER` runs the double-click and listing checks against a folder
-you name, which is how a tree that behaves differently — a cloud mount, a
+`PFADI_CHECK_FOLDER` runs the opening and listing checks against a folder you
+name, which is how a tree that behaves differently — a cloud mount, a
 network share — gets looked at without inventing one a CI runner cannot have.
 Point it at something with a folder inside it; with nothing to open, that part
 says so and is skipped rather than reported as a defect.
@@ -708,8 +698,9 @@ Every pull request runs, on the newest published version of each action:
 | lint workflows | actionlint, yamllint, markdownlint |
 | secret scan | gitleaks over the full history |
 
-The build job runs on macOS because AppKit does not cross-compile. The rest run
-on Linux because they do not need to.
+The build job runs on macOS because AppKit does not cross-compile, and so does
+the format job, because `swift format` comes with the toolchain rather than from
+a package. The other two run on Linux, because they do not need anything else.
 
 ## Wanted next
 

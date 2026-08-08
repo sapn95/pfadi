@@ -214,7 +214,7 @@ enum CommandLineSuites {
             }
         }
 
-        Harness.suite("documentation: the version is the same in all three places") {
+        Harness.suite("documentation: the code and the VERSION file agree") {
             guard
                 let version = repositoryFile("VERSION")?
                     .trimmingCharacters(in: .whitespacesAndNewlines)

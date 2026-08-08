@@ -145,6 +145,19 @@ enum MainMenu {
         )
         move.keyEquivalentModifierMask = [.command, .option]
 
+        menu.addItem(.separator())
+
+        // ⌘F. The handler has been there since filtering was added and never
+        // had a menu item, so the README documented a key that did nothing.
+        // Under Edit rather than a Find menu of its own: there is one thing to
+        // find here, and it is a filter.
+        let find = menu.addItem(
+            withTitle: "Filter This Folder",
+            action: #selector(BrowserViewController.focusSearch(_:)),
+            keyEquivalent: "f"
+        )
+        find.keyEquivalentModifierMask = [.command]
+
         item.submenu = menu
         return item
     }
@@ -173,6 +186,18 @@ enum MainMenu {
             keyEquivalent: "]"
         )
         forward.keyEquivalentModifierMask = [.command]
+
+        menu.addItem(.separator())
+
+        // ⌘K, which connectToServer's own doc comment has claimed since it was
+        // written. It was reachable only from the sidebar row, so somebody who
+        // had collapsed the sidebar had no way to it at all.
+        let connect = menu.addItem(
+            withTitle: "Connect to Server…",
+            action: #selector(BrowserViewController.connectToServer(_:)),
+            keyEquivalent: "k"
+        )
+        connect.keyEquivalentModifierMask = [.command]
 
         menu.addItem(.separator())
 
