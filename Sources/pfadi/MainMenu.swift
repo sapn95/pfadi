@@ -147,6 +147,22 @@ enum MainMenu {
 
         menu.addItem(.separator())
 
+        // ⌘A, and there was none at all.
+        //
+        // Deliberately the standard `selectAll:` with no target, so it goes
+        // down the responder chain and whatever has focus answers: the field
+        // editor in the connect sheet and the path field, the table in the
+        // file list. Pointing it at one of them would fix that one and leave
+        // the others as they were.
+        let all = menu.addItem(
+            withTitle: "Select All",
+            action: #selector(NSText.selectAll(_:)),
+            keyEquivalent: "a"
+        )
+        all.keyEquivalentModifierMask = [.command]
+
+        menu.addItem(.separator())
+
         // ⌘F. The handler has been there since filtering was added and never
         // had a menu item, so the README documented a key that did nothing.
         // Under Edit rather than a Find menu of its own: there is one thing to

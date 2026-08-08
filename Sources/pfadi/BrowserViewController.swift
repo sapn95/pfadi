@@ -195,6 +195,23 @@ final class BrowserViewController: NSViewController {
         return true
     }
 
+    /// Whether the list can be told to select everything, for the checks.
+    ///
+    /// Asked of the table rather than driven down a responder chain. A window
+    /// that is never on screen and never key does not have a live chain: the
+    /// table is its first responder and `tryToPerform` still answers no, which
+    /// says something about the check's window and nothing about pfadi.
+    ///
+    /// So this and the menu item are checked separately. What was missing was
+    /// the menu item — nothing sent `selectAll:` at all — and the two facts
+    /// together are the path.
+    @discardableResult
+    func selectAllRows() -> Bool {
+        guard tableView.responds(to: #selector(NSText.selectAll(_:))) else { return false }
+        tableView.selectAll(nil)
+        return true
+    }
+
     /// Deselects everything, for the checks.
     ///
     /// With nothing selected the actions work on the folder on screen, which
@@ -1130,8 +1147,18 @@ final class BrowserViewController: NSViewController {
 
         // A share is an address too, so it goes in the address bar rather than
         // behind a separate dialog with its own history.
-        if let share = NetworkShare.url(from: typed) {
-            connect(to: share)
+        //
+        // The same reading the connect sheet does, which it was not: this used
+        // NetworkShare.url(from:), which accepts a finished smb:// URL and
+        // nothing else. So \\filer\share worked in the sheet, did nothing
+        // here, and the README said it worked in both.
+        if let read = NetworkShare.unambiguousShare(
+            from: typed, rewriting: preferences.rewriteAddresses)
+        {
+            if let from = read.rewrittenFrom {
+                announce("read \(from) as \(read.url.absoluteString)")
+            }
+            connect(to: read.url)
             return
         }
 

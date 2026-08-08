@@ -72,6 +72,26 @@ public enum NetworkShare {
     ///
     /// With `rewriting` off, only a real address is accepted, for anybody who
     /// would rather it did exactly what they typed.
+    /// A share, but only when the text cannot be anything else.
+    ///
+    /// For the path bar, where the same field takes local paths. `interpret`
+    /// is deliberately permissive because the connect sheet has already
+    /// established that you are naming a server — there, `filer/share` is a
+    /// share. In the path bar it is a relative folder, and reading it as a
+    /// server would have made `Sources/PfadiCore` into `smb://Sources/PfadiCore`.
+    ///
+    /// So only the two forms that no local path can take: a UNC path, which
+    /// starts with a pair of backslashes, and an address that says its own
+    /// scheme.
+    public static func unambiguousShare(from input: String, rewriting: Bool) -> Interpretation? {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let direct = url(from: text) {
+            return Interpretation(url: direct, rewrittenFrom: nil)
+        }
+        guard rewriting, text.hasPrefix("\\\\") else { return nil }
+        return interpret(text, scheme: "smb", rewriting: true)
+    }
+
     public static func interpret(
         _ input: String,
         scheme: String,

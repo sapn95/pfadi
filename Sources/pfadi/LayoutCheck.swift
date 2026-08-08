@@ -396,6 +396,8 @@ enum LayoutCheck {
             browser.selectedNames.count == 3,
             "a reload keeps them selected, got \(browser.selectedNames.count)")
 
+        selectingAll(in: window, fixture: fixture)
+        knownConnections()
         dropping(in: window, fixture: fixture)
         sorting(in: window, fixture: fixture)
         showingInFinder(in: window, fixture: fixture)
@@ -485,6 +487,82 @@ enum LayoutCheck {
         expect(
             sidebar.drawnRows() == all,
             "and clearing it puts everything back, \(sidebar.drawnRows().count) of \(all.count)")
+    }
+
+    /// The list of known servers in the connect sheet.
+    ///
+    /// Built directly rather than through the sheet, which is an NSAlert and
+    /// runs modal: a check that opened one would sit there until somebody
+    /// clicked it. The list is the part that was wrong.
+    private static func knownConnections() {
+        let servers = [
+            "smb://filer97.sbb.ch/projects",
+            "smb://sapn@testfiler-prod-sigma.sbb.ch/data",
+            "nfs://svm-t-s-a-f-002.sbb.ch/export/home",
+            "smb://filer97.sbb.ch/downloads",
+        ].compactMap(URL.init(string:))
+
+        let list = KnownConnections(servers: servers)
+        expect(list.drawnRows.count == 4, "all four are listed, got \(list.drawnRows.count)")
+
+        // The share, not the whole absoluteString. The popup this replaces
+        // showed smb://sapn@testfiler-…/data in a control 360 points wide.
+        expect(
+            list.drawnRows.contains { $0.contains("projects") },
+            "a row names its share, got \(list.drawnRows.joined(separator: " | "))")
+        expect(
+            list.drawnRows.contains { $0.contains("sapn@") },
+            "and carries the user, which picking one used to drop")
+        expect(
+            !list.drawnRows.contains { $0.contains("smb://") },
+            "and does not repeat the scheme that is on the button above it")
+
+        // The same match as every other filter in pfadi.
+        list.filter(by: "dwn")
+        expect(
+            list.drawnRows == ["filer97.sbb.ch  ·  downloads"],
+            "dwn finds downloads here too, got \(list.drawnRows.joined(separator: " | "))")
+
+        list.filter(by: "zzzznothing")
+        expect(list.drawnRows.isEmpty, "and nothing matching leaves it empty")
+
+        list.filter(by: "")
+        expect(list.drawnRows.count == 4, "clearing it puts them back")
+
+        // Choosing one, which is what the popup could only do with a mouse.
+        var chosen: URL?
+        list.onChoose = { chosen = $0 }
+        expect(list.chooseRow(0), "a row can be chosen")
+        expect(chosen != nil, "and it reports which, got \(chosen?.absoluteString ?? "nothing")")
+    }
+
+    /// ⌘A, which did nothing anywhere because nothing sent it.
+    private static func selectingAll(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        browser.navigate(to: fixture)
+        settle(until: { browser.listedDirectory?.path == fixture.path })
+        guard browser.rowCount >= 2 else {
+            print("  ..   not enough rows to select all of, skipped")
+            return
+        }
+
+        browser.clearSelection()
+        expect(browser.selectedNames.isEmpty, "nothing selected to begin with")
+
+        expect(browser.selectAllRows(), "the list answers Select All")
+        settle(seconds: 0.2)
+        expect(
+            browser.selectedNames.count == browser.rowCount,
+            "and it selects every row, \(browser.selectedNames.count) of \(browser.rowCount)")
+
+        // The menu item itself, because a working responder chain and a menu
+        // that sends nothing down it are different things — and the missing
+        // menu item was the whole bug.
+        let sends = MainMenu.build().items.compactMap(\.submenu).flatMap(\.items).contains {
+            $0.action == #selector(NSText.selectAll(_:)) && $0.keyEquivalent == "a"
+                && $0.keyEquivalentModifierMask == [.command]
+        }
+        expect(sends, "and ⌘A in the menu is what sends it")
     }
 
     /// Making a folder and making a file, from the menu people reach for.

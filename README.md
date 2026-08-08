@@ -78,6 +78,7 @@ right-click the column headers: which columns to show
 drag     a column header to move it
 ⌘R       refresh
 ⌘T ⌘N    a new tab, a new window
+⌘A       select everything in the list, or all the text in a field
 ⌘C ⌘V    copy, then paste, with ⌥⌘V to move instead
 ⇧⌘N      new folder, with the cursor already in its name
 ⌃⌘N      new file, likewise
@@ -151,6 +152,14 @@ away, and that belongs nowhere near walking a folder tree.
 `Connect to Server…`. A way in that only appears once you already have one is
 not a way in.
 
+Inside the connect sheet they are a **list** with the same fuzzy filter as
+everything else, showing `sapn@filer97.sbb.ch · projects` rather than the whole
+address. It was an `NSPopUpButton`: it replaced its own title with whatever was
+picked so the label was gone after the first use, dropped the user so a share
+you reach as somebody else put you back to guessing, offered no way to remove a
+server typed once with a spelling mistake, and could only be reached with the
+mouse. Right-click a row to forget it.
+
 ## Cloud files
 
 OneDrive, Dropbox, Google Drive and iCloud all leave **placeholder** files: a
@@ -186,6 +195,17 @@ It understands what people actually paste:
 | `\\filer\projects` | `smb://filer/projects` |
 | `\\filer\team share\docs` | `smb://filer/team%20share/docs` |
 | `filer:/export/data` | `nfs://filer/export/data` |
+
+**The path bar and the sheet read the same things.** They did not: the bar
+accepted a finished `smb://` address and nothing else, so `\\filer\share`
+worked in the sheet, did nothing in the bar, and this table claimed both.
+
+The bar is deliberately stricter than the sheet in one way. In the sheet
+`filer/share` is a share, because you are already naming a server; in the bar
+the same text is a relative folder, and reading it as a server would take
+somebody typing `Sources/PfadiCore` to a machine called Sources. So the bar
+takes an address that names its own scheme, and a UNC path — the two forms no
+local path can be.
 
 It says when it rewrote something, quoting both back, and a checkbox turns that
 off. An already-mounted share is found rather than mounted again, which is how

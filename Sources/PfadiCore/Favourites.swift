@@ -118,6 +118,19 @@ public final class Favourites {
         preferences.servers = Array(updated.prefix(Self.recentsLimit))
     }
 
+    /// Takes one back out.
+    ///
+    /// There was no way to. A server typed once with a spelling mistake stayed
+    /// in the list for good, and the list is the thing you scroll past every
+    /// time you connect.
+    @discardableResult
+    public func forgetServer(_ url: URL) -> Bool {
+        let text = url.absoluteString
+        let before = preferences.servers
+        preferences.servers = before.filter { $0 != text }
+        return preferences.servers.count != before.count
+    }
+
     public func servers() -> [URL] {
         preferences.servers.compactMap(URL.init(string:))
     }
