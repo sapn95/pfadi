@@ -296,45 +296,40 @@ enum LayoutCheck {
         }
 
         let html = folder.appendingPathComponent("page.html")
-        let browser = NSWorkspace.shared.urlForApplication(toOpen: html)
-        guard let browser else {
-            print("  ..   nothing opens .html here, skipped")
-            return
-        }
-
-        // The same image the application's own icon is, not merely "some
-        // image": a document icon would also be non-nil and would look like
-        // this working.
-        let shown = FileIcons.icon(for: html, isDirectory: false)
-        let expected = NSWorkspace.shared.icon(forFile: browser.path)
-        expected.size = FileIcons.listSize
-        expect(
-            shown.tiffRepresentation == expected.tiffRepresentation,
-            "a file shows the icon of \(browser.lastPathComponent), which opens it")
-
-        // A second type, so this cannot pass because every icon happens to be
-        // the same one.
         let text = folder.appendingPathComponent("note.txt")
-        if let editor = NSWorkspace.shared.urlForApplication(toOpen: text) {
-            let expectedText = NSWorkspace.shared.icon(forFile: editor.path)
-            expectedText.size = FileIcons.listSize
+
+        // Against the same resolution the icon uses. The first version of this
+        // asked LaunchServices itself, which is a different question — it
+        // passed here and failed on a runner where the two disagreed about
+        // .txt.
+        for file in [html, text] {
+            guard let application = FileIcons.openingApplication(for: file) else {
+                print("  ..   nothing opens \(file.lastPathComponent) here, skipped")
+                continue
+            }
+
             expect(
-                FileIcons.icon(for: text, isDirectory: false).tiffRepresentation
-                    == expectedText.tiffRepresentation,
-                "and a .txt shows \(editor.lastPathComponent)")
+                sameImage(
+                    FileIcons.icon(for: file, isDirectory: false),
+                    NSWorkspace.shared.icon(forFile: application.path)),
+                "\(file.lastPathComponent) shows \(application.lastPathComponent), which opens it")
+
+            // The substantive claim, and the one that does not depend on which
+            // application happens to be installed: it is not the document icon
+            // any more.
             expect(
-                editor.path != browser.path
-                    || expected.tiffRepresentation != expectedText.tiffRepresentation,
-                "two types either open in different applications or share one on purpose")
+                !sameImage(
+                    FileIcons.icon(for: file, isDirectory: false),
+                    NSWorkspace.shared.icon(forFile: file.path)),
+                "and not the document icon it used to show")
         }
 
         // And a folder keeps its own, because no application opens a folder
         // and the folder icon carries its colour and its emoji.
-        let folderIcon = FileIcons.icon(for: folder, isDirectory: true)
-        let systemFolder = NSWorkspace.shared.icon(forFile: folder.path)
-        systemFolder.size = FileIcons.listSize
         expect(
-            folderIcon.tiffRepresentation == systemFolder.tiffRepresentation,
+            sameImage(
+                FileIcons.icon(for: folder, isDirectory: true),
+                NSWorkspace.shared.icon(forFile: folder.path)),
             "and a folder keeps the one macOS gives it")
 
         try? manager.removeItem(at: folder)
@@ -972,6 +967,39 @@ enum LayoutCheck {
         // Left in place: the whole fixture goes at the end of behaviour(), and
         // deleting it here pulled a row out from under the selection check
         // that runs next, which then failed for the wrong reason.
+    }
+
+    /// Whether two icons draw the same thing.
+    ///
+    /// Rendered into identical bitmaps rather than compared as TIFF data. An
+    /// NSImage carries many representations, `icon(forFile:)` hands back a
+    /// shared instance, and setting `size` on one mutates it for everybody —
+    /// so comparing the data compares bookkeeping as much as pixels, and did:
+    /// the same pair matched here and differed on a runner.
+    private static func sameImage(_ left: NSImage, _ right: NSImage) -> Bool {
+        guard let a = pixels(of: left), let b = pixels(of: right) else { return false }
+        return a == b
+    }
+
+    private static func pixels(of image: NSImage) -> Data? {
+        let size = NSSize(width: 32, height: 32)
+        guard
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { return nil }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        // A copy, so the shared instance NSWorkspace handed over is not
+        // resized underneath whoever else is drawing it.
+        let copy = image.copy() as? NSImage ?? image
+        copy.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+
+        return rep.representation(using: .png, properties: [:])
     }
 
     /// Whether two URLs are the same place, symlinks and all.

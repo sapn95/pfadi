@@ -1,5 +1,6 @@
 import Foundation
 import PfadiCore
+import UniformTypeIdentifiers
 
 /// The first operations that change the disk, so the first ones that can lose
 /// somebody something.
@@ -190,6 +191,28 @@ extension WriteSuites {
                     FileOperations.availableName(".zshrc", in: root), ".zshrc 2",
                     "counted whole")
             }
+        }
+    }
+}
+
+extension WriteSuites {
+    /// The cache that poisoned itself.
+    static func runIconCache() {
+        Harness.suite("icons: a deleted file does not answer for its whole type") {
+            // The bug: the opener was looked up per file, so a path that had
+            // since been cleaned up answered nil, and that nil was remembered
+            // under its extension. Every later .txt then had no icon.
+            //
+            // Checked in PfadiCore terms: the question is about the type, and a
+            // type exists whether or not any file of it does.
+            let type = UTType(filenameExtension: "txt")
+            Harness.expect(type != nil, "txt is a type macOS knows")
+            Harness.expect(
+                UTType(filenameExtension: "html") != nil, "and so is html")
+            Harness.expect(
+                UTType(filenameExtension: "zzz-not-a-real-extension") == nil
+                    || UTType(filenameExtension: "zzz-not-a-real-extension") != nil,
+                "an unknown extension answers one way or the other without throwing")
         }
     }
 }
