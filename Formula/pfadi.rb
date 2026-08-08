@@ -7,9 +7,16 @@
 class Pfadi < Formula
   desc "macOS file browser with an address bar you can click into and type"
   homepage "https://github.com/sapn95/pfadi"
-  # url and sha256 point at the last release, not at VERSION. They trail it by
-  # design: the checksum of a tag's tarball cannot be known before the tag
-  # exists, so the release workflow rewrites both once it does.
+  # url and sha256 name a release rather than VERSION, and they are allowed to
+  # fall behind it. Nobody installs from this file: `brew install
+  # sapn95/tap/pfadi` reads the tap's copy, and the tap builds that copy by
+  # taking this body out of the newest release's own tarball and rewriting the
+  # two lines below from the file it actually downloaded.
+  #
+  # A job here used to rewrite them per release and open a pull request for it.
+  # A pull request created with the Actions token triggers no workflows, so its
+  # required checks never reported, auto-merge waited forever, and eleven of
+  # them piled up unmerged. What they were keeping current was decorative.
   url "https://github.com/sapn95/pfadi/archive/refs/tags/v0.31.0.tar.gz"
   sha256 "b3f75958e8d8a36013ca9a93a02d8ba69b149758496657d08c9acb6c01d15846"
   license "MIT"
