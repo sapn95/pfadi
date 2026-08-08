@@ -904,9 +904,12 @@ enum LayoutCheck {
         let file = fixture.appendingPathComponent("notes.txt")
 
         // From somewhere else entirely, so this is not passing because the
-        // folder was already on screen.
+        // folder was already on screen — and deliberately WITHOUT waiting for
+        // that listing to arrive. A reveal asked for while a navigation is in
+        // flight is the case that was broken: what is drawn and where we are
+        // going disagree, and the shortcut in reveal took the first for the
+        // second. It passed here and failed on a runner, which is slower.
         browser.navigate(to: FileManager.default.homeDirectoryForCurrentUser)
-        settle(seconds: 0.3)
 
         guard let target = AppDelegate.target(for: PfadiURL.reveal(file)) else {
             failures += 1

@@ -744,9 +744,17 @@ final class BrowserViewController: NSViewController {
         let parent = PathCompletion.directoryURL(url.deletingLastPathComponent())
         pendingSelection = (folder: parent, name: url.lastPathComponent)
 
-        // Already looking at the right folder with its rows in place: select
-        // now rather than re-reading a directory that has not changed.
-        if loadedDirectory?.path == parent.path {
+        // Already looking at the right folder, with its rows in place *and*
+        // nothing on its way to somewhere else: select now rather than
+        // re-reading a directory that has not changed.
+        //
+        // Both halves matter. loadedDirectory is what is drawn and directory is
+        // where we are going, and a navigation in flight is exactly when they
+        // disagree. Checking only the first meant that revealing a file while
+        // the previous folder was still loading took this shortcut, selected
+        // against a listing for somewhere else, and never navigated at all —
+        // rare enough here to pass and slow enough on a CI runner to fail.
+        if loadedDirectory?.path == parent.path, directory.path == parent.path {
             applyPendingSelection()
             view.window?.makeFirstResponder(tableView)
             return
