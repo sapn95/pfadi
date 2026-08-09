@@ -1,0 +1,16 @@
+version: 2
+# One grouped pull request per ecosystem per week. A patch or a minor merges
+# itself once the required checks on `main` are green; a major is left open for
+# review. See .github/workflows/dependabot-auto-merge.yml for both halves of
+# that, and https://github.com/sapn95/.github/blob/main/CI.md for the rest.
+#
+# No `swift` entry: Package.swift declares only targets of this package, so
+# there is no external Swift dependency for Dependabot to bump.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
