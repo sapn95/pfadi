@@ -661,6 +661,36 @@ flowchart TD
   kind -- "a file" --> select --> window
 ```
 
+## When the one running is not the one installed
+
+`brew upgrade` replaces the bundle on disk and cannot touch a process that is
+already running — nothing can. So an application left open across an upgrade
+goes on being the old one, silently, and you test the fix you just installed
+against the version that had the bug.
+
+That happened six times in one afternoon here, and every time it ended with
+somebody saying it still does not work, which was true of what was running.
+
+So pfadi checks when it comes forward, and says so once:
+
+```text
+0.33.0 is installed and 0.31.2 is running — quit and reopen
+```
+
+Only when the two are different bundles. The same path upgraded underneath it
+is not worth mentioning, because quitting and reopening gets the same path
+back.
+
+`pfadi --version` prints which bundle it would open, for the other half of the
+same problem: the command and the application are installed together and can
+still end up apart, when a development build has won the LaunchServices lookup.
+
+```bash
+$ pfadi --version
+pfadi 0.33.0
+opens /opt/homebrew/Cellar/pfadi/0.33.0/Pfadi.app (0.33.0)
+```
+
 ## Build
 
 Needs Swift 6 and macOS 14. The Command Line Tools are enough; Xcode is not

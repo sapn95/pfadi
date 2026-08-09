@@ -246,3 +246,50 @@ enum CommandLineSuites {
         }
     }
 }
+
+extension CommandLineSuites {
+    /// Noticing that the copy running is not the copy installed.
+    static func runUpgradeNotice() {
+        Harness.suite("upgrade: newer means numerically newer") {
+            // A string comparison gets this backwards, and this project is
+            // exactly in the range where it matters.
+            Harness.expect(InstalledVersion.isNewer("0.10.0", than: "0.9.0"), "0.10 beats 0.9")
+            Harness.expect(InstalledVersion.isNewer("0.33.0", than: "0.31.2"), "0.33 beats 0.31.2")
+            Harness.expect(
+                !InstalledVersion.isNewer("0.31.2", than: "0.33.0"), "and not the other way")
+            Harness.expect(
+                !InstalledVersion.isNewer("1.2.3", than: "1.2.3"), "the same is not newer")
+            Harness.expect(InstalledVersion.isNewer("1.2.3", than: "1.2"), "a longer one can be")
+        }
+
+        Harness.suite("upgrade: it says so only when there is something to say") {
+            let notice = InstalledVersion.message(
+                running: "0.31.2", runningPath: "/opt/homebrew/Cellar/pfadi/0.31.2/Pfadi.app",
+                installed: "0.33.0", installedPath: "/opt/homebrew/Cellar/pfadi/0.33.0/Pfadi.app")
+            Harness.expect(notice?.contains("0.33.0") == true, "naming what is installed")
+            Harness.expect(notice?.contains("0.31.2") == true, "and what is running")
+
+            Harness.expect(
+                InstalledVersion.message(
+                    running: "0.33.0", runningPath: "/a/Pfadi.app",
+                    installed: "0.33.0", installedPath: "/b/Pfadi.app") == nil,
+                "the same version elsewhere is not news")
+            Harness.expect(
+                InstalledVersion.message(
+                    running: "0.33.0", runningPath: "/a/Pfadi.app",
+                    installed: "0.31.2", installedPath: "/b/Pfadi.app") == nil,
+                "nor is an older one")
+        }
+
+        Harness.suite("upgrade: the same bundle is never worth mentioning") {
+            // A development build and the installed one are different paths and
+            // that is the interesting case. The same path upgraded underneath
+            // us is not: quitting and reopening gets the same path back.
+            Harness.expect(
+                InstalledVersion.message(
+                    running: "0.31.2", runningPath: "/opt/homebrew/opt/pfadi/Pfadi.app",
+                    installed: "0.33.0", installedPath: "/opt/homebrew/opt/pfadi/Pfadi.app") == nil,
+                "one path, nothing to say")
+        }
+    }
+}
