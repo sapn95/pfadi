@@ -79,6 +79,16 @@ case .help:
 
 case .version:
     print("pfadi \(pfadiVersion)")
+    // And which bundle it would open, because the command and the application
+    // are installed together and can still end up apart: a development build
+    // registered with LaunchServices wins the lookup, and then `pfadi` opens
+    // something other than what `pfadi --version` just said.
+    if let bundle = findBundle(),
+        let running = Bundle(url: bundle)?
+            .infoDictionary?["CFBundleShortVersionString"] as? String
+    {
+        print("opens \(bundle.path) (\(running))")
+    }
 
 case .layoutCheck:
     // The application's own check, not this command's. Saying so beats

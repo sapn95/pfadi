@@ -938,6 +938,11 @@ final class BrowserViewController: NSViewController {
     /// status line to the item count. So "copied, 3 items" was written and
     /// then wiped a few milliseconds later, every time, and the only channel
     /// this window has for telling somebody what it did said nothing.
+    /// Says that a newer copy is installed than the one running.
+    func announceUpgrade(_ message: String) {
+        announce(message)
+    }
+
     /// Says which appearance was just switched to.
     func announceAppearance(_ appearance: Appearance) {
         announce("appearance: \(appearance.title.lowercased())")

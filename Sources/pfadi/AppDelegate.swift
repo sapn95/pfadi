@@ -94,6 +94,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
+    /// Says so when the copy running is older than the copy installed.
+    ///
+    /// Checked when the application comes forward rather than at launch: a
+    /// `brew upgrade` happens while this is sitting in the background, and at
+    /// launch there was nothing to say.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard let message = Self.upgradeNotice() else { return }
+        // Once per version, not once per switch to the window. Somebody who
+        // has read it and carried on working does not need it every time they
+        // click back.
+        guard message != lastUpgradeNotice else { return }
+        lastUpgradeNotice = message
+        BrowserWindow.frontmost?.browser.announceUpgrade(message)
+    }
+
+    private var lastUpgradeNotice: String?
+
+    /// What the system would launch now, against what is running.
+    static func upgradeNotice() -> String? {
+        let running = Bundle.main
+        guard let version = running.infoDictionary?["CFBundleShortVersionString"] as? String,
+            let identifier = running.bundleIdentifier,
+            let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier),
+            let theirs = Bundle(url: installed)?
+                .infoDictionary?["CFBundleShortVersionString"] as? String
+        else { return nil }
+
+        return InstalledVersion.message(
+            running: version,
+            runningPath: running.bundleURL.standardizedFileURL.path,
+            installed: theirs,
+            installedPath: installed.standardizedFileURL.path)
+    }
+
     /// What an incoming URL means.
     ///
     /// `pfadi://reveal?path=…` says "select this" and is believed, because
