@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Renovate is switched off for this repository on purpose. Dependabot does the",
+    "dependency updates here — see .github/dependabot.yml — and two bots reading",
+    "the same manifest would open the same pull request twice.",
+    "",
+    "The Renovate app is installed on this account for every repository, and only",
+    "the account-wide 'Silent' setting is keeping it quiet. That setting is one",
+    "click away from being changed; this file is not, which is why the decision",
+    "lives here rather than in a dashboard.",
+    "",
+    "browser-in-a-box is the one exception: three versions are pinned inside its",
+    "source and only a regex manager can follow them, which Dependabot has not."
+  ],
+  "enabled": false
+}
