@@ -126,10 +126,25 @@ jobs:
             # retried until the daily sweep.
             state="$(gh pr view "$PR" --repo "$REPO" --json mergeStateStatus \
               --jq .mergeStateStatus || echo UNKNOWN)"
+            # Everything that is not this workflow's own two jobs. They are
+            # check runs on the same commit, and the one doing the waiting can
+            # never be green before it merges — so a pull request whose only
+            # unhappy check is this job is a pull request that is ready.
+            others="$(gh pr checks "$PR" --repo "$REPO" --json name,state --jq '
+              [ .[] | select(.name != "auto-merge" and .name != "reconcile")
+                    | select(.state != "SUCCESS" and .state != "SKIPPED") ] | length' || true)"
             case "$state" in
               CLEAN)
                 echo "green=true" >> "$GITHUB_OUTPUT"
                 exit 0
+                ;;
+              UNSTABLE)
+                # Mergeable, with something non-required not green. If that
+                # something is only this job, the required checks have passed.
+                if [ "${others:-1}" = "0" ]; then
+                  echo "green=true" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
                 ;;
               DIRTY | DRAFT)
                 echo "::notice::$state — leaving the pull request open."
@@ -137,12 +152,12 @@ jobs:
                 exit 0
                 ;;
             esac
-            # BLOCKED means both "a required check has not finished" and "one of
-            # them failed", so ask the checks themselves whether anything is
+            # BLOCKED means both "a required check has not finished" and "one
+            # of them failed", so ask the checks themselves whether anything is
             # already red rather than polling a lost cause for half an hour.
-            # This job is excluded: it is a check run on the same commit.
-            failed="$(gh pr checks "$PR" --repo "$REPO" --json name,state \
-              --jq '[.[] | select(.name != "auto-merge" and .state == "FAILURE")] | length' || true)"
+            failed="$(gh pr checks "$PR" --repo "$REPO" --json name,state --jq '
+              [ .[] | select(.name != "auto-merge" and .name != "reconcile")
+                    | select(.state == "FAILURE") ] | length' || true)"
             if [ -n "$failed" ] && [ "$failed" != "0" ]; then
               echo "::notice::$failed check(s) red on this commit — leaving the pull request open."
               echo "green=false" >> "$GITHUB_OUTPUT"
@@ -206,6 +221,14 @@ jobs:
             fi
             state="$(gh pr view "$pr" --repo "$REPO" --json mergeStateStatus \
               --jq .mergeStateStatus </dev/null || echo UNKNOWN)"
+            # UNSTABLE counts too when the only unhappy check is this workflow's
+            # own — see the same reasoning in the auto-merge job above.
+            if [ "$state" = 'UNSTABLE' ]; then
+              others="$(gh pr checks "$pr" --repo "$REPO" --json name,state </dev/null --jq '
+                [ .[] | select(.name != "auto-merge" and .name != "reconcile")
+                      | select(.state != "SUCCESS" and .state != "SKIPPED") ] | length' || true)"
+              [ "${others:-1}" = "0" ] && state=CLEAN
+            fi
             if [ "$state" = 'CLEAN' ]; then
               # A rebase between listing and merging makes this fail by design —
               # note it and move on to the next one.
