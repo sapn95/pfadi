@@ -50,7 +50,7 @@ jobs:
       # group, which is the one that decides whether the whole PR is safe.
       - name: what kind of update is this
         id: meta
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
 
       # Anyone with push access can add a commit to a Dependabot branch, and
       # that commit would then ride into main on Dependabot's ticket. So check
