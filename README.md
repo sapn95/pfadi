@@ -385,6 +385,36 @@ sorting by it would put the rows in an order and then change it under the
 pointer. Hiding the column being sorted by falls back to name. Widths, order and
 the sort all survive a quit.
 
+## Connecting
+
+A mount blocks until the server answers, and an unreachable one takes the whole
+TCP timeout — thirty to seventy-five seconds. So connecting is a **state**, not
+a message: a spinner in the status bar, the name of what it is connecting to,
+and after ten seconds a count of how long it has been waiting.
+
+```text
+connecting to filer97.sbb.ch… 23s, no answer yet
+```
+
+It said `connecting…` through the ordinary announcement channel before, which
+expires after eight seconds so the folder summary can come back. The window
+therefore went silent for a minute and then produced an error out of nowhere,
+which reads as nothing happening followed by something breaking.
+
+While it is going, nothing else may overwrite it — not a folder that failed to
+list, not a watcher firing underneath. And a second connection is refused
+rather than started: whichever answered first would stop the spinner for the
+one still running, which then looks finished and is not.
+
+Every outcome now says something, including the one that worked:
+
+| | |
+| --- | --- |
+| `connected to filer97.sbb.ch` | it worked, which used to be silent |
+| `filer97.sbb.ch was already mounted` | found rather than mounted again |
+| `filer97.sbb.ch wants a name and password` | handed to the system's own dialog |
+| the reason it failed | with a beep |
+
 ## Passwords for shares
 
 macOS answers first, and for anything Finder has ever connected to that is the
