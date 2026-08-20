@@ -60,6 +60,21 @@ final class BrowserViewController: NSViewController {
     /// same-named row in whichever listing landed first.
     private var pendingSelection: (folder: URL, name: String)?
 
+    /// A connection being made, which is a state rather than an event.
+    ///
+    /// Announcements expire after eight seconds so the folder summary comes
+    /// back. A mount does not: NetFSMountURLSync blocks until the server
+    /// answers, and an unreachable one takes the whole TCP timeout — thirty to
+    /// seventy-five seconds. So "connecting…" vanished after eight of them and
+    /// the window said nothing at all until the failure finally arrived, which
+    /// is the worst possible reading of what was happening.
+    private var connecting: String?
+    private var connectingSince: Date?
+    /// Ticks while a connection is being made, so the message can grow a
+    /// "still waiting" after a while rather than sitting there looking stuck.
+    private var connectingTimer: Timer?
+    private let connectingSpinner = NSProgressIndicator()
+
     /// What the status line has been told to say, and until when.
     private var announcement: String?
     private var announcementUntil = Date.distantPast
@@ -134,6 +149,9 @@ final class BrowserViewController: NSViewController {
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
+        // A repeating timer holds its target and would keep this controller,
+        // and the window behind it, alive for the life of the process.
+        connectingTimer?.invalidate()
     }
 
     /// Where everything ended up, for the layout check.
@@ -211,6 +229,20 @@ final class BrowserViewController: NSViewController {
         tableView.selectAll(nil)
         return true
     }
+
+    /// What the window is saying and whether it is showing work in progress,
+    /// for the checks.
+    var statusState: (text: String, busy: Bool) {
+        // `connecting`, not the spinner's isHidden. A progress indicator with
+        // isDisplayedWhenStopped false is hidden by AppKit when it draws, and
+        // a window that has never been on screen has never drawn — so the view
+        // answers about itself and not about what is happening.
+        (statusLabel.stringValue, connecting != nil)
+    }
+
+    /// Starts and stops the connecting state without a server, for the checks.
+    func beginConnectingForCheck(to name: String) { beginConnecting(to: name) }
+    func endConnectingForCheck() { endConnecting() }
 
     /// Deselects everything, for the checks.
     ///
@@ -399,6 +431,11 @@ final class BrowserViewController: NSViewController {
         scrollView.borderType = .noBorder
         scrollView.documentView = tableView
 
+        connectingSpinner.translatesAutoresizingMaskIntoConstraints = false
+        connectingSpinner.style = .spinning
+        connectingSpinner.controlSize = .small
+        connectingSpinner.isDisplayedWhenStopped = false
+
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.font = .systemFont(ofSize: 11)
         statusLabel.textColor = .secondaryLabelColor
@@ -437,6 +474,7 @@ final class BrowserViewController: NSViewController {
         view.addSubview(pathField)
         view.addSubview(searchField)
         view.addSubview(scrollView)
+        view.addSubview(connectingSpinner)
         view.addSubview(statusLabel)
         view.addSubview(transfers.view)
 
@@ -491,7 +529,15 @@ final class BrowserViewController: NSViewController {
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -6),
 
-            statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
+            connectingSpinner.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor, constant: 14),
+            connectingSpinner.centerYAnchor.constraint(equalTo: statusLabel.centerYAnchor),
+            connectingSpinner.widthAnchor.constraint(equalToConstant: 12),
+            connectingSpinner.heightAnchor.constraint(equalToConstant: 12),
+
+            statusLabel.leadingAnchor.constraint(
+                equalTo: connectingSpinner.trailingAnchor,
+                constant: 6),
             statusLabel.trailingAnchor.constraint(
                 lessThanOrEqualTo: transfers.view.leadingAnchor, constant: -12),
             statusLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8),
@@ -900,7 +946,12 @@ final class BrowserViewController: NSViewController {
         guard !entries.isEmpty else {
             // statusText(), not "empty folder": trashing the last file in a
             // folder announced what it did and then immediately overwrote it.
-            statusLabel.stringValue = failure ?? statusText()
+            //
+            // And a connection in progress outranks even a failure to read:
+            // the watcher fires while a mount is being made, its listing fails
+            // because the folder is being replaced, and the message about the
+            // thing somebody actually asked for disappears.
+            statusLabel.stringValue = connecting ?? failure ?? statusText()
             // Still cleared: an empty folder is an answer to "reveal this",
             // and leaving the request pending would fire it at the next one.
             applyPendingSelection()
@@ -967,6 +1018,10 @@ final class BrowserViewController: NSViewController {
     }
 
     private func statusText() -> String {
+        // Above the announcement, and with no expiry: something is happening
+        // and it has not finished. That is the truest thing the window can say
+        // and it stays true until it stops being.
+        if let connecting { return connecting }
         if let announcement, Date() < announcementUntil { return announcement }
 
         // What is selected wins over what is in the folder: once several rows
@@ -1180,18 +1235,35 @@ final class BrowserViewController: NSViewController {
     }
 
     func connect(to share: URL) {
-        announce("connecting to \(share.host ?? share.absoluteString)…")
+        // One at a time, the way transfers already are. Two at once is not
+        // merely untidy: whichever answers first runs endConnecting and stops
+        // the spinner for the one still going, which then looks finished and
+        // is not.
+        guard connecting == nil else {
+            NSSound.beep()
+            announce("one connection at a time, for now")
+            return
+        }
+
+        let name = share.host ?? share.absoluteString
+        beginConnecting(to: name)
 
         ShareMounter.mount(share, credentials: preferences.credentialCommand) {
             [weak self] result in
             guard let self else { return }
+            endConnecting()
+
             switch result {
             case .alreadyMounted(let url):
-                announce("already mounted")
+                announce("\(name) was already mounted")
                 favourites.rememberServer(share)
                 onFavouritesChanged?()
                 navigate(to: url)
             case .mounted(let url):
+                // Said out loud, because it used to be silent: the window
+                // simply changed folder and you had to infer that the thing
+                // you asked for had worked.
+                announce("connected to \(name)")
                 favourites.rememberServer(share)
                 onFavouritesChanged?()
                 navigate(to: url)
@@ -1204,7 +1276,7 @@ final class BrowserViewController: NSViewController {
             case .needsCredentials:
                 // The system already has a connect sheet with keychain and
                 // guest handling in it. A second one would be worse.
-                announce("asking the system for credentials")
+                announce("\(name) wants a name and password")
                 ShareMounter.askSystemToConnect(share)
             case .failed(let reason):
                 NSSound.beep()
@@ -1212,6 +1284,35 @@ final class BrowserViewController: NSViewController {
                 pathField.stringValue = directory.path
             }
         }
+    }
+
+    /// Starts saying, and showing, that a connection is being made.
+    private func beginConnecting(to name: String) {
+        connecting = "connecting to \(name)…"
+        connectingSince = Date()
+        statusLabel.stringValue = connecting ?? ""
+        connectingSpinner.startAnimation(nil)
+
+        connectingTimer?.invalidate()
+        connectingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) {
+            [weak self] _ in
+            guard let self, let since = connectingSince else { return }
+            let waited = Int(Date().timeIntervalSince(since))
+            // Ten seconds is where a person starts wondering whether anything
+            // is happening. Counting from there is the difference between "it
+            // is stuck" and "it is waiting for a server that has not answered".
+            guard waited >= 10 else { return }
+            connecting = "connecting to \(name)… \(waited)s, no answer yet"
+            statusLabel.stringValue = connecting ?? ""
+        }
+    }
+
+    private func endConnecting() {
+        connectingTimer?.invalidate()
+        connectingTimer = nil
+        connecting = nil
+        connectingSince = nil
+        connectingSpinner.stopAnimation(nil)
     }
 
     /// ⌘K, which is the key everyone already presses for this.
@@ -1345,7 +1446,7 @@ final class BrowserViewController: NSViewController {
         guard let application = sender.representedObject as? URL, let entry = selectedEntry()
         else { return }
         OpenWith.setDefault(application, forKindOf: entry.url) { [weak self] message in
-            self?.statusLabel.stringValue = message
+            self?.announce(message)
         }
     }
 

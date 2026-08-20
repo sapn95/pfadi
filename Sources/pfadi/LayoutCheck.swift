@@ -404,6 +404,7 @@ enum LayoutCheck {
         openingFolders(in: window, fixture: fixture)
         creating(in: window, fixture: fixture)
         sidebarFilter(in: window)
+        connecting(in: window)
         icons(in: window, fixture: fixture)
     }
 
@@ -455,6 +456,48 @@ enum LayoutCheck {
             "and a folder keeps the one macOS gives it")
 
         try? manager.removeItem(at: folder)
+    }
+
+    /// Connecting to a share says so, and keeps saying so.
+    ///
+    /// The bug this covers: "connecting…" went through announce(), which
+    /// expires after eight seconds so the folder summary can come back. A
+    /// mount blocks until the server answers and an unreachable one takes the
+    /// whole TCP timeout, so the window went silent for a minute and then
+    /// produced an error out of nowhere.
+    private static func connecting(in window: BrowserWindow) {
+        let browser = window.browser
+        let quiet = browser.statusState
+        expect(!quiet.busy, "nothing is spinning to begin with")
+
+        browser.beginConnectingForCheck(to: "filer.example")
+        let started = browser.statusState
+        expect(
+            started.text.contains("filer.example"),
+            "it names what it is connecting to, got \(started.text)")
+        expect(started.busy, "and shows that something is happening")
+
+        // Past the point an announcement would have expired. This is the whole
+        // failure: eight seconds of silence, then nothing at all.
+        settle(seconds: 9)
+        let later = browser.statusState
+        expect(
+            later.text.contains("filer.example"),
+            "and is still saying so nine seconds later, got \(later.text)")
+        expect(later.busy, "and still spinning")
+
+        // A second one while the first is going is refused rather than
+        // allowed to overwrite it: whichever answered first would stop the
+        // spinner for the one still running, which then looks finished.
+        browser.connect(to: URL(string: "smb://filer.example/other")!)
+        expect(
+            browser.statusState.text.contains("one connection at a time"),
+            "a second connection is refused while the first is going, got "
+                + browser.statusState.text)
+
+        browser.endConnectingForCheck()
+        settle(seconds: 0.3)
+        expect(!browser.statusState.busy, "and stops when it is over")
     }
 
     /// The sidebar's filter, and that it is the same match as everywhere else.
