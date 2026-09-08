@@ -28,6 +28,20 @@ final class PathField: NSTextField, NSTextFieldDelegate {
     private var cycle: CompletionCycle?
     private var isApplyingCompletion = false
 
+    /// What was in the field when return was pressed.
+    ///
+    /// This exists because of the order AppKit does things in. Return ends the
+    /// edit *first* and sends the field's action *afterwards*, and ending the
+    /// edit is exactly when the owner puts the current folder back into the
+    /// cell. So by the time the action asked what had been typed, the field
+    /// editor was gone and `stringValue` said where we already were: every
+    /// typed path navigated to the folder it started in, which on screen is
+    /// indistinguishable from return doing nothing at all.
+    ///
+    /// Captured while the key is still being handled, which is the last moment
+    /// the text exists.
+    private var committedText: String?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         configure()
@@ -76,6 +90,9 @@ final class PathField: NSTextField, NSTextFieldDelegate {
     /// is shared and created on demand, so at initialisation `currentEditor()`
     /// is nil and setting anything on it does nothing at all.
     func controlTextDidBeginEditing(_ notification: Notification) {
+        // A fresh edit, so whatever the last one committed is no longer the
+        // answer to "what is in the field".
+        committedText = nil
         guard let editor = notification.userInfo?["NSFieldEditor"] as? NSTextView else { return }
         editor.isAutomaticTextReplacementEnabled = false
         editor.isAutomaticQuoteSubstitutionEnabled = false
@@ -113,9 +130,14 @@ final class PathField: NSTextField, NSTextFieldDelegate {
             // The first return accepts the suggestion and stays put, so the
             // next tab can carry on into the folder that was just chosen. The
             // second return falls through to the field's action and navigates.
-            guard isCompleting else { return false }
-            endCompletion()
-            return true
+            if isCompleting {
+                endCompletion()
+                return true
+            }
+            // Read from the text view rather than from the field: this is the
+            // last moment the typed text exists. See `committedText`.
+            committedText = textView.string
+            return false
 
         case #selector(NSResponder.cancelOperation(_:)):
             guard let cycle else { return false }
@@ -158,6 +180,18 @@ final class PathField: NSTextField, NSTextFieldDelegate {
     /// usual route. Anything acting on "what the person sees" has to ask here.
     var typedText: String {
         currentEditor()?.string ?? stringValue
+    }
+
+    /// The path return just committed, taken once.
+    ///
+    /// Consumed rather than left lying around, because it answers one question
+    /// — "what did the return that is running right now commit" — and a second
+    /// read is a different question. Left set, it went on reporting the last
+    /// committed path after the field had been re-focused and something else
+    /// typed into it.
+    func takeCommittedPath() -> String {
+        defer { committedText = nil }
+        return committedText ?? typedText
     }
 
     private func apply(_ text: String) {
