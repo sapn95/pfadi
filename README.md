@@ -129,6 +129,19 @@ the folder you just chose. The second goes there.
 A path can be absolute, relative, or start with `~`. Pointing it at a file
 hands the file to whichever application owns it.
 
+A path that is not there says so and names it. The field stays open with what you
+typed and the cursor at the end, because fixing one letter should not mean typing
+the whole path again.
+
+**Return read the field too late.** AppKit ends the edit first and sends the
+field's action afterwards, and ending the edit is when pfadi puts the current
+folder back into the cell. So by the time the action asked what had been typed,
+the answer was where you already were: every typed path navigated to the folder
+it started in, which on screen looks exactly like return doing nothing. A share
+typed into the same field went the same way and said nothing either. The text is
+now taken while the key is still being handled, and `--layout-check` presses
+return through the real responder chain.
+
 ## The sidebar
 
 **Favourites** are yours: ⌘D adds and removes, a folder dropped between two
@@ -808,6 +821,13 @@ proved nothing. These go through the same code a click runs: the path bar's own
 button action, the sidebar's own selection handler. They also wait for the
 listing, because reading a folder happens on a worker and arrives on the main
 queue, and a check with no run loop turning sees an empty folder every time.
+
+Keys go through the responder chain for the same reason. Typing a path and
+pressing return is what this application is for, and nothing checked it, because
+the commit was private and no check could reach it. It was broken for every path
+there is. A check that called the action directly would have passed the whole
+time, because what was wrong sat between the key and the action, so the check
+writes into the field editor and sends `insertNewline:` through it.
 
 **The path bar is buttons, not `NSPathControl`.** That control reports the same
 intrinsic width whatever it shows, sixty points for one folder or for ten, so

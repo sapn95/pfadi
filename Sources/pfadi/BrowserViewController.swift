@@ -343,6 +343,39 @@ final class BrowserViewController: NSViewController {
         pathBar.clickComponent(path: path, clicks: clicks)
     }
 
+    /// Types a path into the address bar and presses return, for the checks.
+    ///
+    /// Through the field editor and the real `insertNewline:` command rather
+    /// than by calling the field's action: what breaks here breaks between the
+    /// key and the action, and a check that calls the action directly passes
+    /// while the window sits there doing nothing.
+    ///
+    /// - Parameter returns: how many times return is pressed. Tab completion
+    ///   deliberately eats the first one, so a check that wants to prove the
+    ///   *first* return is enough has to press exactly one.
+    @discardableResult
+    func typePath(_ text: String, returns: Int = 1) -> Bool {
+        focusPathField(nil)
+        guard let editor = pathField.currentEditor() else { return false }
+        editor.string = text
+        editor.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+        for _ in 0..<returns {
+            editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        }
+        return true
+    }
+
+    /// Presses tab in the address bar the way the keyboard does, for the checks.
+    @discardableResult
+    func tabInPathField() -> Bool {
+        guard let editor = pathField.currentEditor() else { return false }
+        editor.doCommand(by: #selector(NSResponder.insertTab(_:)))
+        return true
+    }
+
+    /// What the address bar currently holds, for the checks.
+    var typedPath: String { pathField.typedText }
+
     /// What a right-click on the column headers would actually open.
     ///
     /// Through `menu(for:)`, which is the method AppKit calls, rather than
@@ -1199,10 +1232,12 @@ final class BrowserViewController: NSViewController {
     }
 
     @objc private func pathFieldCommitted(_ sender: NSTextField) {
-        // typedText, not stringValue: while the field is being edited the cell
-        // can be a step behind what is on screen, and going somewhere other
-        // than the path the person is looking at is the worst kind of wrong.
-        let typed = pathField.typedText
+        // What return committed, not stringValue: by the time this runs the
+        // edit has ended and `onEndEditing` has already put the current folder
+        // back into the cell, so `stringValue` says where we already are. That
+        // is the whole bug — every typed path navigated to the folder it
+        // started in, which looks exactly like return doing nothing.
+        let typed = pathField.takeCommittedPath()
         pathField.endCompletion()
 
         // A share is an address too, so it goes in the address bar rather than
@@ -1231,6 +1266,17 @@ final class BrowserViewController: NSViewController {
             view.window?.makeFirstResponder(tableView)
         case nil:
             NSSound.beep()
+            // Said, and the field left open with the text still in it. Ending
+            // the edit hides the field and resets it, so a beep on its own
+            // took the typo away with it and the only way to fix one letter
+            // was to type the whole path again.
+            announce("no such folder: \(typed)")
+            pathField.stringValue = typed
+            focusPathField(nil)
+            // The cursor at the end rather than the whole path selected: what
+            // somebody wants here is to fix a letter, not to start again.
+            pathField.currentEditor()?.selectedRange = NSRange(
+                location: (typed as NSString).length, length: 0)
         }
     }
 

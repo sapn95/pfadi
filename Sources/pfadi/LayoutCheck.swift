@@ -146,7 +146,7 @@ enum LayoutCheck {
         return String(ordered) + key.lowercased()
     }
 
-    /// Dark, and dark by default.    /// Dark, and dark by default.
+    /// Dark, and dark by default.
     ///
     /// Checked on NSApp rather than on a window: a window can be told to be
     /// dark while every panel and menu around it stays light, which is the
@@ -344,6 +344,110 @@ enum LayoutCheck {
         revealing(in: window, fixture: start)
         sizing(in: window, fixture: start)
         selecting(in: window, fixture: start)
+        addressBar(in: window, fixture: start)
+    }
+
+    /// Typing a path and pressing return.
+    ///
+    /// The one thing the whole application is for, and the one thing nothing
+    /// checked: `pathFieldCommitted` was private, no check ever reached it, and
+    /// a path that went in and did nothing at all was invisible here.
+    ///
+    /// Every case below is a shape somebody actually types.
+    private static func addressBar(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+
+        // Under home, because `~` is how people write a path and it cannot be
+        // exercised from a folder in /var/folders. Hyphens in the name, because
+        // automatic dash substitution in a text field is a real thing and this
+        // is where it would land.
+        let home = manager.homeDirectoryForCurrentUser
+        let root = home.appendingPathComponent(
+            "pfadi-check-\(ProcessInfo.processInfo.processIdentifier)")
+        let inner = root.appendingPathComponent("sigma-logo-vectors")
+        guard (try? manager.createDirectory(at: inner, withIntermediateDirectories: true)) != nil
+        else {
+            failures += 1
+            print("  FAIL could not make a folder under home to type a path to")
+            return
+        }
+        defer { try? manager.removeItem(at: root) }
+        manager.createFile(
+            atPath: inner.appendingPathComponent("a.svg").path, contents: Data("x".utf8))
+
+        let typed = "~/\(root.lastPathComponent)/\(inner.lastPathComponent)/"
+
+        for (what, text) in [
+            ("an absolute path", inner.path),
+            ("an absolute path with a trailing slash", inner.path + "/"),
+            ("a path written with ~", typed),
+        ] {
+            browser.navigate(to: fixture)
+            settle(until: { browser.listedDirectory?.path == fixture.path })
+
+            expect(browser.typePath(text), "\(what) can be typed into the bar")
+            settle(until: { browser.listedDirectory?.path == inner.path })
+            expect(
+                same(browser.currentDirectory, inner),
+                "one return on \(what) goes there, got \(browser.currentDirectory.path)")
+        }
+
+        // A relative name, which is the shortest thing anybody types.
+        browser.navigate(to: root)
+        settle(until: { browser.listedDirectory?.path == root.path })
+        browser.typePath(inner.lastPathComponent)
+        settle(until: { browser.listedDirectory?.path == inner.path })
+        expect(
+            same(browser.currentDirectory, inner),
+            "a relative name goes there too, got \(browser.currentDirectory.path)")
+
+        // Tab, then return. Tab leaves a suggestion in the field and the first
+        // return accepts it, so this is the one case that needs two.
+        browser.navigate(to: root)
+        settle(until: { browser.listedDirectory?.path == root.path })
+        browser.typePath("sigma-log", returns: 0)
+        browser.tabInPathField()
+        expect(
+            browser.typedPath == "sigma-logo-vectors/",
+            "tab completes the name, got \(browser.typedPath)")
+        browser.typePath(browser.typedPath, returns: 1)
+        settle(until: { browser.listedDirectory?.path == inner.path })
+        expect(
+            same(browser.currentDirectory, inner),
+            "and return then goes there, got \(browser.currentDirectory.path)")
+
+        // A path that is not there must not navigate anywhere, must say so, and
+        // must leave the text where somebody can fix the letter they got wrong.
+        browser.navigate(to: root)
+        settle(until: { browser.listedDirectory?.path == root.path })
+        browser.typePath("/definitely/not/here")
+        settle(seconds: 0.2)
+        expect(
+            same(browser.currentDirectory, root),
+            "a path that is not there stays put, got \(browser.currentDirectory.path)")
+        expect(
+            browser.statusLine.contains("/definitely/not/here"),
+            "and says which path, got \(browser.statusLine)")
+        expect(
+            browser.typedPath == "/definitely/not/here",
+            "and keeps the typo to be fixed, got \(browser.typedPath)")
+
+        // A share typed into the same field. This went through the identical
+        // commit and so was broken in the identical way: an address typed into
+        // the bar reached `connect` as the folder already on screen, which is
+        // not a share, so nothing happened and nothing was said.
+        //
+        // Checked with a connection already held open, so this proves the text
+        // arrived without mounting anything: being refused for the right reason
+        // is only possible if `connect` was reached at all.
+        browser.beginConnectingForCheck(to: "held.example")
+        browser.typePath("smb://filer.example/share")
+        expect(
+            browser.statusState.text.contains("one connection at a time"),
+            "a share typed into the bar reaches the mounter, got \(browser.statusState.text)")
+        browser.endConnectingForCheck()
+        settle(seconds: 0.3)
     }
 
     /// More than one row at a time.
