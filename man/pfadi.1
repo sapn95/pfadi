@@ -93,6 +93,28 @@ a file with no extension opens in nothing.
 A second one is
 .Pa untitled 2.txt ;
 the number goes before the extension, never after it.
+.Sh ARCHIVES
+Opening a
+.Pa .zip ,
+.Pa .jar ,
+.Pa .tar
+or any of the compressed tar suffixes unpacks it here and goes to what came out
+of it, rather than handing it to Archive Utility, which expands it somewhere and
+says nothing.
+Return, a double click, or
+.Sy Unzip
+in the File and right-click menus.
+.Pp
+An archive holding a single folder gives that folder rather than a folder
+holding a folder of the same name, and a second unpack of the same archive is
+named
+.Pa payload 2
+rather than replacing the first.
+.Pa .rar
+and
+.Pa .7z
+are not offered, because expanding one needs software that may not be
+installed.
 .Sh APPEARANCE
 Dark, whatever the system is set to.
 .Ic \(**\(haA
@@ -161,6 +183,16 @@ sorted by even when it is hidden.
 Every header sorts except
 .Sy Files ,
 whose number arrives after the listing does.
+.Pp
+The list is newest first until a header is clicked, and whatever was clicked
+last survives a quit.
+Folders are held above the files under
+.Sy Name
+and are sorted among them under every other column, because a block of folders
+at the top of a newest-first list hides the row being asked for.
+A filter drops them among the files under
+.Sy Name
+too.
 .Sh CAVEATS
 Folder sizes in the size column are measured by walking the folder, because the
 filesystem does not record them.

@@ -87,12 +87,21 @@ public final class Preferences {
     }
 
     /// Which column the list is sorted by, and which way.
+    ///
+    /// Newest first for somebody who has never touched it. A folder is opened
+    /// far more often to see what has just landed in it than to read it
+    /// alphabetically, and the alphabet is one click on the Name header away.
+    /// Read through `object` for the same reason `showHidden` is: a missing
+    /// value and an explicit `false` are the same to `bool(forKey:)`, and with
+    /// the default now descending, turning it round has to survive a relaunch.
     public var sortOrder: ListingOrder {
         get {
             let key =
                 (store.object(forKey: Key.sortKey) as? String)
-                .flatMap(ListingOrder.Key.init(rawValue:)) ?? .name
-            let ascending = store.object(forKey: Key.sortAscending) as? Bool ?? true
+                .flatMap(ListingOrder.Key.init(rawValue:)) ?? ListingOrder.byNewest.key
+            let ascending =
+                store.object(forKey: Key.sortAscending) as? Bool
+                ?? ListingOrder.byNewest.ascending
             return ListingOrder(key: key, ascending: ascending)
         }
         set {

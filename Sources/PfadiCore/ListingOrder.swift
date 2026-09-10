@@ -28,14 +28,30 @@ public struct ListingOrder: Equatable, Sendable {
     }
 
     public static let byName = ListingOrder(key: .name, ascending: true)
+
+    /// Newest first, which is what a folder is usually opened to find out.
+    public static let byNewest = ListingOrder(key: .modified, ascending: false)
+
+    /// Whether folders are held above the files rather than sorted among them.
+    ///
+    /// Only under the name column. Sorting by a date or a size is asking a
+    /// question about every row, and a block of folders at the top is the one
+    /// answer that cannot be right: newest first with forty folders pinned
+    /// above the files shows forty rows before the newest thing in the folder.
+    /// Under the name column the convention costs nothing and is what every
+    /// file browser on this system does, so it stays there.
+    public var groupsFolders: Bool { key == .name }
 }
 
 extension DirectoryListing {
     /// Sorts a listing.
     ///
-    /// Directories stay above files whatever the column and whichever
-    /// direction it points, which is the convention every file browser on this
-    /// system follows.
+    /// Folders float above the files under the name column, and are sorted
+    /// among them everywhere else. See `ListingOrder.groupsFolders`.
+    ///
+    /// - Parameter groupingFolders: overrides that, for the one caller that has
+    ///   to. A filter is a question about names, and answering it with every
+    ///   matching folder first buries the file somebody was looking for.
     ///
     /// - Parameter sizeOf: what a row's size is, when that is not simply the
     ///   number the filesystem gave. A folder has no size on disk, so sorting
@@ -47,10 +63,12 @@ extension DirectoryListing {
     public static func sorted(
         _ entries: [Entry],
         by order: ListingOrder,
+        groupingFolders: Bool? = nil,
         sizeOf: ((Entry) -> Int64?)? = nil
     ) -> [Entry] {
-        entries.sorted { lhs, rhs in
-            if lhs.isDirectory != rhs.isDirectory {
+        let group = groupingFolders ?? order.groupsFolders
+        return entries.sorted { lhs, rhs in
+            if group, lhs.isDirectory != rhs.isDirectory {
                 return lhs.isDirectory
             }
 
