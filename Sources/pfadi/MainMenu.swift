@@ -101,6 +101,14 @@ enum MainMenu {
         )
         rename.keyEquivalentModifierMask = []
 
+        // No key of its own: return on a zip already does this, and this is
+        // where somebody looks when they do not know that yet.
+        menu.addItem(
+            withTitle: "Unzip",
+            action: #selector(BrowserViewController.unzipSelection(_:)),
+            keyEquivalent: ""
+        )
+
         let info = menu.addItem(
             withTitle: "Get Info",
             action: #selector(BrowserViewController.showInfo(_:)),

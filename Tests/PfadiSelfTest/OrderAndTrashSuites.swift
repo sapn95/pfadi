@@ -25,17 +25,25 @@ enum OrderAndTrashSuites {
     }
 
     private static func sorting() {
-        Harness.suite("sorting: folders stay above files whichever way it points") {
+        Harness.suite("sorting: folders stay above files whichever way name points") {
             let listing = [
                 entry("zebra", isDirectory: true), entry("apple", size: 10),
             ]
             for ascending in [true, false] {
                 let sorted = DirectoryListing.sorted(
-                    listing, by: ListingOrder(key: .size, ascending: ascending))
+                    listing, by: ListingOrder(key: .name, ascending: ascending))
                 Harness.expectEqual(
                     sorted.first?.name, "zebra",
                     "the folder is first with ascending \(ascending)")
             }
+
+            // And under a column where it is asked a real question, it answers
+            // it: 10 bytes of file sorts above a folder nobody has measured.
+            Harness.expectEqual(
+                DirectoryListing.sorted(listing, by: ListingOrder(key: .size, ascending: true))
+                    .first?.name,
+                "apple",
+                "but the size column sorts it among them")
         }
 
         Harness.suite("sorting: folders sort by the size somebody measured") {

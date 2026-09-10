@@ -213,6 +213,16 @@ final class BrowserViewController: NSViewController {
         return true
     }
 
+    /// Whether a menu item would be offered for the selection, for the checks.
+    ///
+    /// Through the real validation, because an item that is there and greyed
+    /// out and an item that runs are different things, and only one of them is
+    /// what somebody sees.
+    func wouldOffer(_ action: Selector) -> Bool {
+        let item = NSMenuItem(title: "", action: action, keyEquivalent: "")
+        return validateMenuItem(item)
+    }
+
     /// Whether the list can be told to select everything, for the checks.
     ///
     /// Asked of the table rather than driven down a responder chain. A window
@@ -804,6 +814,8 @@ final class BrowserViewController: NSViewController {
         }
 
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Unzip", action: #selector(unzipSelection(_:)), keyEquivalent: "")
+            .target = self
         menu.addItem(withTitle: "Rename", action: #selector(renameSelection(_:)), keyEquivalent: "")
             .target = self
         menu.addItem(
@@ -989,7 +1001,7 @@ final class BrowserViewController: NSViewController {
         }
 
         allEntries = resorted(allEntries)
-        let updated = Self.filtered(allEntries, by: filter)
+        let updated = filtered(allEntries, by: filter)
         let unchanged = updated == entries && loadedDirectory?.path == directory.path
         entries = updated
         loadedDirectory = directory
@@ -1124,9 +1136,15 @@ final class BrowserViewController: NSViewController {
     /// Matching only, not ranking: this list is in whatever order its sort
     /// column says, and reordering it by how well each name scored would fight
     /// the header somebody just clicked.
-    private static func filtered(_ entries: [Entry], by text: String) -> [Entry] {
+    ///
+    /// The one thing filtering does change is the folder block. Typing into the
+    /// filter is a question about names, and answering it with every matching
+    /// folder first puts the file somebody was looking for below all of them.
+    private func filtered(_ entries: [Entry], by text: String) -> [Entry] {
         guard !text.isEmpty else { return entries }
-        return entries.filter { FuzzyMatch.matches(text, $0.name) }
+        let matching = entries.filter { FuzzyMatch.matches(text, $0.name) }
+        guard order.groupsFolders else { return matching }
+        return DirectoryListing.sorted(matching, by: order, groupingFolders: false)
     }
 
     /// The bar and the field share a slot. The bar is what you look at and
@@ -1159,7 +1177,7 @@ final class BrowserViewController: NSViewController {
 
     @objc fileprivate func searchChanged(_ sender: NSSearchField) {
         filter = sender.stringValue.trimmingCharacters(in: .whitespaces)
-        entries = Self.filtered(allEntries, by: filter)
+        entries = filtered(allEntries, by: filter)
         rebuildTable()
         if !entries.isEmpty { select(row: 0) }
         statusLabel.stringValue = statusText()
@@ -1252,7 +1270,104 @@ final class BrowserViewController: NSViewController {
         } else {
             for folder in folders { onNewTab?(folder.url) }
         }
-        for file in files { NSWorkspace.shared.open(file.url) }
+
+        // An archive is unpacked here rather than handed over. Archive Utility
+        // expands it and tells nobody, so from this window opening a zip looked
+        // like nothing happening at all: the list still showed the folder as it
+        // was, and the result appeared later as a row somewhere down it. Doing
+        // the work here is what makes it possible to go to what came out.
+        let archives = files.filter { Archives.canExpand($0.url) }
+        expand(archives.map(\.url))
+        for file in files where !Archives.canExpand(file.url) { open(file: file.url) }
+    }
+
+    /// Hands a file to whatever owns it, and says so when nothing will take it.
+    ///
+    /// The result used to be thrown away. A file whose type no installed
+    /// application claims, or one the system refuses for any other reason, gave
+    /// a window that sat there having visibly done nothing.
+    private func open(file url: URL) {
+        NSWorkspace.shared.open(
+            url, configuration: NSWorkspace.OpenConfiguration()
+        ) { [weak self] _, error in
+            guard let error else { return }
+            DispatchQueue.main.async {
+                self?.warn(
+                    "could not open \(url.lastPathComponent): "
+                        + FileOperations.withoutLeadingName(error.localizedDescription))
+            }
+        }
+    }
+
+    /// Unpacks archives and goes to what came out of them.
+    ///
+    /// Off the main queue, because a large archive takes as long as it takes
+    /// and a window that stops answering while it runs is worse than one that
+    /// says what it is doing.
+    private func expand(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        announce(
+            urls.count == 1
+                ? "unpacking \(urls[0].lastPathComponent)…"
+                : "unpacking \(urls.count) archives…")
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            var unpacked: [URL] = []
+            var failed: [(name: String, reason: String)] = []
+            for url in urls {
+                do {
+                    unpacked.append(try Archives.expand(url))
+                } catch let problem as Archives.Problem {
+                    failed.append((url.lastPathComponent, problem.message))
+                } catch {
+                    failed.append(
+                        (
+                            url.lastPathComponent,
+                            FileOperations.withoutLeadingName(error.localizedDescription)
+                        ))
+                }
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.finishExpanding(unpacked, failed: failed)
+            }
+        }
+    }
+
+    private func finishExpanding(_ unpacked: [URL], failed: [(name: String, reason: String)]) {
+        guard failed.isEmpty else {
+            NSSound.beep()
+            let names =
+                failed.count <= 3
+                ? failed.map(\.name).joined(separator: ", ") : "\(failed.count) archives"
+            warn(
+                "could not unpack \(names): "
+                    + FileOperations.summarise(reasons: failed.map(\.reason)))
+            return
+        }
+        guard let landed = unpacked.first else { return }
+
+        // One archive, so go to what came out of it: into it when it is a
+        // folder, and to it when the archive held a single file. Several, and
+        // there is nowhere single to go, so the folder stays where it is and
+        // the watcher brings the new rows in.
+        guard unpacked.count == 1 else {
+            announce("unpacked \(unpacked.count) archives")
+            return
+        }
+        announce("unpacked \(landed.lastPathComponent)")
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: landed.path, isDirectory: &isDirectory)
+        if isDirectory.boolValue {
+            navigate(to: landed)
+        } else {
+            reveal(landed)
+        }
+    }
+
+    /// Unpacks whatever archives are selected. Nothing else in the selection is
+    /// touched, so picking a folder and a zip together unpacks the zip.
+    @objc func unzipSelection(_ sender: Any?) {
+        expand(selectedEntries().map(\.url).filter { Archives.canExpand($0) })
     }
 
     private func typeAhead(_ prefix: String) {
@@ -1298,7 +1413,11 @@ final class BrowserViewController: NSViewController {
         case .directory(let url):
             navigate(to: url)
         case .file(let url):
-            NSWorkspace.shared.open(url)
+            if Archives.canExpand(url) {
+                expand([url])
+            } else {
+                open(file: url)
+            }
             pathField.stringValue = directory.path
             view.window?.makeFirstResponder(tableView)
         case nil:
@@ -2081,6 +2200,11 @@ extension BrowserViewController: NSMenuItemValidation {
         {
             return !selectedEntries().isEmpty
         }
+        // Offered only for what the tools on this machine can actually unpack,
+        // so it is never there to be clicked and do nothing.
+        if menuItem.action == #selector(unzipSelection(_:)) {
+            return selectedEntries().contains { Archives.canExpand($0.url) }
+        }
         if menuItem.action == #selector(toggleFavourite(_:)) {
             let target = favouriteTarget()
             let name = target.path == directory.path ? "This Folder" : target.lastPathComponent
@@ -2218,7 +2342,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
             guard order.key == .size else { return }
             let selected = selectedEntries().map(\.name)
             allEntries = resorted(allEntries)
-            entries = Self.filtered(allEntries, by: filter)
+            entries = filtered(allEntries, by: filter)
             rebuildTable()
             let wanted = Set(selected)
             select(rows: entries.indices.filter { wanted.contains(self.entries[$0].name) })

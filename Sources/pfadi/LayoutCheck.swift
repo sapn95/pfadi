@@ -346,6 +346,8 @@ enum LayoutCheck {
         selecting(in: window, fixture: start)
         addressBar(in: window, fixture: start)
         longNotice(in: window)
+        filterOrdering(in: window, fixture: start)
+        unpacking(in: window, fixture: start)
         deletingOutright(in: window, fixture: start)
     }
 
@@ -450,6 +452,181 @@ enum LayoutCheck {
             "a share typed into the bar reaches the mounter, got \(browser.statusState.text)")
         browser.endConnectingForCheck()
         settle(seconds: 0.3)
+    }
+
+    /// What order the list comes back in, and where the folders end up.
+    ///
+    /// Two complaints, one cause. A folder is opened far more often to see what
+    /// has just landed in it than to read it alphabetically, and a block of
+    /// folders pinned above the files shows every folder before the newest
+    /// thing in it. So newest first is the default, and the folders only float
+    /// under the name column, with the filter dropping them among the files
+    /// too: typing into it is a question about names, and answering it with
+    /// every matching folder first buries the file being looked for.
+    ///
+    /// Everything below holds whichever way the column points, because clicking
+    /// a header toggles it and which way it lands depends on what ran before.
+    private static func filterOrdering(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+
+        expect(
+            Preferences(store: MemoryDefaults()).sortOrder == .byNewest,
+            "newest first for somebody who has never touched it")
+
+        let folder = fixture.appendingPathComponent("ordering")
+        try? manager.removeItem(at: folder)
+        try? manager.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: folder) }
+
+        // The folder's name and date both sit in the middle of the files, so
+        // "first or last" says grouping and nothing else. A folder named to
+        // sort at one end would be at that end under either rule.
+        let middle = folder.appendingPathComponent("report-mid")
+        try? manager.createDirectory(at: middle, withIntermediateDirectories: true)
+        for name in ["report-1.txt", "report-z.txt", "notes.txt"] {
+            manager.createFile(
+                atPath: folder.appendingPathComponent(name).path, contents: Data("x".utf8))
+        }
+        for (name, seconds) in [
+            ("notes.txt", 1_000.0), ("report-1.txt", 3_000.0),
+            ("report-mid", 2_000.0), ("report-z.txt", 4_000.0),
+        ] {
+            try? manager.setAttributes(
+                [.modificationDate: Date(timeIntervalSince1970: seconds)],
+                ofItemAtPath: folder.appendingPathComponent(name).path)
+        }
+
+        browser.navigate(to: folder)
+        settle(until: { browser.rowIndex(of: "report-mid") != nil }, seconds: 5)
+        expect(browser.clickColumnHeader("name"), "sorted by name")
+        settle(until: { browser.listedNames.first == "report-mid" }, seconds: 3)
+        expect(
+            browser.listedNames.first == "report-mid",
+            "the folder is on top under the name column, got "
+                + browser.listedNames.joined(separator: " "))
+
+        browser.setFilter("report")
+        settle(until: { browser.rowCount == 3 }, seconds: 3)
+        expect(browser.rowCount == 3, "the filter finds all three, got \(browser.rowCount)")
+        expect(
+            browser.listedNames.dropFirst().first == "report-mid",
+            "and filtering puts it where its name says, in the middle, got "
+                + browser.listedNames.joined(separator: " "))
+
+        browser.setFilter("")
+        settle(until: { browser.listedNames.first == "report-mid" }, seconds: 3)
+        expect(
+            browser.listedNames.first == "report-mid",
+            "clearing the filter floats it again, got "
+                + browser.listedNames.joined(separator: " "))
+
+        // And under a date, where the block would hide the row being asked for.
+        expect(browser.clickColumnHeader("modified"), "sorted by modified")
+        settle(until: { browser.listedNames.first != "report-mid" }, seconds: 3)
+        expect(
+            browser.listedNames.first != "report-mid" && browser.listedNames.last != "report-mid",
+            "a date column sorts it among the files, got "
+                + browser.listedNames.joined(separator: " "))
+
+        browser.clickColumnHeader("name")
+        settle(seconds: 0.3)
+    }
+
+    /// Opening an archive, and ending up in what came out of it.
+    ///
+    /// Handing a zip to the system opens Archive Utility, which expands it and
+    /// tells nobody: the window still showed the folder as it was, and the
+    /// result turned up later as a row somewhere down the list. That reads as
+    /// opening a zip doing nothing at all.
+    private static func unpacking(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+
+        let room = fixture.appendingPathComponent("archives")
+        try? manager.removeItem(at: room)
+        try? manager.createDirectory(at: room, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: room) }
+
+        let source = room.appendingPathComponent("payload")
+        try? manager.createDirectory(at: source, withIntermediateDirectories: true)
+        for name in ["one.txt", "two.txt"] {
+            manager.createFile(
+                atPath: source.appendingPathComponent(name).path, contents: Data("x".utf8))
+        }
+        guard makeZip(of: source, at: room.appendingPathComponent("bundle.zip")) else {
+            failures += 1
+            print("  FAIL a zip could be made to open")
+            return
+        }
+        try? manager.removeItem(at: source)
+
+        browser.navigate(to: room)
+        settle(until: { browser.rowIndex(of: "bundle.zip") != nil }, seconds: 5)
+        guard let row = browser.rowIndex(of: "bundle.zip") else {
+            failures += 1
+            print("  FAIL the archive is listed")
+            return
+        }
+        browser.selectRange(row..<(row + 1))
+        expect(
+            browser.wouldOffer(#selector(BrowserViewController.unzipSelection(_:))),
+            "Unzip is offered for an archive")
+
+        // The same code return and a double click run, rather than the action
+        // called directly: opening a zip is how anybody actually asks for this.
+        browser.activateSelection()
+        let unpacked = room.appendingPathComponent("payload")
+        settle(until: { browser.listedDirectory?.path == unpacked.path }, seconds: 20)
+        expect(
+            same(browser.currentDirectory, unpacked),
+            "opening it lands in what came out, got \(browser.currentDirectory.path)")
+        expect(
+            browser.rowCount == 2,
+            "with everything that was in it, got \(browser.rowCount) rows")
+
+        // A folder inside a folder of the same name is the thing everybody
+        // complains about when they unzip by hand.
+        expect(
+            !manager.fileExists(atPath: unpacked.appendingPathComponent("payload").path),
+            "and not wrapped in a second folder of its own name")
+
+        // Nothing to unpack, nothing offered.
+        browser.navigate(to: room)
+        settle(until: { browser.rowIndex(of: "bundle.zip") != nil }, seconds: 5)
+        browser.clearSelection()
+        expect(
+            !browser.wouldOffer(#selector(BrowserViewController.unzipSelection(_:))),
+            "and not offered when nothing selected can be unpacked")
+
+        // A file that is not the archive its name claims. The refusal has to
+        // arrive as a message rather than as a window that did nothing.
+        let broken = room.appendingPathComponent("broken.zip")
+        manager.createFile(atPath: broken.path, contents: Data("not a zip".utf8))
+        browser.refresh(nil)
+        settle(until: { browser.rowIndex(of: "broken.zip") != nil }, seconds: 5)
+        guard let brokenRow = browser.rowIndex(of: "broken.zip") else { return }
+        browser.selectRange(brokenRow..<(brokenRow + 1))
+        browser.activateSelection()
+        settle(until: { browser.bannerMessage.contains("could not unpack") }, seconds: 20)
+        expect(
+            browser.bannerMessage.contains("could not unpack"),
+            "an archive that will not open says so, got \(browser.bannerMessage)")
+        expect(
+            same(browser.currentDirectory, room),
+            "and nothing moves, got \(browser.currentDirectory.path)")
+        browser.dismissNotice()
+    }
+
+    /// A real archive, made by the tool that made every zip on this machine.
+    private static func makeZip(of folder: URL, at archive: URL) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-c", "-k", "--keepParent", folder.path, archive.path]
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 
     /// A message too long for the window it appears in.
@@ -1152,18 +1329,22 @@ enum LayoutCheck {
         browser.refresh(nil)
         settle(until: { browser.rowIndex(of: "z-small") != nil })
 
+        // Among the files, not above them. A block of folders at the top is the
+        // one answer a size sort cannot give: 30 KB of folder belongs between
+        // the 4 KB file and the 40 KB one, wherever that lands it.
+        let bySize = ["mike.bin", "z-small", "alpha.bin", "a-big", "zulu.bin"]
         expect(browser.clickColumnHeader("size"), "sorted by size again")
-        settle(until: { browser.listedNames.first == "z-small" }, seconds: 8)
+        settle(until: { browser.listedNames == bySize }, seconds: 8)
         expect(
-            Array(browser.listedNames.prefix(2)) == ["z-small", "a-big"],
-            "the small folder sorts above the big one, got "
-                + browser.listedNames.prefix(2).joined(separator: " "))
+            browser.listedNames == bySize,
+            "the folders sort among the files by what they measured, got "
+                + browser.listedNames.joined(separator: " "))
 
         expect(browser.clickColumnHeader("size"), "and the other way round")
-        settle(until: { browser.listedNames.first == "a-big" }, seconds: 8)
+        settle(until: { browser.listedNames == bySize.reversed() }, seconds: 8)
         expect(
-            Array(browser.listedNames.prefix(2)) == ["a-big", "z-small"],
-            "the big one on top, got " + browser.listedNames.prefix(2).joined(separator: " "))
+            browser.listedNames == bySize.reversed(),
+            "and the same order upside down, got " + browser.listedNames.joined(separator: " "))
 
         // Created is covered by the header-menu check below, which goes
         // through the same gate every other column does.

@@ -6,9 +6,10 @@
 A small macOS file browser with the one thing macOS has never had: an address
 bar you can click into and type, with tab completion.
 
-It browses, copies, moves, renames, trashes and makes folders, in tabs, with
-drag and drop, several files at a time, and ⌘Z takes back any of it. Reveal in
-Finder from every other application can be pointed at it.
+It browses, copies, moves, renames, trashes, unpacks archives and makes
+folders, in tabs, with drag and drop, several files at a time, and ⌘Z takes
+back any of it. Reveal in Finder from every other application can be pointed at
+it.
 
 It is not signed or notarised, which is why the Homebrew formula compiles on
 your machine rather than downloading a binary. Finder stays for the two things
@@ -268,6 +269,30 @@ A selection survives a reload. The watcher fires whenever anything in the
 folder is written, and losing five picked rows because a build wrote a log file
 is the kind of thing that makes a list feel hostile.
 
+## What order the list is in
+
+**Newest first**, for somebody who has never touched it. A folder is opened far
+more often to see what has just landed in it than to read it alphabetically,
+and the alphabet is one click on the Name header away. Whatever you last
+clicked survives a quit.
+
+**Folders float to the top under the Name column, and nowhere else.** That
+convention is right when you are reading a folder and wrong the moment you ask
+it a question: newest first with forty folders pinned above the files shows
+forty rows before the newest thing in the folder, which is the row that was
+being asked for. Under a date or a size, folders sort among the files by the
+same number everything else is sorted by.
+
+**The filter drops them too.** Typing into ⌘F is a question about names, and
+answering it with every matching folder first puts the file you were looking
+for below all of them.
+
+| Sorted by | Where the folders are |
+| --- | --- |
+| Name | Above the files |
+| Name, with a filter on | Wherever their name puts them |
+| Anything else | Wherever their date, size or kind puts them |
+
 ## Folder sizes
 
 The size column shows a real number for folders, measured by walking them,
@@ -314,9 +339,9 @@ flowchart LR
 at all. Clicking that header measures every folder in the listing rather than
 only the visible ones, because an order worked out from whatever happened to be
 on screen is not an order. Rows settle as the answers arrive, and a folder not
-measured yet sits at the bottom of the folder block either way up: unknown is
-not zero, and treating it as zero would put it on top of a smallest-first list
-and then move it.
+measured yet sits at the bottom either way up: unknown is not zero, and
+treating it as zero would put it on top of a smallest-first list and then move
+it.
 
 ## Dark by default
 
@@ -565,6 +590,47 @@ manager.
 Two things it refuses outright: a folder into itself, and a folder into its own
 descendant. The containment check compares path components rather than string
 prefixes, or `/a/bc` would count as living inside `/a/b`.
+
+## Archives
+
+**Opening a zip unpacks it here and takes you to what came out.** Handing it to
+the system opens Archive Utility, which expands it somewhere and tells nobody:
+the window still showed the folder as it was, and the result turned up later as
+a row somewhere down the list. From a file browser that reads as opening a zip
+doing nothing at all.
+
+Return, a double click, or **Unzip** in the File and right-click menus. It
+covers what the tools on every Mac can already do:
+
+```text
+.zip .jar                                    ditto, which is what Archive
+                                             Utility uses, so a Mac zip keeps
+                                             its resource forks
+.tar .tar.gz .tgz .tar.bz2 .tbz .tar.xz      tar
+.txz .tar.zst
+```
+
+`.rar` and `.7z` are deliberately absent, and Unzip is not offered for them:
+expanding one needs software that may not be installed, and a command that
+sometimes does nothing is worse than one that is not there.
+
+Three details that are the whole point of doing it here.
+
+- **An archive holding one folder gives you that folder**, not a folder holding
+  a folder of the same name. It is expanded into a staging folder first, and
+  what comes out decides what the result is called.
+- **Nothing is ever overwritten.** A second unpack of the same archive is
+  `payload 2`, the same rule new files and folders follow.
+- **The suffix comes off in one piece.** `report.tar.gz` unpacks to `report`,
+  because `pathExtension` reads that name as a `gz` and would leave the result
+  called `report.tar`.
+
+The name goes to `execve` as an argument and never through a shell, so an
+archive called `; rm -rf ~.zip` is a file with a strange name.
+
+**A file that will not open now says so.** `NSWorkspace.open` reports whether it
+worked and the answer used to be thrown away, so a file whose type nothing
+installed claims gave a window that had visibly done nothing.
 
 ## Instead of Finder
 
