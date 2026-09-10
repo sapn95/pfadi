@@ -376,6 +376,22 @@ final class BrowserViewController: NSViewController {
     /// What the address bar currently holds, for the checks.
     var typedPath: String { pathField.typedText }
 
+    /// Puts a message up the way a refusal does, for the checks.
+    ///
+    /// Through `warn`, so it lands in both places a real refusal lands: the
+    /// band across the top and the status line at the bottom.
+    func showNotice(_ message: String) { warn(message) }
+
+    /// What the band is offering to do, for the checks.
+    var bannerOffer: String { banner.offerTitle }
+
+    /// Clicks the band's button, for the checks.
+    @discardableResult
+    func takeBannerOffer() -> Bool { banner.takeOffer() }
+
+    /// Clicks the band's X, for the checks, so the next one starts clean.
+    func dismissNotice() { banner.hide() }
+
     /// What a right-click on the column headers would actually open.
     ///
     /// Through `menu(for:)`, which is the method AppKit calls, rather than
@@ -472,6 +488,17 @@ final class BrowserViewController: NSViewController {
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.font = .systemFont(ofSize: 11)
         statusLabel.textColor = .secondaryLabelColor
+        // One line, ending in an ellipsis, and not allowed to decide how wide
+        // the window is. A label reports the width of its whole text as the size
+        // it wants, and a window is not allowed to be smaller than what its
+        // content asks for, so the first refusal that named four files and their
+        // reasons made the window 4069 points wide: a strip across the screen
+        // with the list squashed into it. The band above says the same thing in
+        // full and wrapped, so the copy down here can end early.
+        statusLabel.usesSingleLineMode = true
+        statusLabel.lineBreakMode = .byTruncatingTail
+        statusLabel.cell?.truncatesLastVisibleLine = true
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         configureTable()
 
@@ -1038,6 +1065,16 @@ final class BrowserViewController: NSViewController {
     /// that is where the last thing that happened lives.
     private func warn(_ message: String, kind: NoticeBanner.Kind = .warning) {
         banner.show(message, kind: kind)
+        announce(message)
+    }
+
+    /// Says something went wrong and offers the thing that would work.
+    private func warn(
+        _ message: String,
+        kind: NoticeBanner.Kind = .warning,
+        offering: (title: String, run: () -> Void)
+    ) {
+        banner.show(message, kind: kind, offering: offering)
         announce(message)
     }
 
@@ -1746,7 +1783,7 @@ final class BrowserViewController: NSViewController {
         // ones that have it; the count is about what actually went, and
         // leaving those out made the message say nothing at all.
         var goneCount = 0
-        var refused: [(name: String, reason: String)] = []
+        var refused: [(name: String, reason: String, url: URL)] = []
 
         // Every one of them, rather than stopping at the first refusal, and
         // through the checked call rather than the plain one: macOS will not
@@ -1760,7 +1797,7 @@ final class BrowserViewController: NSViewController {
                     moved.append((original: entry.url, inTrash: landed))
                 }
             case .refused(let reason):
-                refused.append((name: entry.name, reason: reason))
+                refused.append((name: entry.name, reason: reason, url: entry.url))
             }
         }
 
@@ -1784,8 +1821,9 @@ final class BrowserViewController: NSViewController {
                 refused.count <= 3
                 ? refused.map(\.name).joined(separator: ", ")
                 : "\(refused.count) items"
-            let reasons = Set(refused.map(\.reason)).sorted().joined(separator: "; ")
-            parts.append("could not move \(names): \(reasons)")
+            parts.append(
+                "could not move \(names): "
+                    + FileOperations.summarise(reasons: refused.map(\.reason)))
         }
         // Never nothing: a command that ran and said neither what it did nor
         // why it did not is the worst of the three.
@@ -1795,11 +1833,126 @@ final class BrowserViewController: NSViewController {
 
         // The banner only when something was refused. A trash that worked is
         // not worth a band across the window.
-        if refused.isEmpty {
+        guard !refused.isEmpty else {
             announce(message)
-        } else {
-            warn(message)
+            return
         }
+
+        // Deleting outright is the only thing left for a folder with no trash,
+        // which is every folder OneDrive and iCloud sync. Offered rather than
+        // done, because it cannot be undone, and offered here rather than in a
+        // sheet so the message it answers is still on screen while it is read.
+        let deletable = refused.map(\.url).filter { FileOperations.canDeleteOutright($0) }
+        guard !deletable.isEmpty else {
+            warn(message)
+            return
+        }
+        warn(
+            message,
+            offering: (
+                title: deletable.count == 1 ? "Delete It" : "Delete Them",
+                run: { [weak self] in self?.confirmDelete(deletable) }
+            ))
+    }
+
+    /// Asks before deleting for good, because nothing can put it back.
+    private func confirmDelete(_ urls: [URL]) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText =
+            urls.count == 1
+            ? "Delete \"\(urls[0].lastPathComponent)\" for good?"
+            : "Delete \(urls.count) items for good?"
+        alert.informativeText =
+            "There is no trash here to put "
+            + (urls.count == 1 ? "it" : "them")
+            + " in, so this cannot be undone. In a folder OneDrive or iCloud "
+            + "syncs, deleting here deletes on the server too."
+        // Cancel first, so return does the harmless thing and the destructive
+        // button has to be aimed at.
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Delete")
+        if #available(macOS 11.0, *) {
+            alert.buttons.last?.hasDestructiveAction = true
+        }
+
+        let handler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .alertSecondButtonReturn else { return }
+            self?.deleteOutright(urls)
+        }
+
+        if let window = view.window {
+            alert.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            handler(alert.runModal())
+        }
+    }
+
+    /// Deletes for good, having been asked.
+    ///
+    /// No undo is registered, because there is nothing to register: the item is
+    /// gone from the disk and, in a synced folder, from the server.
+    func deleteOutright(_ urls: [URL]) {
+        var gone = 0
+        var failed: [(name: String, reason: String)] = []
+        for url in urls {
+            // Checked again here rather than trusted from the caller. This is
+            // the last gate in front of an irreversible delete, and the offer
+            // that leads here was built from a listing that may have moved on.
+            guard FileOperations.canDeleteOutright(url) else {
+                failed.append((url.lastPathComponent, "macOS keeps this folder"))
+                continue
+            }
+            do {
+                try FileOperations.delete(url)
+                gone += 1
+            } catch {
+                // Without the name in front of it, which is already in the list
+                // of names this message is about. macOS puts it there once per
+                // file, so four failures would otherwise read as four reasons.
+                failed.append(
+                    (
+                        url.lastPathComponent,
+                        FileOperations.withoutLeadingName(error.localizedDescription)
+                    ))
+            }
+        }
+
+        reload(keepingSelection: false)
+
+        var parts: [String] = []
+        if gone > 0 {
+            parts.append(
+                gone == 1 && urls.count == 1
+                    ? "deleted \(urls[0].lastPathComponent)"
+                    : "deleted \(gone) items")
+        }
+        if failed.isEmpty {
+            announce(parts.joined(separator: "; "))
+            return
+        }
+        NSSound.beep()
+        let names =
+            failed.count <= 3
+            ? failed.map(\.name).joined(separator: ", ")
+            : "\(failed.count) items"
+        parts.append(
+            "could not delete \(names): "
+                + FileOperations.summarise(reasons: failed.map(\.reason)))
+        warn(parts.joined(separator: "; "))
+    }
+
+    /// Deletes the selection without the trash.
+    ///
+    /// The trash is the right default and stays the default. This exists because
+    /// there are folders with no trash at all: everything under
+    /// `~/Library/CloudStorage`, which is where OneDrive and iCloud Drive put
+    /// what they sync, and network volumes. ⌘⌫ there is refused by macOS with
+    /// nothing further to try, and the thing somebody meant was "get rid of it".
+    @objc func deleteImmediately(_ sender: Any?) {
+        let selected = selectedEntries()
+        guard !selected.isEmpty else { return }
+        confirmDelete(selected.map(\.url))
     }
 
     private func registerTrashUndo(_ items: [(original: URL, inTrash: URL)]) {
@@ -1924,6 +2077,7 @@ extension BrowserViewController: NSMenuItemValidation {
         }
         if menuItem.action == #selector(copy(_:))
             || menuItem.action == #selector(moveToTrash(_:))
+            || menuItem.action == #selector(deleteImmediately(_:))
         {
             return !selectedEntries().isEmpty
         }

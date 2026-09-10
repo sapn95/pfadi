@@ -181,7 +181,85 @@ public enum FileOperations {
         }
         // The system refused and gave no reason, which is worse than an error
         // message but better than a claim that it worked.
-        return message ?? "the system refused, and left it where it was"
+        guard let message else { return "the system refused, and left it where it was" }
+        return withoutLeadingName(message)
+    }
+
+    /// Apple's message with the file name taken off the front of it.
+    ///
+    /// macOS phrases this one per file: `"Book.xlsx" couldn't be moved to the
+    /// trash because the volume "Macintosh HD" doesn't have one.` Four files on
+    /// a volume with no trash therefore give four reasons that differ only in a
+    /// name the message already lists separately, so nothing collapses and the
+    /// whole paragraph ends up in the band. Without the name they are one reason
+    /// said once.
+    ///
+    /// By position rather than by matching the sentence: the wording is Apple's
+    /// and is translated, the leading quoted name is not.
+    public static func withoutLeadingName(_ message: String) -> String {
+        // Both kinds of quote. The error uses curly ones, and anything
+        // constructed in a test is likely to use straight ones.
+        for quote in ["\u{201C}\u{201D}", "\"\""] {
+            let open = quote.first!
+            let close = quote.last!
+            guard message.first == open,
+                let end = message[message.index(after: message.startIndex)...]
+                    .firstIndex(of: close)
+            else { continue }
+            let rest = message[message.index(after: end)...]
+                .drop(while: { $0 == " " })
+            // Only when something is left. A message that is nothing but a
+            // quoted name says less without it than with it.
+            if !rest.isEmpty { return String(rest) }
+        }
+        return message
+    }
+
+    /// Every reason, said once, and not all of them.
+    ///
+    /// macOS phrases a refusal per file, so four files on a volume with no trash
+    /// give the same sentence four times with a different name in front of each.
+    /// The names are already in the message; without them the four collapse into
+    /// the one thing that is actually wrong.
+    public static func summarise(reasons: [String]) -> String {
+        let distinct = Set(reasons).sorted()
+        // Two, because a third rarely adds anything and the band is three lines.
+        // The count rather than the text for the rest: "and 5 more reasons" is
+        // short and says there is more to find out, which a truncated sentence
+        // does not.
+        guard distinct.count > 2 else { return distinct.joined(separator: "; ") }
+        let extra = distinct.count - 2
+        return distinct.prefix(2).joined(separator: "; ")
+            + "; and \(extra) more \(extra == 1 ? "reason" : "reasons")"
+    }
+
+    /// Removes something outright, with no trash in between.
+    ///
+    /// For the folders that have no trash of their own. A folder synced by
+    /// OneDrive or iCloud lives under `~/Library/CloudStorage`, and macOS
+    /// refuses to trash anything in one: there is nowhere on that volume for it
+    /// to go. Removing it locally is what deleting it means there, because the
+    /// sync then removes it on the server too.
+    ///
+    /// Nothing here can be undone, so every caller has to have asked first.
+    public static func delete(
+        _ url: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        try fileManager.removeItem(at: url)
+    }
+
+    /// Whether deleting outright is even worth offering for this.
+    ///
+    /// Not for the folders macOS keeps in a home directory. Their refusal is not
+    /// a missing trash, it is macOS saying no, and answering it by deleting
+    /// `~/Documents` for good would be the worst thing this application could
+    /// do.
+    public static func canDeleteOutright(
+        _ url: URL,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> Bool {
+        !isReservedHomeFolder(url, home: home)
     }
 
     /// The folders macOS keeps for itself directly inside a home directory.

@@ -179,3 +179,17 @@ cannot be moved to the trash.
 The system refuses by returning success and doing nothing, so every trash is
 checked afterwards rather than believed, and a selection containing one of them
 still trashes everything else.
+.Pp
+Folders under
+.Pa ~/Library/CloudStorage ,
+where OneDrive and iCloud Drive keep what they sync, have no trash on their
+volume at all, so moving anything there to the trash is refused outright.
+The refusal offers
+.Sy Delete \&It
+instead, which is also
+.Sy Delete Immediately
+in the File menu on Option-Command-Backspace: the item is removed here and the
+File Provider then removes it on the server.
+It asks first and cannot be undone.
+The folders macOS keeps are never offered, because their refusal is not a
+missing trash.
