@@ -189,6 +189,89 @@ enum OrderAndTrashSuites {
                     "~/\(name) is a folder people make themselves, not one of Apple's")
             }
         }
+
+        deleting()
+    }
+
+    /// Deleting outright, for the folders that have no trash to delete into.
+    private static func deleting() {
+        Harness.suite("delete: a refusal loses the name macOS puts in front of it") {
+            let message =
+                "\u{201C}Book.xlsx\u{201D} couldn't be moved to the trash because "
+                + "the volume \u{201C}Macintosh HD\u{201D} doesn't have one."
+            let stripped = FileOperations.withoutLeadingName(message)
+            Harness.expect(
+                stripped.hasPrefix("couldn't be moved"),
+                "the name goes and the reason stays, got \(stripped)")
+            Harness.expect(
+                !stripped.contains("Book.xlsx"),
+                "so the same reason about four files is one reason, not four")
+        }
+
+        Harness.suite("delete: a message that is only a name keeps it") {
+            // Nothing would be left, and a refusal that says nothing at all is
+            // worse than one that says which file.
+            Harness.expectEqual(
+                FileOperations.withoutLeadingName("\u{201C}Book.xlsx\u{201D}"),
+                "\u{201C}Book.xlsx\u{201D}",
+                "there is no reason to take the name off")
+            Harness.expectEqual(
+                FileOperations.withoutLeadingName("the volume has no trash"),
+                "the volume has no trash",
+                "and a message with no name in front is left alone")
+            Harness.expectEqual(
+                FileOperations.withoutLeadingName("\"a.txt\" is in use"),
+                "is in use",
+                "straight quotes count too")
+        }
+
+        Harness.suite("delete: four files, one reason, said once") {
+            let same = Array(repeating: "the volume doesn't have a trash", count: 4)
+            Harness.expectEqual(
+                FileOperations.summarise(reasons: same),
+                "the volume doesn't have a trash",
+                "the paragraph that made the window 4069 points wide is one sentence")
+        }
+
+        Harness.suite("delete: more than two reasons are counted, not listed") {
+            let many = ["a", "b", "c", "d"]
+            Harness.expectEqual(
+                FileOperations.summarise(reasons: many),
+                "a; b; and 2 more reasons",
+                "two of them and a count of the rest")
+            Harness.expectEqual(
+                FileOperations.summarise(reasons: ["a", "b", "c"]),
+                "a; b; and 1 more reason",
+                "and one more is singular")
+            Harness.expectEqual(
+                FileOperations.summarise(reasons: []), "",
+                "nothing refused says nothing")
+        }
+
+        Harness.suite("delete: an ordinary file goes, with no trash in between") {
+            try withSandbox(["gone.txt"]) { root in
+                let file = root.appendingPathComponent("gone.txt")
+                try FileOperations.delete(file)
+                Harness.expect(
+                    !FileManager.default.fileExists(atPath: file.path),
+                    "and it is not in the trash either, it is gone")
+            }
+        }
+
+        Harness.suite("delete: the folders macOS keeps are never offered") {
+            let home = URL(fileURLWithPath: "/Users/somebody")
+            for name in ["Documents", "Desktop", "Library"] {
+                Harness.expect(
+                    !FileOperations.canDeleteOutright(
+                        home.appendingPathComponent(name), home: home),
+                    "deleting ~/\(name) for good is not something to offer")
+            }
+            Harness.expect(
+                FileOperations.canDeleteOutright(
+                    home.appendingPathComponent("Library/CloudStorage/OneDrive/report.pdf"),
+                    home: home),
+                "a file in a synced folder is, which is the whole point")
+        }
     }
 }
 

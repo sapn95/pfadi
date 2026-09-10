@@ -84,6 +84,7 @@ drag     a column header to move it
 ⌃⌘N      new file, likewise
 F2       rename
 ⌘⌫       move to the trash
+⌥⌘⌫      delete for good, for the folders that have no trash
 ⌘Z       undo any of that
 ⌘I       what is this: kind, size, dates, access, cloud status
 ⇧⌘C      copy the path of the selection
@@ -516,6 +517,33 @@ what it can and reports the rest:
 moved report.pdf to the trash; could not move Documents:
 macOS does not let this folder be moved to the trash
 ```
+
+**Some folders have no trash at all**, and there ⌘⌫ can only ever be refused.
+Everything under `~/Library/CloudStorage`, which is where OneDrive and iCloud
+Drive put what they sync, is on a volume with nowhere for a trashed file to go.
+macOS phrases that refusal once per file with the name in front of it, so four
+selected files came back as four sentences saying the same thing. The name is
+already in the list of what was refused, so it comes off the reason and the four
+collapse into one.
+
+Then the band offers the only thing left: **Delete It**, or ⌥⌘⌫ from the
+keyboard, which is Finder's own shortcut for it. That removes the file here, and
+the File Provider then removes it on the server, which is what deleting means in
+a folder something is syncing. It asks first, with Cancel as the button return
+picks, because nothing can put it back. The folders macOS keeps are never
+offered: their refusal is macOS saying no rather than a missing trash, and
+answering it by deleting `~/Documents` for good would be the worst thing this
+application could do.
+
+**That message also resized the window.** A label reports the width of its whole
+text as the size it wants, and a window may not be smaller than what its content
+asks for, so a refusal naming four files asked for 4069 points and the window
+became that wide: a strip across the screen with the list squashed into it. The
+band now wraps at a width taken from the view it sits in, set before the text
+rather than after it, and the status line truncates instead of insisting. Lowering
+compression resistance is not enough on its own, because a label still counts
+towards `fittingSize`. `--layout-check` measures the window before and after a
+long notice.
 
 **Replacing never destroys.** Choosing Replace during a paste puts the existing
 item in the trash first and then copies. A wrong answer in that dialog is

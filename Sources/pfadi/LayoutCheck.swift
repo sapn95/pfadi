@@ -345,6 +345,8 @@ enum LayoutCheck {
         sizing(in: window, fixture: start)
         selecting(in: window, fixture: start)
         addressBar(in: window, fixture: start)
+        longNotice(in: window)
+        deletingOutright(in: window, fixture: start)
     }
 
     /// Typing a path and pressing return.
@@ -448,6 +450,156 @@ enum LayoutCheck {
             "a share typed into the bar reaches the mounter, got \(browser.statusState.text)")
         browser.endConnectingForCheck()
         settle(seconds: 0.3)
+    }
+
+    /// A message too long for the window it appears in.
+    ///
+    /// Four files refused on a volume with no trash produce a paragraph, and a
+    /// label reports the width of its whole text as the size it wants. A window
+    /// is not allowed to be smaller than what its content asks for, so the window
+    /// became 4069 points wide and turned into a strip across the screen with the
+    /// list crushed into it. Measured rather than eyeballed: the numbers below
+    /// are the ones that were wrong.
+    private static func longNotice(in window: BrowserWindow) {
+        let browser = window.browser
+        // The real thing, from the report that found this: Apple's phrasing, one
+        // sentence per file, with the file name in front of each.
+        let long = (1...4).map {
+            "\u{201C}Report_Filer_Migration_TSS_-_AWS_2026.05.08_09_1\($0)_08.958_69753\($0).pdf"
+                + "\u{201D} couldn't be moved to the trash because the volume "
+                + "\u{201C}Macintosh HD\u{201D} doesn't have one."
+        }.joined(separator: "; ")
+
+        window.window.setContentSize(NSSize(width: 1058, height: 560))
+        window.window.layoutIfNeeded()
+        let before = window.window.frame
+
+        browser.showNotice("could not move 4 items: \(long)")
+        window.window.layoutIfNeeded()
+        settle(seconds: 0.3)
+
+        let after = window.window.frame
+        expect(
+            after.width <= before.width + 0.5,
+            "a long message leaves the window's width alone, \(Int(before.width)) "
+                + "became \(Int(after.width))")
+        expect(
+            after.height <= before.height + 0.5,
+            "and its height, \(Int(before.height)) became \(Int(after.height))")
+        expect(
+            browser.view.fittingSize.width <= after.width,
+            "nothing in the window is asking for more width than it has, "
+                + "\(Int(browser.view.fittingSize.width)) of \(Int(after.width))")
+
+        // Still legible, rather than fixed by throwing the message away.
+        expect(
+            browser.bannerMessage.contains("Macintosh HD"),
+            "and the band still says what was wrong")
+        let report = browser.layoutReport()
+        if let status = report.frames["status"] {
+            expect(
+                status.maxX <= report.bounds.width + 0.5,
+                "the status line stays inside the window, \(Int(status.maxX)) "
+                    + "of \(Int(report.bounds.width))")
+        }
+
+        browser.dismissNotice()
+        settle(seconds: 0.2)
+    }
+
+    /// Deleting when there is no trash to delete into.
+    ///
+    /// The folders OneDrive and iCloud sync have no trash of their own, so ⌘⌫
+    /// there is refused by macOS and there is nothing further to try. What
+    /// somebody meant was "get rid of it", and getting rid of it locally is what
+    /// deletes it on the server too.
+    private static func deletingOutright(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+
+        let doomed = fixture.appendingPathComponent("delete-me.txt")
+        manager.createFile(atPath: doomed.path, contents: Data("x".utf8))
+        browser.navigate(to: fixture)
+        settle(until: { browser.rowIndex(of: doomed.lastPathComponent) != nil }, seconds: 5)
+
+        browser.deleteOutright([doomed])
+        settle(seconds: 0.4)
+        expect(!manager.fileExists(atPath: doomed.path), "a file deleted outright is gone")
+        expect(
+            browser.statusLine.contains("deleted"),
+            "and it says so, got \(browser.statusLine)")
+
+        // The gate in front of the irreversible one. ~/Documents refuses to be
+        // trashed, and answering that refusal by deleting it for good would be
+        // the worst thing this application could do.
+        let documents = manager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Documents")
+        browser.deleteOutright([documents])
+        settle(seconds: 0.3)
+        expect(
+            manager.fileExists(atPath: documents.path),
+            "the folders macOS keeps are never deleted outright")
+        expect(
+            browser.bannerMessage.contains("could not delete"),
+            "and it says why rather than failing quietly, got \(browser.bannerMessage)")
+        browser.dismissNotice()
+
+        // And the offer itself: a refusal that deleting could answer puts a
+        // button in the band, one that macOS will never allow does not.
+        let locked = fixture.appendingPathComponent("locked")
+        try? manager.createDirectory(at: locked, withIntermediateDirectories: true)
+        let inside = locked.appendingPathComponent("stuck.txt")
+        manager.createFile(atPath: inside.path, contents: Data("x".utf8))
+        // No write permission on the folder, so the file cannot be unlinked from
+        // it: the trash is refused for a reason that is not macOS saying no.
+        try? manager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: locked.path)
+        defer {
+            try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: locked.path)
+            try? manager.removeItem(at: locked)
+        }
+
+        browser.navigate(to: locked)
+        settle(until: { browser.rowIndex(of: inside.lastPathComponent) != nil }, seconds: 5)
+        guard let row = browser.rowIndex(of: inside.lastPathComponent) else {
+            failures += 1
+            print("  FAIL the file in the locked folder is listed")
+            return
+        }
+        browser.selectRange(row..<(row + 1))
+        browser.moveToTrash(nil)
+        settle(seconds: 0.5)
+
+        expect(
+            manager.fileExists(atPath: inside.path),
+            "a file that cannot be unlinked stays where it is")
+        expect(
+            browser.bannerOffer.contains("Delete"),
+            "the band offers to delete it instead, got \(browser.bannerOffer)")
+
+        // Taking the offer asks first. Nothing here can be undone, so the button
+        // in the band opens the question rather than answering it.
+        expect(browser.takeBannerOffer(), "and the offer can be taken")
+        settle(until: { window.window.attachedSheet != nil }, seconds: 3)
+        expect(
+            window.window.attachedSheet != nil,
+            "which asks before doing anything that cannot be undone")
+        if let sheet = window.window.attachedSheet {
+            // Cancel is the first button, which is the one return picks.
+            window.window.endSheet(sheet, returnCode: .alertFirstButtonReturn)
+            settle(seconds: 0.3)
+        }
+        expect(
+            manager.fileExists(atPath: inside.path),
+            "and cancelling leaves the file where it was")
+
+        // And a delete that fails says so rather than reporting nothing: this
+        // folder refuses the unlink too, which is the honest outcome to show.
+        browser.deleteOutright([inside])
+        settle(seconds: 0.4)
+        expect(
+            browser.bannerMessage.contains("could not delete"),
+            "a delete that fails is reported, got \(browser.bannerMessage)")
+        browser.dismissNotice()
     }
 
     /// More than one row at a time.

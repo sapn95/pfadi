@@ -117,6 +117,16 @@ enum MainMenu {
         )
         trash.keyEquivalentModifierMask = [.command]
 
+        // Finder's own shortcut for it, because it is Finder's own idea: the
+        // folders OneDrive and iCloud sync have no trash, so there ⌘⌫ can only
+        // be refused and this is the whole of what "delete" can mean.
+        let delete = menu.addItem(
+            withTitle: "Delete Immediately",
+            action: #selector(BrowserViewController.deleteImmediately(_:)),
+            keyEquivalent: String(utf16CodeUnits: [unichar(NSBackspaceCharacter)], count: 1)
+        )
+        delete.keyEquivalentModifierMask = [.command, .option]
+
         item.submenu = menu
         return item
     }
