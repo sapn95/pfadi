@@ -156,6 +156,13 @@ public enum DockTile {
         process.waitUntilExit()
     }
 
+    /// What the Dock's tiles point at right now, changing nothing.
+    public static func currentTiles() -> [String] {
+        tilePaths(
+            in: CFPreferencesCopyAppValue(key as CFString, domain as CFString)
+                as? [[String: Any]] ?? [])
+    }
+
     /// Whether the tile points at something that is no longer there.
     ///
     /// The shape an upgrade leaves behind: the folder Homebrew installed into

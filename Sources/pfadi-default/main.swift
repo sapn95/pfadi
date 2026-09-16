@@ -299,21 +299,20 @@ func register(_ bundle: URL) {
 // MARK: - The Dock
 
 /// What the Dock's pfadi tile currently points at.
+///
+/// Read only, because `pfadi-default` with no command promises to change
+/// nothing. Asking `point` and throwing the answer away would quietly repair
+/// the tile while reporting on it, and would then leave the Dock unrestarted,
+/// so the stale tile stayed on screen until something else restarted it.
 func dockDescription() -> String {
     guard let bundle = findBundle() else { return "no pfadi to point at" }
-    switch DockTile.point(at: bundle, repairingOnly: true, restarting: false) {
+    switch DockTile.placement(of: DockTile.currentTiles(), bundle: bundle) {
     case .alreadyThere:
-        // Nothing was written, so either it is right or there is no tile.
-        let tiles = DockTile.tilePaths(
-            in: CFPreferencesCopyAppValue(
-                "persistent-apps" as CFString, DockTile.domain as CFString)
-                as? [[String: Any]] ?? [])
-        return tiles.contains(where: DockTile.isPfadi) ? "pointing at \(bundle.path)" : "no tile"
-    case .repaired, .added:
-        // It had to be written to answer the question, so say what it was.
-        return "repaired, was pointing somewhere else"
-    case .refused:
-        return "could not be read"
+        return "pointing at \(bundle.path)"
+    case .replace:
+        return "pointing somewhere else, `pfadi-default dock` fixes it"
+    case .append:
+        return "no tile"
     }
 }
 

@@ -71,6 +71,22 @@ enum DockSuites {
                 "asking again changes nothing, so the Dock is not restarted for no reason")
         }
 
+        Harness.suite("dock: an upgrade is repaired towards what is installed") {
+            // The case the repair exists for, and the one it got wrong first
+            // time. After `brew upgrade` the running bundle is still the old
+            // versioned path, which is also what the tile says, so repairing
+            // towards what is running finds nothing to do and leaves the
+            // question mark. It has to aim at what would be launched now.
+            let running = URL(fileURLWithPath: "/opt/homebrew/Cellar/pfadi/0.36.0/Pfadi.app")
+            let tiles = [older]
+            Harness.expectEqual(
+                DockTile.placement(of: tiles, bundle: running), .alreadyThere,
+                "aimed at the running bundle there is nothing to do")
+            Harness.expectEqual(
+                DockTile.placement(of: tiles, bundle: cellar), .replace(0),
+                "and aimed at the installed one there is")
+        }
+
         Harness.suite("dock: a tile holds no leftovers from where it used to point") {
             // The old entry carries a bookmark of the folder that has just been
             // deleted. Editing the URL and keeping the rest gives a tile with
