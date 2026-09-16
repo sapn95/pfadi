@@ -148,5 +148,6 @@ DefaultHandlerSuites.run()
 OrderAndTrashSuites.run()
 OrderAndTrashSuites.runColumns()
 ArchiveSuites.run()
+DockSuites.run()
 
 Harness.finish()

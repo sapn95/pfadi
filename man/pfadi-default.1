@@ -7,7 +7,7 @@
 .Nd use pfadi in place of Finder, as far as macOS allows
 .Sh SYNOPSIS
 .Nm
-.Op Cm status | Cm apply | Cm undo
+.Op Cm status | Cm apply | Cm dock | Cm undo
 .Nm
 .Op Fl h | Fl -help | Fl v | Fl -version
 .Sh DESCRIPTION
@@ -87,6 +87,19 @@ This is also what running
 with no command does.
 .It Cm apply
 All four mechanisms above.
+.It Cm dock
+Point the Dock's pfadi tile at the version that is installed now, or put pfadi
+in the Dock when there is no tile at all.
+.Pp
+Homebrew installs into a path with the version in it, so an upgrade leaves the
+tile pointing at a folder that has been deleted.
+Aiming the tile at the stable
+.Pa opt
+symlink does not help: the Dock rewrites the entry to the resolved path the
+moment the application runs.
+The application repairs its own tile whenever it comes forward and finds it
+somewhere else, so this is only needed when pfadi was not running across the
+upgrade.
 .It Cm undo
 All of it back.
 The launcher is removed only when its bundle identifier says pfadi put it there,

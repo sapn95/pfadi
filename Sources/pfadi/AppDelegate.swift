@@ -100,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `brew upgrade` happens while this is sitting in the background, and at
     /// launch there was nothing to say.
     func applicationDidBecomeActive(_ notification: Notification) {
+        Self.keepDockTile()
         guard let message = Self.upgradeNotice() else { return }
         // Once per version, not once per switch to the window. Somebody who
         // has read it and carried on working does not need it every time they
@@ -110,6 +111,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var lastUpgradeNotice: String?
+
+    /// Points a pfadi tile in the Dock at whatever is running.
+    ///
+    /// Homebrew installs into a path with the version in it, so every upgrade
+    /// left the tile pointing at a folder that had just been deleted and it had
+    /// to be dragged in again. Aiming it at the stable `opt` symlink does not
+    /// help: the Dock rewrites the entry to the resolved path the moment the
+    /// application runs, which is measured in `DockTile`.
+    ///
+    /// So it is repaired instead, from the one place that knows where the
+    /// running bundle is. Only repaired: an application that adds itself to
+    /// somebody's Dock because it was started is doing something it was not
+    /// asked to.
+    private static func keepDockTile() {
+        let bundle = Bundle.main.bundleURL
+        // A real installed bundle, not a build directory. `swift run pfadi`
+        // and the checks have no `.app` around them, and pointing somebody's
+        // Dock tile at `.build/debug` would be a far worse bug than the one
+        // this fixes.
+        guard DockTile.isPfadi(DockTile.urlString(for: bundle)) else { return }
+        DockTile.point(at: bundle, repairingOnly: true)
+    }
 
     /// What the system would launch now, against what is running.
     static func upgradeNotice() -> String? {

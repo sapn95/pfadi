@@ -186,13 +186,9 @@ whose number arrives after the listing does.
 .Pp
 The list is newest first until a header is clicked, and whatever was clicked
 last survives a quit.
-Folders are held above the files under
-.Sy Name
-and are sorted among them under every other column, because a block of folders
-at the top of a newest-first list hides the row being asked for.
-A filter drops them among the files under
-.Sy Name
-too.
+Folders are not held above the files under any column: a folder sorts on its own
+name, date or measured size, in among everything else, because a block of them
+at the top hides the row being asked for.
 .Sh CAVEATS
 Folder sizes in the size column are measured by walking the folder, because the
 filesystem does not record them.

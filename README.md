@@ -276,22 +276,12 @@ more often to see what has just landed in it than to read it alphabetically,
 and the alphabet is one click on the Name header away. Whatever you last
 clicked survives a quit.
 
-**Folders float to the top under the Name column, and nowhere else.** That
-convention is right when you are reading a folder and wrong the moment you ask
-it a question: newest first with forty folders pinned above the files shows
-forty rows before the newest thing in the folder, which is the row that was
-being asked for. Under a date or a size, folders sort among the files by the
-same number everything else is sorted by.
-
-**The filter drops them too.** Typing into ⌘F is a question about names, and
-answering it with every matching folder first puts the file you were looking
-for below all of them.
-
-| Sorted by | Where the folders are |
-| --- | --- |
-| Name | Above the files |
-| Name, with a filter on | Wherever their name puts them |
-| Anything else | Wherever their date, size or kind puts them |
+**Folders are not held above the files.** Every other file browser does that,
+and it answers a question nobody asked: sorted by name you want the alphabet,
+and a block of folders in front of it means reading the list twice to find a
+name you already know. Sorted by date you want what has just changed, and forty
+folders on top hide it. So a folder sorts on its own name, its own date, its own
+measured size, in among everything else.
 
 ## Folder sizes
 
@@ -637,6 +627,7 @@ installed claims gave a window that had visibly done nothing.
 ```bash
 pfadi-default          # what the system has now, changing nothing
 pfadi-default apply    # the file viewer, the launcher, the shell function
+pfadi-default dock     # the Dock tile, pointed at what is installed now
 pfadi-default undo     # all of it back
 man pfadi-default      # the long version
 ```
@@ -817,6 +808,23 @@ So pfadi checks when it comes forward, and says so once:
 Only when the two are different bundles. The same path upgraded underneath it
 is not worth mentioning, because quitting and reopening gets the same path
 back.
+
+**And the Dock icon used to go with it.** Homebrew installs into a path with the
+version in it, so the tile pointed at `…/Cellar/pfadi/0.36.0/Pfadi.app`, and the
+next upgrade deleted that folder and left a question mark to be dragged in
+again.
+
+Pointing the tile at the stable `…/opt/pfadi/Pfadi.app` symlink instead does not
+work, and that was measured rather than assumed: the tile was rewritten to point
+there, the Dock restarted, pfadi launched, and the entry read back as the
+resolved Cellar path again. The Dock stores where the running bundle actually
+is, so there is nothing to aim at that stays still.
+
+So the tile is repaired rather than aimed. pfadi points it at itself whenever it
+comes forward and finds it somewhere else, which covers the ordinary case of
+upgrading while it is open, and `pfadi-default dock` does it on demand. It only
+ever **repairs**: an application that adds itself to your Dock because you
+happened to start it is doing something it was not asked to do.
 
 `pfadi --version` prints which bundle it would open, for the other half of the
 same problem: the command and the application are installed together and can

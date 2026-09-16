@@ -31,51 +31,34 @@ public struct ListingOrder: Equatable, Sendable {
 
     /// Newest first, which is what a folder is usually opened to find out.
     public static let byNewest = ListingOrder(key: .modified, ascending: false)
-
-    /// Whether folders are held above the files rather than sorted among them.
-    ///
-    /// Only under the name column. Sorting by a date or a size is asking a
-    /// question about every row, and a block of folders at the top is the one
-    /// answer that cannot be right: newest first with forty folders pinned
-    /// above the files shows forty rows before the newest thing in the folder.
-    /// Under the name column the convention costs nothing and is what every
-    /// file browser on this system does, so it stays there.
-    public var groupsFolders: Bool { key == .name }
 }
 
 extension DirectoryListing {
     /// Sorts a listing.
     ///
-    /// Folders float above the files under the name column, and are sorted
-    /// among them everywhere else. See `ListingOrder.groupsFolders`.
-    ///
-    /// - Parameter groupingFolders: overrides that, for the one caller that has
-    ///   to. A filter is a question about names, and answering it with every
-    ///   matching folder first buries the file somebody was looking for.
+    /// Folders are sorted among the files rather than held above them, under
+    /// every column including the name one. The convention every other file
+    /// browser follows answers a question nobody asked: sorted by name you want
+    /// the alphabet, and a block of folders in front of it means reading the
+    /// list twice to find a name you already know. Sorted by date you want what
+    /// has just changed, and forty folders on top hide it.
     ///
     /// - Parameter sizeOf: what a row's size is, when that is not simply the
     ///   number the filesystem gave. A folder has no size on disk, so sorting
-    ///   by size used to leave every folder pinned to the top in name order —
+    ///   by size left every folder compared equal and sitting in name order,
     ///   which looks exactly like a sort that does not work. Passing the
-    ///   measured sizes in sorts the folders among themselves too. Folders that
-    ///   have not been measured yet sort last within their block, because
-    ///   unknown is not zero.
+    ///   measured sizes in puts them where their contents say. A folder nobody
+    ///   has measured yet sorts last either way up, because unknown is not
+    ///   zero.
     public static func sorted(
         _ entries: [Entry],
         by order: ListingOrder,
-        groupingFolders: Bool? = nil,
         sizeOf: ((Entry) -> Int64?)? = nil
     ) -> [Entry] {
-        let group = groupingFolders ?? order.groupsFolders
-        return entries.sorted { lhs, rhs in
-            if group, lhs.isDirectory != rhs.isDirectory {
-                return lhs.isDirectory
-            }
-
+        entries.sorted { lhs, rhs in
             // Answered here rather than in `compare`, and deliberately not
             // flipped with the column: a row whose size nobody knows yet
-            // belongs at the bottom of its block whichever way the arrow
-            // points. A comparison cannot say that, because the switch below
+            // belongs at the bottom whichever way the arrow points. A comparison cannot say that, because the switch below
             // turns it upside down along with everything else.
             if order.key == .size {
                 let left = size(of: lhs, using: sizeOf)
