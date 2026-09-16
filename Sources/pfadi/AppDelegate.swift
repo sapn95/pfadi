@@ -125,13 +125,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// somebody's Dock because it was started is doing something it was not
     /// asked to.
     private static func keepDockTile() {
-        let bundle = Bundle.main.bundleURL
-        // A real installed bundle, not a build directory. `swift run pfadi`
-        // and the checks have no `.app` around them, and pointing somebody's
-        // Dock tile at `.build/debug` would be a far worse bug than the one
-        // this fixes.
-        guard DockTile.isPfadi(DockTile.urlString(for: bundle)) else { return }
-        DockTile.point(at: bundle, repairingOnly: true)
+        // What the system would launch now, not what is running. Those differ
+        // in exactly the case this exists for: after `brew upgrade` the running
+        // bundle is still the old versioned path, which is also what the tile
+        // says, so repairing towards `Bundle.main` would find nothing to do and
+        // leave the question mark for later.
+        //
+        // The bundle has to be there: LaunchServices answers from a database
+        // that can name something already deleted, and a tile pointed at that
+        // is the bug rather than the fix.
+        guard let identifier = Bundle.main.bundleIdentifier,
+            let installed = NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: identifier),
+            FileManager.default.fileExists(atPath: installed.path)
+        else { return }
+        // A real bundle, not a build directory. `swift run pfadi` and the
+        // checks have no `.app` around them, and pointing somebody's Dock tile
+        // at `.build/debug` would be a far worse bug than the one this fixes.
+        guard DockTile.isPfadi(DockTile.urlString(for: installed)) else { return }
+        DockTile.point(at: installed, repairingOnly: true)
     }
 
     /// What the system would launch now, against what is running.
