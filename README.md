@@ -849,6 +849,7 @@ swift run pfadi-selftest        # the tests
 swift run pfadi --layout-check  # the window, clicked through
 ./scripts/coverage.sh           # how much of PfadiCore that ran, with a floor
 ./scripts/check-diagrams.sh     # every diagram in this README still renders
+./scripts/check-icon.sh         # the committed icon is what the code draws
 ./scripts/make-app.sh           # build/Pfadi.app
 ```
 
@@ -857,6 +858,17 @@ name, which is how a tree that behaves differently — a cloud mount, a
 network share — gets looked at without inventing one a CI runner cannot have.
 Point it at something with a folder inside it; with nothing to open, that part
 says so and is skipped rather than reported as a defect.
+
+The icon is the other way round: `assets/Icon.icns` is committed, and
+`scripts/make-icon.swift` draws it. It used to be rendered at every build,
+which kept it in step with the palette it came from and also put AppKit and
+`iconutil` in the install path. That is where it broke: under Homebrew's build
+environment `iconutil` called the iconset invalid, the same script having
+produced it correctly everywhere else, and 0.39.0 could not be installed at
+all. An install has no business rendering images. `check-icon.sh` regenerates
+the file and compares it byte for byte, so the committed one cannot drift from
+the code that draws it; the renderer is deterministic, which is what makes that
+a check rather than a coin toss.
 
 The diagrams above are ```` ```mermaid ```` blocks rather than committed SVGs,
 because GitHub renders them itself and a second copy of a picture is a second

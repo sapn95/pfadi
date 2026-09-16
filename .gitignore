@@ -9,3 +9,6 @@ build/
 # Editor / OS
 .DS_Store
 *.xcuserstate
+
+# Coverage leaves these behind when a binary is run outside scripts/coverage.sh.
+*.profraw
