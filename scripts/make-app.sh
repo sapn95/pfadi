@@ -33,10 +33,24 @@ rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 cp "$BINARY" "$BUNDLE/Contents/MacOS/pfadi"
 
-# The icon is drawn from source at every size rather than checked in, so it
-# stays diffable and cannot drift out of step with the palette it came from.
-swift scripts/make-icon.swift build >/dev/null
-cp build/Icon.icns "$BUNDLE/Contents/Resources/Icon.icns"
+# The icon comes out of the repository rather than being drawn here.
+#
+# It used to be rendered at every build, which kept it diffable and in step
+# with the palette it came from. It also put AppKit and iconutil in the install
+# path, and `brew install` is where that broke: under Homebrew's build
+# environment the same script that works everywhere else produced an iconset
+# iconutil called invalid, and 0.39.0 could not be installed at all. An install
+# has no business rendering images.
+#
+# scripts/check-icon.sh regenerates it and compares, so the committed file
+# still cannot drift from the code that draws it. Regenerate with
+# `swift scripts/make-icon.swift assets`.
+if [ -f assets/Icon.icns ]; then
+	cp assets/Icon.icns "$BUNDLE/Contents/Resources/Icon.icns"
+else
+	swift scripts/make-icon.swift build >/dev/null
+	cp build/Icon.icns "$BUNDLE/Contents/Resources/Icon.icns"
+fi
 
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

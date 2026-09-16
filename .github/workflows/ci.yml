@@ -57,6 +57,15 @@ jobs:
         # sample.
         run: ./scripts/check-diagrams.sh
 
+      - name: the committed icon is still what the code draws
+        # assets/Icon.icns is committed so that `brew install` does not render
+        # it: doing that put AppKit and iconutil in the install path, and under
+        # Homebrew's build environment iconutil rejected an iconset the same
+        # script produces correctly everywhere else, so 0.39.0 could not be
+        # installed. Committed art drifts from its source, so this regenerates
+        # it and compares byte for byte.
+        run: ./scripts/check-icon.sh
+
       - name: assemble the .app bundle
         run: ./scripts/make-app.sh
       - name: the bundle is actually launchable
