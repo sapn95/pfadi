@@ -1001,7 +1001,7 @@ final class BrowserViewController: NSViewController {
         }
 
         allEntries = resorted(allEntries)
-        let updated = filtered(allEntries, by: filter)
+        let updated = Self.filtered(allEntries, by: filter)
         let unchanged = updated == entries && loadedDirectory?.path == directory.path
         entries = updated
         loadedDirectory = directory
@@ -1136,15 +1136,9 @@ final class BrowserViewController: NSViewController {
     /// Matching only, not ranking: this list is in whatever order its sort
     /// column says, and reordering it by how well each name scored would fight
     /// the header somebody just clicked.
-    ///
-    /// The one thing filtering does change is the folder block. Typing into the
-    /// filter is a question about names, and answering it with every matching
-    /// folder first puts the file somebody was looking for below all of them.
-    private func filtered(_ entries: [Entry], by text: String) -> [Entry] {
+    private static func filtered(_ entries: [Entry], by text: String) -> [Entry] {
         guard !text.isEmpty else { return entries }
-        let matching = entries.filter { FuzzyMatch.matches(text, $0.name) }
-        guard order.groupsFolders else { return matching }
-        return DirectoryListing.sorted(matching, by: order, groupingFolders: false)
+        return entries.filter { FuzzyMatch.matches(text, $0.name) }
     }
 
     /// The bar and the field share a slot. The bar is what you look at and
@@ -1177,7 +1171,7 @@ final class BrowserViewController: NSViewController {
 
     @objc fileprivate func searchChanged(_ sender: NSSearchField) {
         filter = sender.stringValue.trimmingCharacters(in: .whitespaces)
-        entries = filtered(allEntries, by: filter)
+        entries = Self.filtered(allEntries, by: filter)
         rebuildTable()
         if !entries.isEmpty { select(row: 0) }
         statusLabel.stringValue = statusText()
@@ -2342,7 +2336,7 @@ extension BrowserViewController: NSTableViewDataSource, NSTableViewDelegate {
             guard order.key == .size else { return }
             let selected = selectedEntries().map(\.name)
             allEntries = resorted(allEntries)
-            entries = filtered(allEntries, by: filter)
+            entries = Self.filtered(allEntries, by: filter)
             rebuildTable()
             let wanted = Set(selected)
             select(rows: entries.indices.filter { wanted.contains(self.entries[$0].name) })

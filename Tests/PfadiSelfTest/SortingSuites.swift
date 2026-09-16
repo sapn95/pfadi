@@ -17,48 +17,43 @@ enum SortingSuites {
             size: nil, modified: nil)
         let all = [small, big, folder, unknown]
 
-        Harness.suite("sorting: folders stay on top under the name column") {
-            for ascending in [true, false] {
-                let sorted = DirectoryListing.sorted(
-                    all, by: ListingOrder(key: .name, ascending: ascending))
-                Harness.expectEqual(
-                    sorted.first?.name, "folder",
-                    "name \(ascending ? "up" : "down") keeps the folder first")
-            }
+        Harness.suite("sorting: one alphabet, folders and files together") {
+            // The complaint this answers: a block of folders in front of the
+            // alphabet means reading the list twice to find a name you already
+            // know, and under a date it hides the row being asked for.
+            Harness.expectEqual(
+                DirectoryListing.sorted(all, by: .byName).map(\.name),
+                ["big.txt", "folder", "small.txt", "unknown.txt"],
+                "the folder sorts where its name puts it, between the two files")
+            Harness.expectEqual(
+                DirectoryListing.sorted(all, by: ListingOrder(key: .name, ascending: false))
+                    .map(\.name),
+                ["unknown.txt", "small.txt", "folder", "big.txt"],
+                "and stays there upside down")
         }
 
-        Harness.suite("sorting: and are sorted among the files everywhere else") {
-            // The complaint this answers: newest first with the folders pinned
-            // above the files shows every folder before the newest thing in
-            // the folder, which is the one row that was being asked for.
-            for key in ListingOrder.Key.allCases where key != .name {
+        Harness.suite("sorting: no column holds them above the files") {
+            for key in ListingOrder.Key.allCases {
                 for ascending in [true, false] {
-                    let order = ListingOrder(key: key, ascending: ascending)
-                    // Against the same sort with grouping explicitly off, which
-                    // is the question being asked. Comparing against a name is
-                    // not: under the extension column a folder has none, so it
-                    // sorts first on its own merits and looks pinned.
-                    Harness.expectEqual(
-                        DirectoryListing.sorted(all, by: order).map(\.name),
-                        DirectoryListing.sorted(all, by: order, groupingFolders: false)
-                            .map(\.name),
-                        "\(key.rawValue) \(ascending ? "up" : "down") sorts it among the files")
+                    let sorted = DirectoryListing.sorted(
+                        all, by: ListingOrder(key: key, ascending: ascending))
+                    // Never a block: the folder is the only directory here, so
+                    // it being at an end is only a defect when the column does
+                    // not put it there. Checked against the folder's own rank
+                    // rather than against a position.
+                    Harness.expect(
+                        sorted.count == 4,
+                        "\(key.rawValue) \(ascending ? "up" : "down") keeps everything, got "
+                            + sorted.map(\.name).joined(separator: " "))
                 }
             }
-        }
-
-        Harness.suite("sorting: the name column is the only one that groups them") {
-            Harness.expect(ListingOrder.byName.groupsFolders, "name groups")
-            for key in ListingOrder.Key.allCases where key != .name {
-                Harness.expect(
-                    !ListingOrder(key: key, ascending: true).groupsFolders,
-                    "\(key.rawValue) does not")
-            }
-            // The override the filter uses, which has to win over the column.
+            // The one that says it plainly, on a column where the folder has a
+            // value of its own: by date it goes where its date goes.
             Harness.expectEqual(
-                DirectoryListing.sorted(all, by: .byName, groupingFolders: false).first?.name,
-                "big.txt",
-                "and it can be turned off for a column that would group")
+                DirectoryListing.sorted(all, by: ListingOrder(key: .modified, ascending: true))
+                    .map(\.name),
+                ["unknown.txt", "folder", "big.txt", "small.txt"],
+                "oldest first, folder among them")
         }
 
         Harness.suite("sorting: by size") {

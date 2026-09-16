@@ -296,6 +296,41 @@ func register(_ bundle: URL) {
     process.waitUntilExit()
 }
 
+// MARK: - The Dock
+
+/// What the Dock's pfadi tile currently points at.
+func dockDescription() -> String {
+    guard let bundle = findBundle() else { return "no pfadi to point at" }
+    switch DockTile.point(at: bundle, repairingOnly: true, restarting: false) {
+    case .alreadyThere:
+        // Nothing was written, so either it is right or there is no tile.
+        let tiles = DockTile.tilePaths(
+            in: CFPreferencesCopyAppValue(
+                "persistent-apps" as CFString, DockTile.domain as CFString)
+                as? [[String: Any]] ?? [])
+        return tiles.contains(where: DockTile.isPfadi) ? "pointing at \(bundle.path)" : "no tile"
+    case .repaired, .added:
+        // It had to be written to answer the question, so say what it was.
+        return "repaired, was pointing somewhere else"
+    case .refused:
+        return "could not be read"
+    }
+}
+
+/// Puts pfadi in the Dock, or points an existing tile at what is installed.
+func pointDockTile(at bundle: URL) {
+    switch DockTile.point(at: bundle) {
+    case .added:
+        print("==> put pfadi in the Dock")
+    case .repaired:
+        print("==> pointed the Dock tile at \(bundle.path)")
+    case .alreadyThere:
+        print("==> the Dock tile already points at this one")
+    case .refused:
+        print("==> could not write the Dock's settings, so the tile is unchanged")
+    }
+}
+
 // MARK: - Printing
 
 func row(_ label: String, _ value: String) {
@@ -309,6 +344,7 @@ func status() {
     print("command:  \(launchCommand())")
     let launcher = FileManager.default.fileExists(atPath: launcherURL().path)
     print("launcher: \(launcher ? launcherURL().path : "not installed")")
+    print("dock:     \(dockDescription())")
     print("shell:    \(profileURL().path), \(profileHasBlock() ? "installed" : "not installed")")
 
     let viewer = fileViewer()
@@ -354,6 +390,8 @@ func apply() throws {
 
     try writeShellBlock()
     print("==> `open .` in \(profileURL().lastPathComponent) now goes to pfadi")
+
+    pointDockTile(at: bundle)
 
     // The one that actually replaces Finder for something people do all day.
     setFileViewer(pfadiBundleID)
@@ -514,6 +552,8 @@ let usage = """
                                function, and every content type macOS will
                                actually hand over
       pfadi-default undo       all of it back
+      pfadi-default dock       put pfadi in the Dock, or point the tile it
+                               already has at the version just installed
       pfadi-default credentials [command | off]
                                a command to ask for a share's password,
                                for Proton Pass, 1Password, pass, anything
@@ -549,6 +589,12 @@ if arguments.count > 1 {
 switch arguments.first {
 case "apply":
     try apply()
+case "dock":
+    guard let bundle = findBundle() else {
+        print("cannot find Pfadi.app. Set PFADI_APP to it and try again.")
+        exit(1)
+    }
+    pointDockTile(at: bundle)
 case "undo":
     try undo()
 case "status", nil:

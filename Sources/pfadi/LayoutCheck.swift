@@ -458,11 +458,10 @@ enum LayoutCheck {
     ///
     /// Two complaints, one cause. A folder is opened far more often to see what
     /// has just landed in it than to read it alphabetically, and a block of
-    /// folders pinned above the files shows every folder before the newest
-    /// thing in it. So newest first is the default, and the folders only float
-    /// under the name column, with the filter dropping them among the files
-    /// too: typing into it is a question about names, and answering it with
-    /// every matching folder first buries the file being looked for.
+    /// folders pinned above the files shows every folder before the newest thing
+    /// in it. So newest first is the default, and folders are sorted among the
+    /// files under every column, the name one included: one alphabet, rather
+    /// than one to read and then another underneath it.
     ///
     /// Everything below holds whichever way the column points, because clicking
     /// a header toggles it and which way it lands depends on what ran before.
@@ -480,8 +479,8 @@ enum LayoutCheck {
         defer { try? manager.removeItem(at: folder) }
 
         // The folder's name and date both sit in the middle of the files, so
-        // "first or last" says grouping and nothing else. A folder named to
-        // sort at one end would be at that end under either rule.
+        // "neither first nor last" says it is in the sort rather than above it.
+        // A folder named to sort at one end would be at that end either way.
         let middle = folder.appendingPathComponent("report-mid")
         try? manager.createDirectory(at: middle, withIntermediateDirectories: true)
         for name in ["report-1.txt", "report-z.txt", "notes.txt"] {
@@ -500,10 +499,10 @@ enum LayoutCheck {
         browser.navigate(to: folder)
         settle(until: { browser.rowIndex(of: "report-mid") != nil }, seconds: 5)
         expect(browser.clickColumnHeader("name"), "sorted by name")
-        settle(until: { browser.listedNames.first == "report-mid" }, seconds: 3)
+        settle(until: { browser.listedNames.first != "report-mid" }, seconds: 3)
         expect(
-            browser.listedNames.first == "report-mid",
-            "the folder is on top under the name column, got "
+            browser.listedNames.first != "report-mid" && browser.listedNames.last != "report-mid",
+            "the folder sits in the alphabet rather than on top of it, got "
                 + browser.listedNames.joined(separator: " "))
 
         browser.setFilter("report")
@@ -511,22 +510,17 @@ enum LayoutCheck {
         expect(browser.rowCount == 3, "the filter finds all three, got \(browser.rowCount)")
         expect(
             browser.listedNames.dropFirst().first == "report-mid",
-            "and filtering puts it where its name says, in the middle, got "
+            "and filtering leaves it there, in the middle, got "
                 + browser.listedNames.joined(separator: " "))
-
         browser.setFilter("")
-        settle(until: { browser.listedNames.first == "report-mid" }, seconds: 3)
-        expect(
-            browser.listedNames.first == "report-mid",
-            "clearing the filter floats it again, got "
-                + browser.listedNames.joined(separator: " "))
+        settle(until: { browser.rowCount == 4 }, seconds: 3)
 
-        // And under a date, where the block would hide the row being asked for.
+        // And under a date, where a block on top would hide the newest row.
         expect(browser.clickColumnHeader("modified"), "sorted by modified")
         settle(until: { browser.listedNames.first != "report-mid" }, seconds: 3)
         expect(
             browser.listedNames.first != "report-mid" && browser.listedNames.last != "report-mid",
-            "a date column sorts it among the files, got "
+            "a date column sorts it among the files too, got "
                 + browser.listedNames.joined(separator: " "))
 
         browser.clickColumnHeader("name")
