@@ -213,6 +213,9 @@ final class BrowserViewController: NSViewController {
         return true
     }
 
+    /// What the right-click menu offers, for the checks.
+    var contextMenuTitles: [String] { tableView.menu?.items.map(\.title) ?? [] }
+
     /// Whether a menu item would be offered for the selection, for the checks.
     ///
     /// Through the real validation, because an item that is there and greyed
@@ -814,6 +817,9 @@ final class BrowserViewController: NSViewController {
         }
 
         menu.addItem(.separator())
+        menu.addItem(
+            withTitle: "AirDrop", action: #selector(airDropSelection(_:)), keyEquivalent: ""
+        ).target = self
         menu.addItem(withTitle: "Unzip", action: #selector(unzipSelection(_:)), keyEquivalent: "")
             .target = self
         menu.addItem(withTitle: "Rename", action: #selector(renameSelection(_:)), keyEquivalent: "")
@@ -1355,6 +1361,20 @@ final class BrowserViewController: NSViewController {
             navigate(to: landed)
         } else {
             reveal(landed)
+        }
+    }
+
+    /// Sends the selection to somebody nearby.
+    ///
+    /// Said out loud when it cannot, because the sheet simply not appearing is
+    /// indistinguishable from a click that missed.
+    @objc func airDropSelection(_ sender: Any?) {
+        let urls = selectedEntries().map(\.url)
+        guard !urls.isEmpty else { return }
+        guard AirDrop.send(urls) else {
+            NSSound.beep()
+            warn("AirDrop is not available: it is switched off, or Wi-Fi or Bluetooth is")
+            return
         }
     }
 
@@ -2191,6 +2211,7 @@ extension BrowserViewController: NSMenuItemValidation {
         if menuItem.action == #selector(copy(_:))
             || menuItem.action == #selector(moveToTrash(_:))
             || menuItem.action == #selector(deleteImmediately(_:))
+            || menuItem.action == #selector(airDropSelection(_:))
         {
             return !selectedEntries().isEmpty
         }
