@@ -101,6 +101,14 @@ enum MainMenu {
         )
         rename.keyEquivalentModifierMask = []
 
+        // No key: Finder's is ⇧⌘R, which here is Show in Finder, and a shortcut
+        // that does something different in the two is worse than none.
+        menu.addItem(
+            withTitle: "AirDrop",
+            action: #selector(BrowserViewController.airDropSelection(_:)),
+            keyEquivalent: ""
+        )
+
         // No key of its own: return on a zip already does this, and this is
         // where somebody looks when they do not know that yet.
         menu.addItem(

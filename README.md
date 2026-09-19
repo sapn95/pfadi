@@ -163,6 +163,14 @@ again when the window comes forward rather than on every navigation: asking the
 kernel for every mounted filesystem blocks on a share whose server has gone
 away, and that belongs nowhere near walking a folder tree.
 
+**AirDrop** sits at the top of Locations, where Finder keeps it. Clicking it
+opens the system's AirDrop window, which shows who is nearby and whether this
+Mac can be seen; that list belongs to macOS and there is no public way to draw
+it, so it is opened rather than rebuilt. Files dropped on the row are sent,
+and **AirDrop** in the File and right-click menus sends whatever is selected.
+It has no shortcut: Finder's is ⇧⌘R, which here is Show in Finder, and a key
+that does different things in the two is worse than none.
+
 **Servers** remembers what you have connected to, and always ends in
 `Connect to Server…`. A way in that only appears once you already have one is
 not a way in.

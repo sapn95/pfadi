@@ -831,6 +831,7 @@ enum LayoutCheck {
         openingFolders(in: window, fixture: fixture)
         creating(in: window, fixture: fixture)
         sidebarFilter(in: window)
+        airDropping(in: window, fixture: fixture)
         connecting(in: window)
         icons(in: window, fixture: fixture)
     }
@@ -925,6 +926,53 @@ enum LayoutCheck {
         browser.endConnectingForCheck()
         settle(seconds: 0.3)
         expect(!browser.statusState.busy, "and stops when it is over")
+    }
+
+    /// AirDrop, in the two places Finder has it.
+    ///
+    /// Nothing here is sent: sending opens a sheet asking who to, and a check
+    /// that opened one would sit there until somebody answered it. What is
+    /// checked is that both ways in exist and are offered when they should be.
+    private static func airDropping(in window: BrowserWindow, fixture: URL) {
+        let sidebar = window.sidebar
+        let rows = sidebar.drawnRows()
+        expect(
+            rows.contains("AirDrop"),
+            "AirDrop is in the sidebar, got \(rows.joined(separator: ", "))")
+        if let airDrop = rows.firstIndex(of: "AirDrop"),
+            let heading = rows.firstIndex(of: "[Locations]")
+        {
+            expect(airDrop == heading + 1, "at the top of Locations, where Finder keeps it")
+        }
+
+        sidebar.filter(by: "airdr")
+        expect(
+            sidebar.drawnRows().contains("AirDrop"),
+            "and the sidebar filter finds it, got \(sidebar.drawnRows().joined(separator: ", "))")
+        sidebar.filter(by: "")
+
+        let browser = window.browser
+        browser.navigate(to: fixture)
+        settle(until: { browser.listedDirectory?.path == fixture.path })
+        expect(
+            browser.contextMenuTitles.contains("AirDrop"),
+            "the right-click menu offers AirDrop, got "
+                + browser.contextMenuTitles.joined(separator: ", "))
+
+        browser.clearSelection()
+        expect(
+            !browser.wouldOffer(#selector(BrowserViewController.airDropSelection(_:))),
+            "not with nothing selected")
+        guard browser.rowCount > 0 else { return }
+        browser.selectRange(0..<1)
+        expect(
+            browser.wouldOffer(#selector(BrowserViewController.airDropSelection(_:))),
+            "and with a file selected it is")
+
+        let inMenu = MainMenu.build().items.compactMap(\.submenu).flatMap(\.items).contains {
+            $0.action == #selector(BrowserViewController.airDropSelection(_:))
+        }
+        expect(inMenu, "and it is in the File menu too")
     }
 
     /// The sidebar's filter, and that it is the same match as everywhere else.

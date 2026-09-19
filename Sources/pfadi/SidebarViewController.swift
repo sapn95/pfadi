@@ -35,8 +35,19 @@ final class SidebarViewController: NSViewController {
 
         case heading(String)
         case place(URL, title: String, section: Section)
+        /// Finder's AirDrop: click to see who is nearby, drop files to send.
+        case airDrop
         /// The last row: the way in to a share that is not mounted yet.
         case connect
+
+        /// What the filter matches against.
+        var title: String {
+            switch self {
+            case .place(_, let title, _): return title
+            case .airDrop: return "AirDrop"
+            case .heading, .connect: return ""
+            }
+        }
 
         var url: URL? {
             if case .place(let url, _, _) = self { return url }
@@ -142,6 +153,7 @@ final class SidebarViewController: NSViewController {
             switch row {
             case .heading(let title): return "[\(title)]"
             case .place(_, let title, _): return title
+            case .airDrop: return "AirDrop"
             case .connect: return "(connect)"
             }
         }
@@ -198,11 +210,12 @@ final class SidebarViewController: NSViewController {
             }
         }
 
+        // Always, with AirDrop at the top where Finder keeps it: it is a place
+        // files go, and the heading is no longer empty without a volume.
+        built.append(.heading("Locations"))
+        built.append(.airDrop)
         let volumes = discovered?.volumes ?? []
-        if !volumes.isEmpty {
-            built.append(.heading("Locations"))
-            built += volumes.map { .place($0, title: $0.lastPathComponent, section: .locations) }
-        }
+        built += volumes.map { .place($0, title: $0.lastPathComponent, section: .locations) }
 
         // Always present, even with nothing under it. A way to reach a share
         // that only appears once you already have one is no way in at all.
@@ -240,10 +253,7 @@ final class SidebarViewController: NSViewController {
         var heading: Row?
 
         func flush() {
-            let kept = FuzzyMatch.filter(section, query: query) { row in
-                if case .place(_, let title, _) = row { return title }
-                return ""
-            }
+            let kept = FuzzyMatch.filter(section, query: query) { $0.title }
             // A heading with nothing under it says only that a section exists,
             // which is not what somebody filtering wants to read.
             guard !kept.isEmpty else { return }
@@ -257,7 +267,7 @@ final class SidebarViewController: NSViewController {
                 flush()
                 heading = row
                 section = []
-            case .place:
+            case .place, .airDrop:
                 section.append(row)
             case .connect:
                 // Always reachable, whatever was typed: a way in that
@@ -319,6 +329,16 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
             cell.textField?.stringValue = title
             return cell
 
+        case .airDrop:
+            let id = NSUserInterfaceItemIdentifier("favouriteCell")
+            let cell =
+                tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
+                ?? Self.makeCell(id: id)
+            cell.imageView?.image = AirDrop.icon
+            cell.textField?.stringValue = "AirDrop"
+            cell.textField?.toolTip = "Who is nearby. Drop files here to send them."
+            return cell
+
         case .connect:
             let id = NSUserInterfaceItemIdentifier("favouriteCell")
             let cell =
@@ -368,6 +388,11 @@ extension SidebarViewController: NSTableViewDataSource, NSTableViewDelegate {
         guard rows.indices.contains(row) else { return }
 
         switch rows[row] {
+        case .airDrop:
+            AirDrop.openWindow()
+            // Not a folder, so nothing here should stay highlighted as though
+            // the list were showing it.
+            tableView.deselectAll(nil)
         case .connect:
             onConnect?(nil)
         case .place(let url, _, .servers):
@@ -450,6 +475,11 @@ extension SidebarViewController {
         let sources = draggedURLs(info)
         guard !sources.isEmpty else { return [] }
 
+        // Onto AirDrop: send them, the way dropping on Finder's row does.
+        if operation == .on, rows.indices.contains(row), case .airDrop = rows[row] {
+            return AirDrop.canSend(sources) ? .copy : []
+        }
+
         // Onto a folder row: put the files in that folder.
         if operation == .on, rows.indices.contains(row), let destination = rows[row].url,
             rows[row].section != .servers, isFolder(destination)
@@ -475,6 +505,10 @@ extension SidebarViewController {
     ) -> Bool {
         let sources = draggedURLs(info)
         guard !sources.isEmpty else { return false }
+
+        if operation == .on, rows.indices.contains(row), case .airDrop = rows[row] {
+            return AirDrop.send(sources)
+        }
 
         if operation == .on, rows.indices.contains(row), let destination = rows[row].url,
             isFolder(destination)
