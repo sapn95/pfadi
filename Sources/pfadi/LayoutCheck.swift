@@ -352,6 +352,7 @@ enum LayoutCheck {
         unpacking(in: window, fixture: start)
         deletingOutright(in: window, fixture: start)
         deletingWithoutATrash(in: window, fixture: start)
+        onAReadOnlyVolume(in: window, fixture: start)
         ejecting(in: window, fixture: start)
         sidebarRowMenus()
     }
@@ -748,6 +749,29 @@ enum LayoutCheck {
         expect(
             manager.fileExists(atPath: inside.path),
             "a file that cannot be unlinked stays where it is")
+        // And nothing is offered, because deleting cannot answer this refusal
+        // either: unlinking needs the same write permission on the folder that
+        // moving it to the trash needed. Offering it anyway asked an
+        // irreversible question and then failed at it.
+        expect(
+            browser.bannerOffer.isEmpty,
+            "a refusal deleting cannot answer offers nothing, got \(browser.bannerOffer)")
+        // macOS's own sentence, not one of ours: this volume does have a trash,
+        // so the refusal came from the attempt and the attempt said why.
+        expect(
+            browser.bannerMessage.contains("permission"),
+            "and says what is in the way, got \(browser.bannerMessage)")
+        browser.dismissNotice()
+
+        // The offer itself, where deleting *would* work: the trash refuses for
+        // its own reasons and the folder can still be written to. Through the
+        // probe, because a real trash that refuses one file while its folder
+        // stays writable needs a volume this check cannot mount.
+        browser.deleteObstacleProbe = { _ in nil }
+        defer { browser.deleteObstacleProbe = { FileOperations.obstacleToDeleting($0) } }
+        browser.selectRange(row..<(row + 1))
+        browser.moveToTrash(nil)
+        settle(seconds: 0.5)
         expect(
             browser.bannerOffer.contains("Delete"),
             "the band offers to delete it instead, got \(browser.bannerOffer)")
@@ -842,6 +866,77 @@ enum LayoutCheck {
         expect(
             browser.statusLine.contains("deleted"),
             "and it says so, got \(browser.statusLine)")
+    }
+
+    /// A read-only volume, where the question the missing trash leads to has no
+    /// good answer either.
+    ///
+    /// A mounted disk image, and a share mounted for reading, report
+    /// `volumeIsReadOnly` and throw the same 3328 for the trash as a filer does.
+    /// So the ⌘⌫ written for the filer asked "delete for good?" somewhere it
+    /// could not delete at all, and New Folder opened a name field on a volume
+    /// that would refuse the folder.
+    ///
+    /// Through the probes rather than a mounted image: `hdiutil attach` in a
+    /// check is a check that does not run on a machine without the disk space.
+    private static func onAReadOnlyVolume(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+
+        let file = fixture.appendingPathComponent("on-a-read-only-volume.txt")
+        manager.createFile(atPath: file.path, contents: Data("x".utf8))
+        browser.trashProbe = { _ in false }
+        browser.writableProbe = { _ in false }
+        browser.deleteObstacleProbe = { _ in .readOnlyVolume }
+        defer {
+            browser.trashProbe = { FileOperations.hasTrash(for: $0) }
+            browser.writableProbe = { FileManager.default.isWritableFile(atPath: $0.path) }
+            browser.deleteObstacleProbe = { FileOperations.obstacleToDeleting($0) }
+            try? manager.removeItem(at: file)
+            browser.navigate(to: fixture)
+            settle(until: { browser.listedDirectory?.path == fixture.path }, seconds: 5)
+        }
+
+        // Navigated again, because the writability answer is taken once per
+        // listing rather than per menu opening: asking a share anything costs a
+        // round trip and a menu opens far more often than a folder changes.
+        browser.navigate(to: fixture)
+        settle(until: { browser.rowIndex(of: file.lastPathComponent) != nil }, seconds: 5)
+        guard let row = browser.rowIndex(of: file.lastPathComponent) else {
+            failures += 1
+            print("  FAIL the file is listed before deleting it")
+            return
+        }
+
+        for (title, action) in [
+            ("New Folder", #selector(BrowserViewController.newFolder(_:))),
+            ("New File", #selector(BrowserViewController.newFile(_:))),
+            ("Rename", #selector(BrowserViewController.renameSelection(_:))),
+            ("Unzip", #selector(BrowserViewController.unzipSelection(_:))),
+            ("Move to Trash", #selector(BrowserViewController.moveToTrash(_:))),
+            ("Delete Immediately", #selector(BrowserViewController.deleteImmediately(_:))),
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            expect(
+                !browser.validateMenuItem(item),
+                "\(title) is off where nothing can be written")
+        }
+
+        browser.selectRange(row..<(row + 1))
+        browser.moveToTrash(nil)
+        settle(seconds: 0.4)
+        expect(
+            window.window.attachedSheet == nil,
+            "⌘⌫ on a read-only volume does not offer to delete for good")
+        expect(
+            browser.bannerMessage.contains("read only"),
+            "it says why instead, got \(browser.bannerMessage)")
+        expect(
+            browser.bannerOffer.isEmpty,
+            "and offers nothing it cannot do, got \(browser.bannerOffer)")
+        expect(
+            manager.fileExists(atPath: file.path), "and the file is still there")
+        browser.dismissNotice()
     }
 
     /// ⌘E, which is off for the volume the machine is running from.

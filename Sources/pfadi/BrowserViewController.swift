@@ -32,6 +32,30 @@ final class BrowserViewController: NSViewController {
     /// is no, not whether macOS answers it correctly.
     var trashProbe: (URL) -> Bool = { FileOperations.hasTrash(for: $0) }
 
+    /// Whether this folder can be written to at all.
+    ///
+    /// A closure for the same reason as `trashProbe`: what is worth checking is
+    /// what the menus do when the answer is no, and mounting a read-only disk
+    /// image to find out is not something a check should need.
+    var writableProbe: (URL) -> Bool = { FileManager.default.isWritableFile(atPath: $0.path) }
+
+    /// Why something cannot be deleted for good, or nil when it can.
+    ///
+    /// The other half of the trash question, and a closure for the same reason:
+    /// the read-only volume the answer exists for is a disk image somebody would
+    /// have to mount for the check to reach this code.
+    var deleteObstacleProbe: (URL) -> FileOperations.DeleteObstacle? = {
+        FileOperations.obstacleToDeleting($0)
+    }
+
+    /// The last answer `writableProbe` gave about the folder on screen.
+    ///
+    /// Asked once per listing, on the listing's own queue, rather than per menu
+    /// item: menu validation runs on every menu opening and this question goes to
+    /// the filesystem, which for a share means the network. True until the first
+    /// answer arrives, so nothing is greyed out on an assumption.
+    private var folderIsWritable = true
+
     private var directory: URL
     /// Everything in the folder, and the part of it currently on screen. The
     /// filter narrows the second without re-reading the first.
@@ -986,17 +1010,23 @@ final class BrowserViewController: NSViewController {
         // permissions each cost something per entry, and a folder of forty
         // thousand files should not pay for a column nobody switched on.
         let columns = preferences.columns
+        let writableProbe = self.writableProbe
 
         listingQueue.async { [weak self] in
             let result = Result {
                 try DirectoryListing.read(
                     directory, showHidden: showHidden, order: order, columns: columns)
             }
+            // Here rather than in the menu, and on this queue rather than on the
+            // main one: asking a share anything can take as long as the listing
+            // did, and it is the listing's answer.
+            let writable = writableProbe(directory)
 
             DispatchQueue.main.async {
                 // A newer navigation has already been asked for, so this answer
                 // is about a folder nobody is looking at any more.
                 guard let self, generation == self.generation else { return }
+                self.folderIsWritable = writable
                 self.apply(result, directory: directory, previousSelection: previous)
             }
         }
@@ -2003,14 +2033,27 @@ final class BrowserViewController: NSViewController {
         // The folders macOS keeps in a home directory have no trash either and
         // are deliberately not in this group: their refusal is macOS saying no,
         // and it has to be shown rather than answered with an offer to delete
-        // ~/Documents for good. `canDeleteOutright` is what tells them apart.
-        let withoutTrash = selected.filter {
-            !trashProbe($0.url) && FileOperations.canDeleteOutright($0.url)
+        // ~/Documents for good. `obstacleToDeleting` is what tells them apart.
+        var withoutTrash: [Entry] = []
+        // Already answered, without touching the disk. A read-only volume — a
+        // mounted disk image, a share mounted for reading — has no trash and no
+        // delete either, so offering to delete for good there would be a
+        // question this window cannot keep its own promise about.
+        var refusedUpFront: [(name: String, reason: String, url: URL)] = []
+        for entry in selected where !trashProbe(entry.url) {
+            switch deleteObstacleProbe(entry.url) {
+            case nil:
+                withoutTrash.append(entry)
+            case .reservedByMacOS:
+                break
+            case .some(let obstacle):
+                refusedUpFront.append((name: entry.name, reason: obstacle.reason, url: entry.url))
+            }
         }
-        let hopeless = Set(withoutTrash.map(\.url.path))
+        let hopeless = Set((withoutTrash.map(\.url.path)) + refusedUpFront.map(\.url.path))
         let attempting = selected.filter { !hopeless.contains($0.url.path) }
 
-        if attempting.isEmpty {
+        if attempting.isEmpty, refusedUpFront.isEmpty {
             confirmDelete(withoutTrash.map(\.url))
             return
         }
@@ -2026,9 +2069,10 @@ final class BrowserViewController: NSViewController {
         // The ones already known to have nowhere to go start the list, so a
         // mixed selection trashes what it can and says what it could not in the
         // same sentence.
-        var refused: [(name: String, reason: String, url: URL)] = withoutTrash.map {
-            (name: $0.name, reason: "the volume it is on has no trash", url: $0.url)
-        }
+        var refused: [(name: String, reason: String, url: URL)] =
+            withoutTrash.map {
+                (name: $0.name, reason: "the volume it is on has no trash", url: $0.url)
+            } + refusedUpFront
 
         // Every one of them, rather than stopping at the first refusal, and
         // through the checked call rather than the plain one: macOS will not
@@ -2087,7 +2131,7 @@ final class BrowserViewController: NSViewController {
         // which is every folder OneDrive and iCloud sync. Offered rather than
         // done, because it cannot be undone, and offered here rather than in a
         // sheet so the message it answers is still on screen while it is read.
-        let deletable = refused.map(\.url).filter { FileOperations.canDeleteOutright($0) }
+        let deletable = refused.map(\.url).filter { deleteObstacleProbe($0) == nil }
         guard !deletable.isEmpty else {
             warn(message)
             return
@@ -2144,8 +2188,8 @@ final class BrowserViewController: NSViewController {
             // Checked again here rather than trusted from the caller. This is
             // the last gate in front of an irreversible delete, and the offer
             // that leads here was built from a listing that may have moved on.
-            guard FileOperations.canDeleteOutright(url) else {
-                failed.append((url.lastPathComponent, "macOS keeps this folder"))
+            if let obstacle = deleteObstacleProbe(url) {
+                failed.append((url.lastPathComponent, obstacle.reason))
                 continue
             }
             do {
@@ -2214,8 +2258,19 @@ final class BrowserViewController: NSViewController {
                 var again: [(original: URL, inTrash: URL)] = []
                 controller.attempt("move them to the trash again") {
                     for item in items {
-                        if let trashed = try FileOperations.trash(item.original) {
-                            again.append((original: item.original, inTrash: trashed))
+                        // The checked call, as everywhere else: macOS refuses by
+                        // reporting success and doing nothing, and a redo that
+                        // believed it would leave the file on screen while the
+                        // undo stack thought it was in the trash.
+                        switch FileOperations.trashChecking(item.original) {
+                        case .moved(let landed):
+                            if let landed {
+                                again.append((original: item.original, inTrash: landed))
+                            }
+                        case .refused(let why):
+                            throw CocoaError(
+                                .featureUnsupported,
+                                userInfo: [NSLocalizedDescriptionKey: why])
                         }
                     }
                 }
@@ -2293,6 +2348,22 @@ final class BrowserViewController: NSViewController {
 // MARK: - Menu state
 
 extension BrowserViewController: NSMenuItemValidation {
+    /// Everything that changes the folder on screen.
+    ///
+    /// Listed rather than worked out from the selector name, so adding a command
+    /// that writes is a decision about this list instead of an omission nobody
+    /// notices until it fails on a read-only volume.
+    private static let writingActions: [Selector] = [
+        #selector(newFolder(_:)),
+        #selector(newFile(_:)),
+        #selector(renameSelection(_:)),
+        #selector(paste(_:)),
+        #selector(pasteAsMove(_:)),
+        #selector(unzipSelection(_:)),
+        #selector(moveToTrash(_:)),
+        #selector(deleteImmediately(_:)),
+    ]
+
     /// Carries the checkmark on "Show Hidden Files". NSViewController does not
     /// validate menu items on its own, the protocol has to be asked for.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -2304,6 +2375,14 @@ extension BrowserViewController: NSMenuItemValidation {
         }
         if menuItem.action == #selector(goBack(_:)) { return history.canGoBack }
         if menuItem.action == #selector(goForward(_:)) { return history.canGoForward }
+
+        // Nothing that writes is offered where nothing can be written. A
+        // mounted disk image and a share mounted for reading both say so before
+        // anything is attempted, and the alternative is a name field that
+        // accepts a name and a band that then explains the volume is read only.
+        if !folderIsWritable, Self.writingActions.contains(where: { menuItem.action == $0 }) {
+            return false
+        }
 
         // Greyed out rather than beeping. A paste with an empty clipboard and a
         // rename with nothing selected are both questions with no answer.
@@ -2791,6 +2870,9 @@ extension BrowserViewController {
         proposedDropOperation operation: NSTableView.DropOperation
     ) -> NSDragOperation {
         guard !transfers.isRunning else { return [] }
+        // Refused while the drag is still in the air rather than accepted and
+        // then failed per file: a read-only volume has already said so.
+        guard folderIsWritable else { return [] }
         let sources = draggedURLs(info)
         guard !sources.isEmpty else { return [] }
 

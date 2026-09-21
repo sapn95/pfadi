@@ -18,27 +18,26 @@ import PfadiCore
 
 /// Where the application is.
 ///
-/// By identifier first, so an upgrade is followed automatically, then the
-/// places it is actually installed. `PFADI_APP` overrides everything, which is
-/// what the checks and a from-source build use.
+/// By identifier first, so an application moved somewhere of its own is still
+/// found, then the places it is actually installed — and out of all of them the
+/// one whose version is this command's, because the two ship together.
+/// LaunchServices answers with the bundle it saw last, which on a machine that
+/// also builds from source is the copy in `build/`. `PFADI_APP` overrides
+/// everything, which is what the checks and a from-source build use.
 func findBundle() -> URL? {
     if let override = ProcessInfo.processInfo.environment["PFADI_APP"] {
         return URL(fileURLWithPath: override)
     }
+    var candidates: [URL] = []
     if let byID = NSWorkspace.shared.urlForApplication(
         withBundleIdentifier: "io.github.sapn95.pfadi")
     {
-        return byID
+        candidates.append(byID)
     }
-    let candidates = [
-        "/opt/homebrew/opt/pfadi/Pfadi.app",
-        "/usr/local/opt/pfadi/Pfadi.app",
-        "/Applications/Pfadi.app",
-        NSHomeDirectory() + "/Applications/Pfadi.app",
-        FileManager.default.currentDirectoryPath + "/build/Pfadi.app",
-    ]
-    return candidates.first { FileManager.default.fileExists(atPath: $0) }
-        .map { URL(fileURLWithPath: $0) }
+    candidates += BundleChoice.installedLocations().filter {
+        FileManager.default.fileExists(atPath: $0.path)
+    }
+    return BundleChoice.pick(from: candidates, matching: pfadiVersion)
 }
 
 func fail(_ message: String) -> Never {
@@ -80,14 +79,11 @@ case .help:
 case .version:
     print("pfadi \(pfadiVersion)")
     // And which bundle it would open, because the command and the application
-    // are installed together and can still end up apart: a development build
-    // registered with LaunchServices wins the lookup, and then `pfadi` opens
-    // something other than what `pfadi --version` just said.
-    if let bundle = findBundle(),
-        let running = Bundle(url: bundle)?
-            .infoDictionary?["CFBundleShortVersionString"] as? String
-    {
-        print("opens \(bundle.path) (\(running))")
+    // are installed together and can still end up apart. The version in
+    // brackets is the one that counts: when it differs from the line above,
+    // nothing with a matching version was found anywhere.
+    if let bundle = findBundle(), let installed = BundleChoice.version(of: bundle) {
+        print("opens \(bundle.path) (\(installed))")
     }
 
 case .layoutCheck:

@@ -156,22 +156,21 @@ func setLaunchServiceHandlers(_ handlers: [[String: Any]]) -> Bool {
 
 // MARK: - Finding the application
 
+/// The same order as `pfadi` itself, and for the same reason: this one points
+/// the whole system at the bundle it picks, so picking the stale copy
+/// LaunchServices happens to remember would be worse here than there.
 func findBundle() -> URL? {
     if let override = ProcessInfo.processInfo.environment["PFADI_APP"] {
         return URL(fileURLWithPath: override)
     }
+    var candidates: [URL] = []
     if let byID = NSWorkspace.shared.urlForApplication(withBundleIdentifier: pfadiBundleID) {
-        return byID
+        candidates.append(byID)
     }
-    let candidates = [
-        "/opt/homebrew/opt/pfadi/Pfadi.app",
-        "/usr/local/opt/pfadi/Pfadi.app",
-        "/Applications/Pfadi.app",
-        NSHomeDirectory() + "/Applications/Pfadi.app",
-        FileManager.default.currentDirectoryPath + "/build/Pfadi.app",
-    ]
-    return candidates.first { FileManager.default.fileExists(atPath: $0) }
-        .map { URL(fileURLWithPath: $0) }
+    candidates += BundleChoice.installedLocations().filter {
+        FileManager.default.fileExists(atPath: $0.path)
+    }
+    return BundleChoice.pick(from: candidates, matching: pfadiVersion)
 }
 
 /// The command, not the bundle: it is what stays correct across an upgrade,

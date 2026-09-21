@@ -155,8 +155,14 @@ public final class TransferRunner {
             }) {
                 let contents = (try? fileManager.contentsOfDirectory(atPath: folder.path)) ?? []
                 guard contents.isEmpty else { continue }
-                if (try? fileManager.removeItem(at: folder)) != nil {
+                do {
+                    try fileManager.removeItem(at: folder)
                     emptied.append(folder)
+                } catch {
+                    // Said rather than swallowed. Everything inside the folder
+                    // moved and the empty folder stayed, which looks exactly
+                    // like a move that half worked, because it is one.
+                    failed.append((folder, error.localizedDescription))
                 }
             }
 
