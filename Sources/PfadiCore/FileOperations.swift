@@ -163,6 +163,31 @@ public enum FileOperations {
         return .refused(refusal(for: url, home: home, saying: nil))
     }
 
+    /// Where this would land if it went to the trash, or nil when the volume it
+    /// is on has no trash at all.
+    ///
+    /// Asked rather than attempted. A network share has no trash, so ⌘⌫ there
+    /// meant: try, fail, put the failure across the window, and wait to be asked
+    /// a second time. The system will answer the question up front, which turns
+    /// the same keystroke into one question with one answer.
+    ///
+    /// The folders macOS keeps in a home directory answer nil here too, and for
+    /// a different reason: they have a trash and are simply not allowed into it.
+    /// `canDeleteOutright` is what tells the two apart, so anything acting on
+    /// this has to consult that as well.
+    public static func trashLocation(
+        for url: URL,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        try? fileManager.url(
+            for: .trashDirectory, in: .userDomainMask, appropriateFor: url, create: false)
+    }
+
+    /// Whether the trash is even on offer for this.
+    public static func hasTrash(for url: URL, fileManager: FileManager = .default) -> Bool {
+        trashLocation(for: url, fileManager: fileManager) != nil
+    }
+
     /// Whether anything is at this path, symbolic link included.
     ///
     /// `lstat` rather than `fileExists`, which follows links: a link whose
@@ -247,6 +272,38 @@ public enum FileOperations {
         fileManager: FileManager = .default
     ) throws {
         try fileManager.removeItem(at: url)
+    }
+
+    /// Takes back something this application just made.
+    ///
+    /// The trash first, because an undo that can itself be undone is the better
+    /// one. On a volume with no trash there is nothing to fall back to but
+    /// removing it, and what is being removed is something pfadi created a
+    /// moment ago because somebody asked, and has now been asked to take away.
+    /// Without the fallback, ⌘Z after New Folder on a share failed outright and
+    /// left the folder sitting there.
+    ///
+    /// Not for anything somebody else made: use `trashChecking` for that, which
+    /// reports a refusal instead of answering it.
+    @discardableResult
+    public static func discard(
+        _ url: URL,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default
+    ) throws -> URL? {
+        switch trashChecking(url, home: home, fileManager: fileManager) {
+        case .moved(let landed):
+            return landed
+        case .refused(let why):
+            // Never the folders macOS keeps. Deleting ~/Documents for good to
+            // honour a ⌘Z would be the worst thing this application could do,
+            // and a caller cannot have created one of them to undo.
+            guard canDeleteOutright(url, home: home) else {
+                throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: why])
+            }
+            try delete(url, fileManager: fileManager)
+            return nil
+        }
     }
 
     /// Whether deleting outright is even worth offering for this.

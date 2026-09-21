@@ -149,5 +149,6 @@ OrderAndTrashSuites.run()
 OrderAndTrashSuites.runColumns()
 ArchiveSuites.run()
 DockSuites.run()
+VolumeSuites.run()
 
 Harness.finish()

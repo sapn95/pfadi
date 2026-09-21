@@ -20,6 +20,18 @@ final class BrowserViewController: NSViewController {
     /// Told when the favourites change, so the sidebar can redraw.
     var onFavouritesChanged: (() -> Void)?
 
+    /// Told when something was mounted or ejected, so the sidebar goes and looks
+    /// again rather than redrawing the volumes it found last time.
+    var onVolumesChanged: (() -> Void)?
+
+    /// Whether something has a trash to go to.
+    ///
+    /// A closure rather than a direct call so the checks can stand a volume with
+    /// no trash in front of the real delete path: the alternative is mounting a
+    /// share, and the behaviour worth checking is what ⌘⌫ does when the answer
+    /// is no, not whether macOS answers it correctly.
+    var trashProbe: (URL) -> Bool = { FileOperations.hasTrash(for: $0) }
+
     private var directory: URL
     /// Everything in the folder, and the part of it currently on screen. The
     /// filter narrows the second without re-reading the first.
@@ -1482,6 +1494,10 @@ final class BrowserViewController: NSViewController {
                 announce("connected to \(name)")
                 favourites.rememberServer(share)
                 onFavouritesChanged?()
+                // And a look for volumes, because there is a new one: without
+                // this the share only appeared under Locations the next time the
+                // window was brought forward.
+                onVolumesChanged?()
                 navigate(to: url)
             case .credentialCommandFailed(let why):
                 NSSound.beep()
@@ -1529,6 +1545,60 @@ final class BrowserViewController: NSViewController {
         connecting = nil
         connectingSince = nil
         connectingSpinner.stopAnimation(nil)
+    }
+
+    /// ⌘E. The way back out of a share, which there was none of.
+    @objc func ejectVolume(_ sender: Any?) {
+        guard let volume = ejectTarget() else {
+            NSSound.beep()
+            announce("nothing here to eject")
+            return
+        }
+        eject(volume)
+    }
+
+    /// Which volume ⌘E means.
+    ///
+    /// The one a selected volume is, when a mount point is selected, and
+    /// otherwise the one this window is looking at. Nil when that volume is the
+    /// boot disk, which is not something to offer ejecting.
+    func ejectTarget() -> URL? {
+        if let selected = selectedEntry()?.url, Volumes.isVolumeRoot(selected),
+            Volumes.canEject(selected)
+        {
+            return selected
+        }
+        guard let volume = Volumes.containing(directory), Volumes.canEject(volume) else {
+            return nil
+        }
+        return volume
+    }
+
+    /// Unmounts a volume and says what became of it.
+    func eject(_ volume: URL) {
+        let name = Volumes.name(of: volume)
+
+        // Off the volume first when this window is on it. Nothing here holds it
+        // open — the watcher opens its folder O_EVTONLY exactly so an unmount is
+        // not blocked — but a window left pointing at a path that no longer
+        // exists is its own bug.
+        let here = directory.standardizedFileURL.path
+        let root = volume.standardizedFileURL.path
+        let wasShowing = here == root || here.hasPrefix(root + "/")
+        if wasShowing {
+            navigate(to: FileManager.default.homeDirectoryForCurrentUser)
+        }
+
+        if let problem = Eject.send(volume) {
+            NSSound.beep()
+            warn("could not eject \(name): \(problem)")
+            // Back where we were, because the volume is still there and a window
+            // sent home by a failed eject has lost somebody's place for nothing.
+            if wasShowing { navigate(to: volume) }
+            return
+        }
+        announce("ejected \(name)")
+        onVolumesChanged?()
     }
 
     /// ⌘K, which is the key everyone already presses for this.
@@ -1793,8 +1863,11 @@ final class BrowserViewController: NSViewController {
             case .copy:
                 // Backwards: the deepest thing was created last, and a folder
                 // cannot go to the trash while its contents are still there.
+                // `discard` rather than `trash`, because a copy onto a share
+                // has nowhere to put the copies back into and undo there has to
+                // mean something.
                 for url in outcome.created.reversed() {
-                    _ = try? FileOperations.trash(url)
+                    _ = try? FileOperations.discard(url)
                 }
 
             case .move:
@@ -1814,7 +1887,7 @@ final class BrowserViewController: NSViewController {
                 }
                 for url in outcome.created.reversed()
                 where (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                    _ = try? FileOperations.trash(url)
+                    _ = try? FileOperations.discard(url)
                 }
             }
 
@@ -1830,6 +1903,14 @@ final class BrowserViewController: NSViewController {
         if outcome.skipped > 0 { parts.append("\(outcome.skipped) skipped") }
         if !outcome.displaced.isEmpty {
             parts.append("\(outcome.displaced.count) replaced, the old ones are in the trash")
+        }
+        // Said plainly, because this is the one part of a copy that cannot be
+        // undone: on a share there was no trash to move the old one into.
+        if !outcome.replacedForGood.isEmpty {
+            parts.append(
+                "\(outcome.replacedForGood.count) replaced for good, with no trash here to "
+                    + (outcome.replacedForGood.count == 1
+                        ? "put the old one back from" : "put the old ones back from"))
         }
         if !outcome.failed.isEmpty {
             NSSound.beep()
@@ -1847,7 +1928,10 @@ final class BrowserViewController: NSViewController {
             let created = try FileOperations.createFolder(named: name, in: directory)
             registerUndo("New Folder") { controller in
                 controller.attempt("undo the new folder") {
-                    _ = try FileOperations.trash(created)
+                    // Not `trash`: a share has none, and an undo that reports
+                    // "the volume doesn't have a trash" and leaves the folder
+                    // there is not an undo.
+                    _ = try FileOperations.discard(created)
                 }
                 controller.registerUndo("New Folder") { controller in
                     controller.attempt("redo the new folder") {
@@ -1879,7 +1963,7 @@ final class BrowserViewController: NSViewController {
             let created = try FileOperations.createFile(named: name, in: directory)
             registerUndo("New File") { controller in
                 controller.attempt("undo the new file") {
-                    _ = try FileOperations.trash(created)
+                    _ = try FileOperations.discard(created)
                 }
                 controller.registerUndo("New File") { controller in
                     controller.attempt("redo the new file") {
@@ -1908,6 +1992,27 @@ final class BrowserViewController: NSViewController {
         let selected = selectedEntries()
         guard !selected.isEmpty else { return }
 
+        // Asked before anything is attempted. A share has no trash, and ⌘⌫
+        // there used to mean: try, fail, put the failure across the window, and
+        // wait to be asked a second time. When nothing in the selection can go
+        // to the trash there is only one question left, so it gets asked
+        // straight away.
+        //
+        // The folders macOS keeps in a home directory have no trash either and
+        // are deliberately not in this group: their refusal is macOS saying no,
+        // and it has to be shown rather than answered with an offer to delete
+        // ~/Documents for good. `canDeleteOutright` is what tells them apart.
+        let withoutTrash = selected.filter {
+            !trashProbe($0.url) && FileOperations.canDeleteOutright($0.url)
+        }
+        let hopeless = Set(withoutTrash.map(\.url.path))
+        let attempting = selected.filter { !hopeless.contains($0.url.path) }
+
+        if attempting.isEmpty {
+            confirmDelete(withoutTrash.map(\.url))
+            return
+        }
+
         // What actually reached the trash, so undo puts back exactly that and
         // a failure part way through still restores the part that worked.
         var moved: [(original: URL, inTrash: URL)] = []
@@ -1916,13 +2021,18 @@ final class BrowserViewController: NSViewController {
         // ones that have it; the count is about what actually went, and
         // leaving those out made the message say nothing at all.
         var goneCount = 0
-        var refused: [(name: String, reason: String, url: URL)] = []
+        // The ones already known to have nowhere to go start the list, so a
+        // mixed selection trashes what it can and says what it could not in the
+        // same sentence.
+        var refused: [(name: String, reason: String, url: URL)] = withoutTrash.map {
+            (name: $0.name, reason: "the volume it is on has no trash", url: $0.url)
+        }
 
         // Every one of them, rather than stopping at the first refusal, and
         // through the checked call rather than the plain one: macOS will not
         // let ~/Documents and its kind go to the trash, and it refuses by
         // reporting success and doing nothing.
-        for entry in selected {
+        for entry in attempting {
             switch FileOperations.trashChecking(entry.url) {
             case .moved(let landed):
                 goneCount += 1
@@ -1999,8 +2109,8 @@ final class BrowserViewController: NSViewController {
         alert.informativeText =
             "There is no trash here to put "
             + (urls.count == 1 ? "it" : "them")
-            + " in, so this cannot be undone. In a folder OneDrive or iCloud "
-            + "syncs, deleting here deletes on the server too."
+            + " in, so this cannot be undone. On a share, or in a folder "
+            + "OneDrive or iCloud syncs, deleting here deletes on the server too."
         // Cancel first, so return does the harmless thing and the destructive
         // button has to be aimed at.
         alert.addButton(withTitle: "Cancel")
@@ -2219,6 +2329,16 @@ extension BrowserViewController: NSMenuItemValidation {
         // so it is never there to be clicked and do nothing.
         if menuItem.action == #selector(unzipSelection(_:)) {
             return selectedEntries().contains { Archives.canExpand($0.url) }
+        }
+        // Named, so the menu says which volume is going, and off altogether on
+        // the boot disk, which is not a thing to offer ejecting.
+        if menuItem.action == #selector(ejectVolume(_:)) {
+            guard let volume = ejectTarget() else {
+                menuItem.title = "Eject"
+                return false
+            }
+            menuItem.title = Eject.title(for: volume)
+            return true
         }
         if menuItem.action == #selector(toggleFavourite(_:)) {
             let target = favouriteTarget()

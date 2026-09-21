@@ -84,8 +84,8 @@ drag     a column header to move it
 ⇧⌘N      new folder, with the cursor already in its name
 ⌃⌘N      new file, likewise
 F2       rename
-⌘⌫       move to the trash
-⌥⌘⌫      delete for good, for the folders that have no trash
+⌘⌫       move to the trash, or ask outright where there is no trash
+⌥⌘⌫      delete for good, for a share and anywhere else with no trash
 ⌘Z       undo any of that
 ⌘I       what is this: kind, size, dates, access, cloud status
 ⇧⌘C      copy the path of the selection
@@ -93,6 +93,7 @@ F2       rename
 ⇧⌘R      show it in Finder, the real one
 ⌘D       add this folder to the sidebar, or take it back out
 ⌘K       connect to a server
+⌘E       eject the volume you are looking at, or the one selected
 ```
 
 ## The address bar
@@ -173,7 +174,21 @@ that does different things in the two is worse than none.
 
 **Servers** remembers what you have connected to, and always ends in
 `Connect to Server…`. A way in that only appears once you already have one is
-not a way in.
+not a way in. Right-click a row for **Forget This Server**, and while its share
+is mounted for **Eject** as well.
+
+**The menu on a row is built for that row.** There was one fixed item,
+`Remove from Favourites`, on every row in the sidebar. So a mounted filer had no
+way out of the application at all, and a server typed once with a spelling
+mistake stayed under Servers for good and beeped when you right-clicked it.
+
+**Eject** is ⌘E, Finder's key for it, and it is in the Go menu under the item
+that mounted the thing. It names the volume when the menu opens, takes the window
+home first if it is looking at what is going, and is off for the volume the
+machine is running from. A share is the case that needs it and the one macOS
+describes least helpfully: an SMB mount reports itself as neither ejectable nor
+removable, and the only thing that marks it out is that it is not local. A disk
+image and a USB stick do say so themselves.
 
 Inside the connect sheet they are a **list** with the same fuzzy filter as
 everything else, showing `sapn@filer97.sbb.ch · projects` rather than the whole
@@ -541,22 +556,34 @@ moved report.pdf to the trash; could not move Documents:
 macOS does not let this folder be moved to the trash
 ```
 
-**Some folders have no trash at all**, and there ⌘⌫ can only ever be refused.
-Everything under `~/Library/CloudStorage`, which is where OneDrive and iCloud
-Drive put what they sync, is on a volume with nowhere for a trashed file to go.
+**A share has no trash at all, and the system says so before anything is
+tried.** Ask macOS where a file on an SMB mount would land if it were trashed
+and it answers that the volume has no such place, which is the same refusal
+`trashItem` gives a moment later. So the question is asked first. Where the
+answer is no, ⌘⌫ opens the only question left — delete it for good? — instead of
+attempting a move that cannot work, putting the failure across the window, and
+waiting to be asked a second time.
+
 macOS phrases that refusal once per file with the name in front of it, so four
 selected files came back as four sentences saying the same thing. The name is
 already in the list of what was refused, so it comes off the reason and the four
-collapse into one.
+collapse into one. A selection that mixes a share with somewhere that has a
+trash trashes what it can and says what it could not, in one sentence.
 
-Then the band offers the only thing left: **Delete It**, or ⌥⌘⌫ from the
-keyboard, which is Finder's own shortcut for it. That removes the file here, and
-the File Provider then removes it on the server, which is what deleting means in
-a folder something is syncing. It asks first, with Cancel as the button return
+A refusal that only turns up while trying still gets the band, and the band
+offers the only thing left: **Delete It**, or ⌥⌘⌫ from the keyboard, which is
+Finder's own shortcut for it. In a folder OneDrive or iCloud Drive syncs that
+removes the file here and the File Provider then removes it on the server, which
+is what deleting means there. It asks first, with Cancel as the button return
 picks, because nothing can put it back. The folders macOS keeps are never
 offered: their refusal is macOS saying no rather than a missing trash, and
 answering it by deleting `~/Documents` for good would be the worst thing this
 application could do.
+
+⌘Z after a **New Folder** on a share works the same way round. Undoing one still
+tries the trash first, because an undo that can itself be undone is the better
+one, and where there is no trash it removes the folder it just made. It used to
+report that the volume has no trash and leave the folder sitting there.
 
 **That message also resized the window.** A label reports the width of its whole
 text as the size it wants, and a window may not be smaller than what its content
@@ -568,9 +595,16 @@ compression resistance is not enough on its own, because a label still counts
 towards `fittingSize`. `--layout-check` measures the window before and after a
 long notice.
 
-**Replacing never destroys.** Choosing Replace during a paste puts the existing
-item in the trash first and then copies. A wrong answer in that dialog is
-recoverable, which is not true of a file manager that overwrites in place.
+**Replacing never destroys, where there is a trash.** Choosing Replace during a
+paste puts the existing item in the trash first and then copies. A wrong answer
+in that dialog is recoverable, which is not true of a file manager that
+overwrites in place.
+
+On a share there is nowhere to put it, so Replace removes the old one and the
+count at the end says how many went that way. That is not a nicety: `copyfile`
+refuses a destination that already exists, and so does `rename(2)`, so leaving
+the old file there turned Replace on a filer into "File exists" with nothing
+replaced at all.
 
 Copies go through `copyfile` with `COPYFILE_CLONE`. On APFS that is a
 constant-time copy sharing blocks until one side is written to, so duplicating

@@ -102,6 +102,26 @@ Clicking it opens the system's AirDrop window; files dropped on it are sent.
 in the File and right-click menus sends the selection.
 When AirDrop is switched off, or Wi-Fi or Bluetooth is, it says so rather than
 doing nothing.
+.Sh VOLUMES
+.Sy Eject
+in the Go menu, on Command-E, puts down the volume the window is looking at, or
+the one selected in the list when that is a volume's own root.
+It names the volume when the menu opens and is off for the volume the machine is
+running from.
+A window showing what is going is taken home first.
+.Pp
+A share is the case this is for and the one the system describes least
+helpfully: an SMB mount reports itself as neither ejectable nor removable, and
+the only thing that marks it out is that it is not local.
+A disk image and a USB stick say so themselves.
+.Pp
+Right-clicking a sidebar row gives that row's own menu:
+.Sy Remove from Favourites
+under Favourites,
+.Sy Forget This Server
+under Servers, and
+.Sy Eject
+on a mounted volume or on the server it was mounted from.
 .Sh ARCHIVES
 Opening a
 .Pa .zip ,
@@ -217,15 +237,19 @@ The system refuses by returning success and doing nothing, so every trash is
 checked afterwards rather than believed, and a selection containing one of them
 still trashes everything else.
 .Pp
-Folders under
-.Pa ~/Library/CloudStorage ,
-where OneDrive and iCloud Drive keep what they sync, have no trash on their
-volume at all, so moving anything there to the trash is refused outright.
-The refusal offers
+A mounted share has no trash at all, and the system will say so before anything
+is attempted.
+Command-Backspace there asks whether to delete for good, rather than trying a
+move that cannot work and reporting it afterwards.
+Replacing during a paste removes the item it replaces for the same reason, and
+says how many went that way: nothing can put those back.
+.Pp
+A refusal found while trying offers
 .Sy Delete \&It
-instead, which is also
+in the band, which is also
 .Sy Delete Immediately
-in the File menu on Option-Command-Backspace: the item is removed here and the
+in the File menu on Option-Command-Backspace.
+In a folder OneDrive or iCloud Drive syncs, the item is removed here and the
 File Provider then removes it on the server.
 It asks first and cannot be undone.
 The folders macOS keeps are never offered, because their refusal is not a

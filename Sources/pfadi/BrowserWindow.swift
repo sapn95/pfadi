@@ -68,6 +68,10 @@ final class BrowserWindow {
             browser?.connect(to: url)
         }
         browser.onFavouritesChanged = { [weak sidebar] in sidebar?.reload() }
+        // Rediscovering, not just redrawing: a volume has come or gone, and the
+        // list the sidebar is holding was made before that happened.
+        browser.onVolumesChanged = { [weak sidebar] in sidebar?.reload(rediscover: true) }
+        sidebar.onEject = { [weak browser] volume in browser?.eject(volume) }
         sidebar.onDrop = { [weak browser] sources, destination in
             browser?.transfer(sources, into: destination)
         }

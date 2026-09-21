@@ -249,6 +249,33 @@ enum TransferSuites {
             }
         }
 
+        Harness.suite("transfer: replacing on a volume with no trash still replaces") {
+            try withSandbox(["a.txt", "target"], directories: ["target"]) { root in
+                let target = root.appendingPathComponent("target")
+                let existing = target.appendingPathComponent("a.txt")
+                try Data("old".utf8).write(to: existing)
+                try Data("new".utf8).write(to: root.appendingPathComponent("a.txt"))
+
+                let plan = Transfer.plan(
+                    [root.appendingPathComponent("a.txt")], into: target, kind: .copy)
+                // The bug: with nowhere to put the old one, the old one stayed,
+                // and copyfile then refused the destination that exists. Replace
+                // on a share copied nothing and said "File exists".
+                let outcome = runSynchronously(
+                    plan, resolutions: [existing: .replace],
+                    fileManager: TrashlessFileManager())
+
+                Harness.expect(outcome.failed.isEmpty, "nothing failed")
+                Harness.expectEqual(
+                    try? String(contentsOf: existing, encoding: .utf8), "new",
+                    "the new one is in place")
+                Harness.expect(outcome.displaced.isEmpty, "nothing could be displaced")
+                Harness.expectEqual(
+                    outcome.replacedForGood, [existing],
+                    "so it is reported as replaced for good, which is what happened")
+            }
+        }
+
         Harness.suite("transfer: replacing a file with itself keeps both instead") {
             try withSandbox(["only.txt"]) { root in
                 let file = root.appendingPathComponent("only.txt")
@@ -293,13 +320,14 @@ enum TransferSuites {
     /// The runner is asynchronous by design. The tests are not.
     private static func runSynchronously(
         _ plan: Transfer.Plan,
-        resolutions: [URL: Transfer.Resolution] = [:]
+        resolutions: [URL: Transfer.Resolution] = [:],
+        fileManager: FileManager = .default
     ) -> TransferRunner.Outcome {
         let runner = TransferRunner()
         let done = DispatchSemaphore(value: 0)
 
         let box = OutcomeBox()
-        runner.run(plan, resolutions: resolutions) { _ in
+        runner.run(plan, resolutions: resolutions, fileManager: fileManager) { _ in
         } completion: { outcome in
             box.value = outcome
             done.signal()
