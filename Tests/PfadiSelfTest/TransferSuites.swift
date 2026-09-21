@@ -382,6 +382,32 @@ enum TransferSuites {
                 Harness.expectEqual(outcome.skipped, 2, "both the folder and its file")
             }
         }
+
+        Harness.suite("transfer: a moved folder that would not go is reported, not swallowed") {
+            try withSandbox(["source", "target"], directories: ["source", "target"]) { root in
+                let source = root.appendingPathComponent("source")
+                let target = root.appendingPathComponent("target")
+                try Data("x".utf8).write(to: source.appendingPathComponent("inside.txt"))
+
+                // A move recreates folders and moves the files out of them, so
+                // the empty folder is removed at the end. That removal used to be
+                // a `try?`: the folder stayed, nothing said so, and it looked
+                // like a move that had half worked.
+                let plan = Transfer.plan([source], into: target, kind: .move)
+                let outcome = runSynchronously(plan, fileManager: RemovalRefusingFileManager())
+
+                Harness.expect(
+                    FileManager.default.fileExists(
+                        atPath: target.appendingPathComponent("source/inside.txt").path),
+                    "the file arrived")
+                Harness.expect(
+                    outcome.emptiedSources.isEmpty,
+                    "the folder it came out of is not claimed as tidied away")
+                Harness.expect(
+                    outcome.failed.contains { $0.0.lastPathComponent == "source" },
+                    "and the folder that stayed behind is named, got \(outcome.failed)")
+            }
+        }
     }
 
     /// The runner is asynchronous by design. The tests are not.

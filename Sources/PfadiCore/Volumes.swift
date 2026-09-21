@@ -78,6 +78,20 @@ public enum Volumes {
         traits(of: volume).map(canEject) ?? false
     }
 
+    /// Whether nothing on this volume can be changed.
+    ///
+    /// The other half of the question a share raised. A mounted disk image and a
+    /// share mounted for reading answer this before anything is attempted, the
+    /// same way the missing trash does, so New Folder, Rename and the rest can
+    /// be off rather than offered and then refused.
+    ///
+    /// False when it cannot be asked: a volume that will not say is treated as
+    /// writable and the attempt gives the real answer, which is better than
+    /// greying out a command on a guess.
+    public static func isReadOnly(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false
+    }
+
     /// Whether this URL is a volume's own root rather than something on it.
     ///
     /// A sidebar row for `/Volumes/share` may be ejected; a row for a favourite

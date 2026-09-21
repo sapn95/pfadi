@@ -585,6 +585,35 @@ tries the trash first, because an undo that can itself be undone is the better
 one, and where there is no trash it removes the folder it just made. It used to
 report that the volume has no trash and leave the folder sitting there.
 
+**A read-only volume has no trash and no delete either.** A mounted disk image,
+and a share mounted for reading, report `volumeIsReadOnly` and throw the same
+refusal for the trash that a filer does. So the question the missing trash leads
+to — delete it for good? — is one that cannot be kept there, and asking it would
+be worse than saying nothing. ⌘⌫ says the volume is read only and offers
+nothing, and **New Folder**, **New File**, **Rename**, **Unzip** and both pastes
+are off rather than offered: a name field that takes a name and then explains
+that the volume will not have it is a worse answer than a greyed-out menu item.
+A drop is refused while the drag is still in the air for the same reason.
+
+What is asked is whether the folder can be written to, not whether the volume
+says it is read only, because the two do not agree and the first one is what
+matters. Measured here: `/`, `/Users`, `/System` and `/usr/local` all report
+`volumeIsReadOnly` false and all answer `isWritableFile` no. So browsing `/`
+greys out New Folder, which is the honest answer — creating one there fails
+without `sudo`, and it used to fail after the name had been typed.
+
+The answer is taken once per listing, on the queue the listing is read on. Menu
+validation runs every time a menu opens and this question goes to the
+filesystem, which on a share means the network.
+
+The reason is kept apart from the other two, because they lead to three
+different places: a folder macOS keeps, a volume that cannot be written to at
+all, and a folder this user has no permission for. **Delete It** is only offered
+where deleting would actually work, which means the folder can still be written
+to — unlinking needs the same permission trashing needed, so a file that refused
+the trash for want of it would refuse the delete too. It used to be offered
+anyway, which asked an irreversible question and then failed at it.
+
 **That message also resized the window.** A label reports the width of its whole
 text as the size it wants, and a window may not be smaller than what its content
 asks for, so a refusal naming four files asked for 4069 points and the window
@@ -875,13 +904,27 @@ happened to start it is doing something it was not asked to do.
 
 `pfadi --version` prints which bundle it would open, for the other half of the
 same problem: the command and the application are installed together and can
-still end up apart, when a development build has won the LaunchServices lookup.
+still end up apart.
 
 ```bash
 $ pfadi --version
 pfadi 0.33.0
 opens /opt/homebrew/Cellar/pfadi/0.33.0/Pfadi.app (0.33.0)
 ```
+
+**And printing it was not enough.** Here on 0.41.0 it said `pfadi 0.41.0` and
+`opens …/git/pfadi/build/Pfadi.app (0.40.0)`, from any folder and with no
+`PFADI_APP` set, while Homebrew had upgraded both halves. LaunchServices is asked
+first so that an application moved somewhere of its own is still found, and it
+answers with the bundle it saw registered last, which on a machine that also
+builds from source is the copy in `build/`.
+
+So the answer is checked rather than taken: a command knows which version it is,
+and out of everything found — LaunchServices first, then Homebrew, `/Applications`,
+`~/Applications` and `build/` — the bundle whose version matches is the one
+opened. Nothing matching still opens the first one found, because an old window
+is a better answer than no window. `pfadi-default apply` picks the same way,
+where getting it wrong would point the whole system at the stale copy.
 
 ## Build
 

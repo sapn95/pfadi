@@ -298,7 +298,7 @@ public enum FileOperations {
             // Never the folders macOS keeps. Deleting ~/Documents for good to
             // honour a ⌘Z would be the worst thing this application could do,
             // and a caller cannot have created one of them to undo.
-            guard canDeleteOutright(url, home: home) else {
+            guard canDeleteOutright(url, home: home, fileManager: fileManager) else {
                 throw CocoaError(.featureUnsupported, userInfo: [NSLocalizedDescriptionKey: why])
             }
             try delete(url, fileManager: fileManager)
@@ -306,17 +306,58 @@ public enum FileOperations {
         }
     }
 
-    /// Whether deleting outright is even worth offering for this.
+    /// Why deleting outright is not on offer, in a form that can be said.
     ///
-    /// Not for the folders macOS keeps in a home directory. Their refusal is not
-    /// a missing trash, it is macOS saying no, and answering it by deleting
-    /// `~/Documents` for good would be the worst thing this application could
-    /// do.
+    /// Three answers rather than a flag, because they are three different
+    /// sentences and offering the wrong one sends somebody looking in the wrong
+    /// place. A read-only volume in particular has no trash *and* no delete, so
+    /// "there is no trash here, delete for good?" is a question it cannot keep
+    /// its own promise about.
+    public enum DeleteObstacle: Equatable, Sendable {
+        /// One of the folders macOS keeps inside a home directory.
+        case reservedByMacOS
+        /// A mounted disk image, or a share mounted for reading.
+        case readOnlyVolume
+        /// The folder it is in cannot be written to by this user.
+        case noPermission
+
+        public var reason: String {
+            switch self {
+            case .reservedByMacOS: return "macOS keeps this folder"
+            case .readOnlyVolume: return "the volume it is on is read only"
+            case .noPermission: return "the folder it is in cannot be changed"
+            }
+        }
+    }
+
+    /// What stands in the way of deleting this outright, or nil when nothing
+    /// does.
+    ///
+    /// Asked before anything is attempted, like the trash question above it.
+    /// Removing something needs the *folder* it is in to be writable rather than
+    /// the item itself, which is why the parent is what gets asked about.
+    public static func obstacleToDeleting(
+        _ url: URL,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default
+    ) -> DeleteObstacle? {
+        // First, because it is about the item rather than about where it lives:
+        // answering a refusal of ~/Documents by deleting it for good would be
+        // the worst thing this application could do.
+        if isReservedHomeFolder(url, home: home) { return .reservedByMacOS }
+        if Volumes.isReadOnly(url) { return .readOnlyVolume }
+        let parent = url.deletingLastPathComponent()
+        guard fileManager.isWritableFile(atPath: parent.path) else { return .noPermission }
+        return nil
+    }
+
+    /// Whether deleting outright is even worth offering for this.
     public static func canDeleteOutright(
         _ url: URL,
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default
     ) -> Bool {
-        !isReservedHomeFolder(url, home: home)
+        obstacleToDeleting(url, home: home, fileManager: fileManager) == nil
     }
 
     /// The folders macOS keeps for itself directly inside a home directory.

@@ -149,7 +149,11 @@ final class KnownConnections: NSView {
     }
 
     @objc private func forgetClicked(_ sender: Any?) {
-        let row = tableView.clickedRow
+        // `clickedRow` is -1 for anything but a click, and the row somebody means
+        // when the menu was not clicked open is the selected one. Without the
+        // fallback this item silently did nothing.
+        let clicked = tableView.clickedRow
+        let row = clicked >= 0 ? clicked : tableView.selectedRow
         guard shown.indices.contains(row) else { return }
         let going = shown[row]
 

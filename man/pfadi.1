@@ -47,7 +47,7 @@ A folder really can be called
 .It Fl h , Fl -help
 Print the usage and exit.
 .It Fl v , Fl -version
-Print the version and exit.
+Print the version, and which application bundle it would open, then exit.
 .El
 .Sh ENVIRONMENT
 .Bl -tag -width Ds
@@ -245,6 +245,15 @@ Replacing during a paste removes the item it replaces for the same reason, and
 says how many went that way: nothing can put those back.
 A trash that is there and refuses one item leaves that item alone and reports
 the refusal, rather than removing it.
+.Pp
+A read-only volume
+.Pq a mounted disk image, or a share mounted for reading
+has no trash and no delete either, and says so before either is attempted.
+Command-Backspace there reports that the volume is read only and offers nothing,
+and
+.Sy New Folder , Sy New File , Sy Rename , Sy Unzip
+and both pastes are off rather than offered.
+A drop is refused while the drag is still in the air.
 .Pp
 A refusal found while trying offers
 .Sy Delete \&It

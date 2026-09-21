@@ -281,6 +281,49 @@ extension CommandLineSuites {
                 "nor is an older one")
         }
 
+        Harness.suite("bundle: the command opens the application it shipped with") {
+            // Measured on 2026-09-22 with 0.41.0 installed: `pfadi --version`
+            // printed 0.41.0 and "opens …/build/Pfadi.app (0.40.0)". Homebrew
+            // had upgraded both, and LaunchServices still answered with the
+            // build directory it had seen registered last.
+            let stale = URL(fileURLWithPath: "/Users/somebody/git/pfadi/build/Pfadi.app")
+            let installed = URL(fileURLWithPath: "/opt/homebrew/opt/pfadi/Pfadi.app")
+            let versions = [stale.path: "0.40.0", installed.path: "0.41.0"]
+
+            Harness.expectEqual(
+                BundleChoice.pick(
+                    from: [stale, installed], matching: "0.41.0",
+                    versionOf: { versions[$0.path] }),
+                installed,
+                "the one whose version is this command's wins, wherever it is in the list")
+            Harness.expectEqual(
+                BundleChoice.pick(
+                    from: [stale, installed], matching: "0.40.0",
+                    versionOf: { versions[$0.path] }),
+                stale,
+                "and a command built from the tree opens the tree's own build")
+            Harness.expectEqual(
+                BundleChoice.pick(
+                    from: [stale, installed], matching: "0.42.0",
+                    versionOf: { versions[$0.path] }),
+                stale,
+                "nothing matching means the first one found, rather than no window at all")
+            Harness.expect(
+                BundleChoice.pick(from: [], matching: "0.41.0", versionOf: { _ in nil }) == nil,
+                "and nothing found is still nothing found")
+        }
+
+        Harness.suite("bundle: where it is installed, in the order to try") {
+            let places = BundleChoice.installedLocations(
+                home: "/Users/somebody", workingDirectory: "/Users/somebody/git/pfadi")
+            Harness.expectEqual(
+                places.first?.path, "/opt/homebrew/opt/pfadi/Pfadi.app",
+                "Homebrew first, because that is how it arrives")
+            Harness.expectEqual(
+                places.last?.path, "/Users/somebody/git/pfadi/build/Pfadi.app",
+                "and a from-source build last, relative to where the command was run")
+        }
+
         Harness.suite("upgrade: the same bundle is never worth mentioning") {
             // A development build and the installed one are different paths and
             // that is the interesting case. The same path upgraded underneath

@@ -268,19 +268,72 @@ enum OrderAndTrashSuites {
 
         Harness.suite("delete: the folders macOS keeps are never offered") {
             let home = URL(fileURLWithPath: "/Users/somebody")
+            // Through a FileManager that says yes to every folder: this is about
+            // which names are reserved, not about a /Users/somebody that is not
+            // there.
+            let anywhere = WritableFileManager()
             for name in ["Documents", "Desktop", "Library"] {
-                Harness.expect(
-                    !FileOperations.canDeleteOutright(
-                        home.appendingPathComponent(name), home: home),
+                Harness.expectEqual(
+                    FileOperations.obstacleToDeleting(
+                        home.appendingPathComponent(name), home: home, fileManager: anywhere),
+                    .reservedByMacOS,
                     "deleting ~/\(name) for good is not something to offer")
             }
             Harness.expect(
                 FileOperations.canDeleteOutright(
                     home.appendingPathComponent("Library/CloudStorage/OneDrive/report.pdf"),
-                    home: home),
+                    home: home, fileManager: anywhere),
                 "a file in a synced folder is, which is the whole point")
         }
+
+        Harness.suite("delete: a folder that cannot be written to refuses before it is asked") {
+            // The case a read-only volume is: the file is there, the delete
+            // would fail, and the system says so first. Asked about the folder
+            // rather than the file, because that is what unlink needs.
+            try withSandbox(["locked", "locked/kept.txt"], directories: ["locked"]) { root in
+                let folder = root.appendingPathComponent("locked")
+                let file = folder.appendingPathComponent("kept.txt")
+                Harness.expect(
+                    FileOperations.canDeleteOutright(file),
+                    "writable to begin with, or the check proves nothing")
+
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o500], ofItemAtPath: folder.path)
+                defer {
+                    try? FileManager.default.setAttributes(
+                        [.posixPermissions: 0o700], ofItemAtPath: folder.path)
+                }
+
+                Harness.expectEqual(
+                    FileOperations.obstacleToDeleting(file),
+                    .noPermission,
+                    "and it is not offered once the folder refuses to be changed")
+            }
+        }
+
+        Harness.suite("delete: each refusal is its own sentence") {
+            // Three reasons that lead three different places. A read-only volume
+            // told somebody macOS keeps the folder would send them looking at
+            // permissions that are not the problem.
+            let reasons = [
+                FileOperations.DeleteObstacle.reservedByMacOS.reason,
+                FileOperations.DeleteObstacle.readOnlyVolume.reason,
+                FileOperations.DeleteObstacle.noPermission.reason,
+            ]
+            Harness.expectEqual(Set(reasons).count, 3, "no two of them say the same thing")
+            Harness.expect(
+                FileOperations.DeleteObstacle.readOnlyVolume.reason.contains("read only"),
+                "and the read-only one says read only, which is what macOS calls it")
+        }
     }
+}
+
+/// A FileManager that says every folder can be written to.
+///
+/// For the suites that are about which names are reserved rather than about what
+/// is on this disk.
+final class WritableFileManager: FileManager {
+    override func isWritableFile(atPath path: String) -> Bool { true }
 }
 
 extension OrderAndTrashSuites {

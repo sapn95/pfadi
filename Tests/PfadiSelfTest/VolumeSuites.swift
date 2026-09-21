@@ -138,6 +138,19 @@ final class TrashRefusingFileManager: FileManager {
     }
 }
 
+/// A FileManager that will not remove anything.
+///
+/// For the end of a move, where the folders the files came out of are taken away
+/// once they are empty. Refusing that is what a read-only source, or one somebody
+/// else holds open, looks like from here.
+final class RemovalRefusingFileManager: FileManager {
+    override func removeItem(at url: URL) throws {
+        throw CocoaError(
+            .fileWriteNoPermission,
+            userInfo: [NSLocalizedDescriptionKey: "it would not be removed"])
+    }
+}
+
 /// A FileManager with no trash, which is what a share looks like from here.
 ///
 /// Both halves of it: the question `trashLocation` asks and the attempt
