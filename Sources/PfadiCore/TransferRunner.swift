@@ -109,8 +109,12 @@ public final class TransferRunner {
                         case .refused(let why):
                             // Still in the way, so the copy below would fail on
                             // it anyway, with "File exists" instead of the
-                            // reason.
+                            // reason. Everything underneath it goes too: the
+                            // answer was given once, for the folder, and files
+                            // copied into a folder that was meant to be replaced
+                            // are a merge nobody asked for.
                             failed.append((item.source, why))
+                            skippedRoots.append(item.destination)
                             continue
                         }
                     }
