@@ -593,7 +593,12 @@ be worse than saying nothing. ⌘⌫ says the volume is read only and offers
 nothing, and **New Folder**, **New File**, **Rename**, **Unzip** and both pastes
 are off rather than offered: a name field that takes a name and then explains
 that the volume will not have it is a worse answer than a greyed-out menu item.
-A drop is refused while the drag is still in the air for the same reason.
+A drop is refused while the drag is still in the air for the same reason, asked
+about the folder it would land in rather than the one on screen. The two come
+apart in both directions: a writable folder can hold a row nothing may be written
+into, and `/Volumes` refuses everything itself while the volumes mounted under it
+take files. The row under the pointer is asked about once and remembered, since a
+drag asks this on every mouse move.
 
 What is asked is whether the folder can be written to, not whether the volume
 says it is read only, because the two do not agree and the first one is what

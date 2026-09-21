@@ -253,7 +253,11 @@ Command-Backspace there reports that the volume is read only and offers nothing,
 and
 .Sy New Folder , Sy New File , Sy Rename , Sy Unzip
 and both pastes are off rather than offered.
-A drop is refused while the drag is still in the air.
+A drop is refused while the drag is still in the air, asked about the folder it
+would land in rather than the one on screen: dropping on a folder row goes into
+that row, and
+.Pa /Volumes
+takes nothing itself while the volumes mounted under it do.
 .Pp
 A refusal found while trying offers
 .Sy Delete \&It
