@@ -1019,6 +1019,16 @@ final class BrowserViewController: NSViewController {
         // permissions each cost something per entry, and a folder of forty
         // thousand files should not pay for a column nobody switched on.
         let columns = preferences.columns
+        // The answer belongs to the folder it was taken for. Going somewhere else
+        // means there is no answer yet, and on a share the listing it arrives
+        // with can take seconds: keeping the last one would let a read-only
+        // volume accept a New Folder for as long as that took. Writable until
+        // told otherwise, as at the start, so nothing is greyed out on a guess.
+        // A watcher reload of the same folder keeps what it knows.
+        if loadedDirectory?.path != directory.path {
+            folderIsWritable = true
+            rowWritable = nil
+        }
         let writableProbe = self.writableProbe
 
         listingQueue.async { [weak self] in
