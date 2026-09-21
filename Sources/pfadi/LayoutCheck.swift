@@ -1885,6 +1885,25 @@ enum LayoutCheck {
         expect(
             (try? manager.contentsOfDirectory(atPath: source.path).count) == 0,
             "and none is left behind where they came from")
+
+        // Whether a drop is allowed is asked about where it would land, and the
+        // row and the folder on screen come apart in both directions: a writable
+        // folder can hold a row nothing may be written into, and /Volumes
+        // refuses everything itself while the volumes mounted under it take
+        // files.
+        let realProbe = browser.writableProbe
+        defer { browser.writableProbe = realProbe }
+        browser.writableProbe = { $0.lastPathComponent != "into" }
+        expect(
+            !browser.canWrite(into: into),
+            "a folder row nothing may be written into refuses the drop")
+        expect(
+            browser.canWrite(into: elsewhere),
+            "while the writable row beside it still takes one")
+        browser.writableProbe = { _ in false }
+        expect(
+            browser.canWrite(into: browser.currentDirectory),
+            "and the folder on screen keeps the answer its own listing gave")
     }
 
     /// What another application's "Reveal in Finder" ends up doing here.

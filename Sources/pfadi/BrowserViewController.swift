@@ -56,6 +56,15 @@ final class BrowserViewController: NSViewController {
     /// answer arrives, so nothing is greyed out on an assumption.
     private var folderIsWritable = true
 
+    /// The last answer about somewhere other than the folder on screen.
+    ///
+    /// For a drop on a folder row, which lands in that row rather than here.
+    /// `validateDrop` runs many times a second while a drag moves and the row
+    /// under the pointer changes rarely, so one answer is kept and the question
+    /// is asked once per folder hovered instead of once per mouse move. Dropped
+    /// on every listing, since that is when permissions may have changed.
+    private var rowWritable: (path: String, writable: Bool)?
+
     private var directory: URL
     /// Everything in the folder, and the part of it currently on screen. The
     /// filter narrows the second without re-reading the first.
@@ -1027,6 +1036,7 @@ final class BrowserViewController: NSViewController {
                 // is about a folder nobody is looking at any more.
                 guard let self, generation == self.generation else { return }
                 self.folderIsWritable = writable
+                self.rowWritable = nil
                 self.apply(result, directory: directory, previousSelection: previous)
             }
         }
@@ -2870,13 +2880,18 @@ extension BrowserViewController {
         proposedDropOperation operation: NSTableView.DropOperation
     ) -> NSDragOperation {
         guard !transfers.isRunning else { return [] }
-        // Refused while the drag is still in the air rather than accepted and
-        // then failed per file: a read-only volume has already said so.
-        guard folderIsWritable else { return [] }
         let sources = draggedURLs(info)
         guard !sources.isEmpty else { return [] }
 
         let destination = dropDestination(row: row, operation: operation)
+        // Refused while the drag is still in the air rather than accepted and
+        // then failed per file: a read-only volume has already said so. Asked
+        // about where the files would land rather than about the folder on
+        // screen, because the two come apart in both directions. A writable
+        // folder can hold a row nothing may be written into, and /Volumes is
+        // the other way round: it refuses everything itself while the volumes
+        // mounted under it take files.
+        guard canWrite(into: destination) else { return [] }
         if destination.path == directory.path {
             tableView.setDropRow(-1, dropOperation: .on)
         }
@@ -2898,6 +2913,19 @@ extension BrowserViewController {
 
         let destination = dropDestination(row: row, operation: operation)
         return drop(sources, into: destination, kind: kind(for: info, into: destination))
+    }
+
+    /// Whether a drop landing here could be carried out.
+    ///
+    /// The folder on screen was asked about when it was listed. Anywhere else is
+    /// a folder row under the pointer, asked about once and remembered, because
+    /// a drag asks this question on every mouse move.
+    func canWrite(into destination: URL) -> Bool {
+        if destination.path == directory.path { return folderIsWritable }
+        if let last = rowWritable, last.path == destination.path { return last.writable }
+        let writable = writableProbe(destination)
+        rowWritable = (path: destination.path, writable: writable)
+        return writable
     }
 
     /// Where a drop at this row lands.
