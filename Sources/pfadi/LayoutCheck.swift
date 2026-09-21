@@ -187,11 +187,13 @@ enum LayoutCheck {
         AppDelegate.applyAppearance(.dark)
     }
 
-    /// A defaults store that touches nothing, so asking what the default is
-    /// cannot be answered by whatever this machine happens to have saved.
+    /// A defaults store in memory, so asking what the default is cannot be
+    /// answered by whatever this machine happens to have saved — and so a check
+    /// can put a favourite or a server in a sidebar without touching anybody's.
     private final class MemoryDefaults: KeyValueStore {
-        func object(forKey key: String) -> Any? { nil }
-        func set(_ value: Any?, forKey key: String) {}
+        private var values: [String: Any] = [:]
+        func object(forKey key: String) -> Any? { values[key] }
+        func set(_ value: Any?, forKey key: String) { values[key] = value }
     }
 
     private static func check(at size: NSSize) {
@@ -349,6 +351,9 @@ enum LayoutCheck {
         filterOrdering(in: window, fixture: start)
         unpacking(in: window, fixture: start)
         deletingOutright(in: window, fixture: start)
+        deletingWithoutATrash(in: window, fixture: start)
+        ejecting(in: window, fixture: start)
+        sidebarRowMenus()
     }
 
     /// Typing a path and pressing return.
@@ -771,6 +776,183 @@ enum LayoutCheck {
             browser.bannerMessage.contains("could not delete"),
             "a delete that fails is reported, got \(browser.bannerMessage)")
         browser.dismissNotice()
+    }
+
+    /// ⌘⌫ on a volume with no trash, which is every share.
+    ///
+    /// What it did: attempt the trash, have macOS refuse it, put the refusal
+    /// across the window, and offer to delete — so getting rid of a file on a
+    /// filer took a keystroke, reading a band and a second decision. The system
+    /// answers "is there a trash here" up front, and when the answer is no there
+    /// is only one question left to ask.
+    ///
+    /// Through the probe rather than a mounted share: the behaviour worth
+    /// checking is what the window does with the answer, and a check that needs a
+    /// filer to hand is a check that never runs.
+    private static func deletingWithoutATrash(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        let manager = FileManager.default
+
+        let onShare = fixture.appendingPathComponent("on-a-share.txt")
+        manager.createFile(atPath: onShare.path, contents: Data("x".utf8))
+        browser.navigate(to: fixture)
+        settle(until: { browser.rowIndex(of: onShare.lastPathComponent) != nil }, seconds: 5)
+        guard let row = browser.rowIndex(of: onShare.lastPathComponent) else {
+            failures += 1
+            print("  FAIL the file is listed before deleting it")
+            return
+        }
+
+        browser.trashProbe = { _ in false }
+        defer {
+            browser.trashProbe = { FileOperations.hasTrash(for: $0) }
+            try? manager.removeItem(at: onShare)
+        }
+
+        browser.selectRange(row..<(row + 1))
+        browser.moveToTrash(nil)
+        settle(until: { window.window.attachedSheet != nil }, seconds: 3)
+        expect(
+            window.window.attachedSheet != nil,
+            "⌘⌫ where there is no trash asks straight away instead of failing first")
+        expect(
+            browser.bannerMessage.isEmpty,
+            "and puts no band up about a trash that was never on offer, got "
+                + browser.bannerMessage)
+
+        // Cancel is the first button, which is the one return picks.
+        if let sheet = window.window.attachedSheet {
+            window.window.endSheet(sheet, returnCode: .alertFirstButtonReturn)
+            settle(seconds: 0.3)
+        }
+        expect(
+            manager.fileExists(atPath: onShare.path),
+            "cancelling the question leaves the file on the share")
+
+        browser.selectRange(row..<(row + 1))
+        browser.moveToTrash(nil)
+        settle(until: { window.window.attachedSheet != nil }, seconds: 3)
+        if let sheet = window.window.attachedSheet {
+            window.window.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+        }
+        settle(until: { !manager.fileExists(atPath: onShare.path) }, seconds: 3)
+        expect(
+            !manager.fileExists(atPath: onShare.path),
+            "and answering Delete really deletes it, which is all delete can mean there")
+        expect(
+            browser.statusLine.contains("deleted"),
+            "and it says so, got \(browser.statusLine)")
+    }
+
+    /// ⌘E, which is off for the volume the machine is running from.
+    ///
+    /// There was no Eject anywhere in the application, so a share mounted from
+    /// the sidebar could only be let go of in Finder or with `umount`.
+    private static func ejecting(in window: BrowserWindow, fixture: URL) {
+        let browser = window.browser
+        browser.navigate(to: fixture)
+        settle(until: { browser.listedDirectory?.path == fixture.path })
+
+        // The title is rewritten when the menu opens, so it is read back from
+        // the item the validation was given rather than from the menu as built.
+        let item = NSMenuItem(
+            title: "Eject \u{201C}something else\u{201D}",
+            action: #selector(BrowserViewController.ejectVolume(_:)),
+            keyEquivalent: "")
+        expect(
+            !browser.validateMenuItem(item),
+            "the volume everything is running from is not offered for ejecting")
+        expect(item.title == "Eject", "and the item names no volume, got \(item.title)")
+
+        browser.ejectVolume(nil)
+        settle(seconds: 0.3)
+        expect(
+            browser.statusLine.contains("nothing here to eject"),
+            "asking for it anyway says so rather than doing something else, got "
+                + browser.statusLine)
+    }
+
+    /// The menu on a sidebar row, which is not the same menu on every row.
+    ///
+    /// One fixed "Remove from Favourites" was the whole of it, so a mounted
+    /// filer had no way out and a server typed with a spelling mistake sat under
+    /// Servers for good — and beeped when right-clicked, because removing it was
+    /// not something that row could do.
+    ///
+    /// Against a sidebar with settings of its own, so adding a server in order
+    /// to check that it can be forgotten again does not touch anybody's list.
+    private static func sidebarRowMenus() {
+        let favourites = Favourites(preferences: Preferences(store: MemoryDefaults()))
+        let sidebar = SidebarViewController(favourites: favourites)
+        _ = sidebar.view
+
+        let server = URL(string: "smb://layout-check.example/layout-check-share")!
+        favourites.rememberServer(server)
+        sidebar.reload()
+
+        let rows = sidebar.drawnRows()
+        func menu(of title: String) -> [String] {
+            guard let row = sidebar.rowIndex(ofTitle: title) else { return ["[no such row]"] }
+            return sidebar.menuTitles(for: row)
+        }
+
+        expect(
+            menu(of: "Downloads") == ["Remove from Favourites"],
+            "a favourite offers to be taken out of the favourites, got "
+                + menu(of: "Downloads").joined(separator: ", "))
+        expect(
+            menu(of: "layout-check-share") == ["Forget This Server"],
+            "a remembered server offers to be forgotten, got "
+                + menu(of: "layout-check-share").joined(separator: ", "))
+        for empty in ["[Favourites]", "AirDrop", "(connect)"] {
+            expect(
+                menu(of: empty).isEmpty,
+                "\(empty) offers nothing, got \(menu(of: empty).joined(separator: ", "))")
+        }
+
+        // A volume row offers Eject exactly when that volume can go. Whatever is
+        // mounted on the machine running this, including nothing at all: the
+        // claim is the agreement between the two, not that a filer is to hand.
+        let volumes = favourites.volumes()
+        if let locations = rows.firstIndex(of: "[Locations]") {
+            for (offset, volume) in volumes.enumerated() {
+                // AirDrop sits between the heading and the volumes.
+                let row = locations + 2 + offset
+                guard rows.indices.contains(row) else { break }
+                expect(
+                    rows[row] == volume.lastPathComponent,
+                    "the volumes are the rows under Locations, got \(rows[row])")
+                let offered = sidebar.menuTitles(for: row).contains { $0.hasPrefix("Eject") }
+                expect(
+                    offered == Volumes.canEject(volume),
+                    "\(volume.lastPathComponent) is offered for ejecting when it can be, "
+                        + "offered \(offered), can \(Volumes.canEject(volume))")
+            }
+        } else {
+            failures += 1
+            print("  FAIL there is a Locations heading in the sidebar")
+        }
+        print("  note: \(volumes.count) volume(s) mounted to check Eject against")
+
+        // And the two that remove a row really remove it. Through the menu item,
+        // because the handlers used to read the table's clicked row, which is
+        // -1 for anything but a live right-click.
+        guard let serverRow = sidebar.rowIndex(ofTitle: "layout-check-share") else { return }
+        expect(
+            sidebar.clickMenuItem("Forget This Server", forRow: serverRow),
+            "the server's menu item can be picked")
+        expect(
+            !sidebar.drawnRows().contains("layout-check-share"),
+            "and the row goes, got \(sidebar.drawnRows().joined(separator: ", "))")
+        expect(favourites.servers().isEmpty, "and it is not remembered any more")
+
+        guard let favouriteRow = sidebar.rowIndex(ofTitle: "Downloads") else { return }
+        expect(
+            sidebar.clickMenuItem("Remove from Favourites", forRow: favouriteRow),
+            "the favourite's menu item can be picked")
+        expect(
+            !sidebar.drawnRows().contains("Downloads"),
+            "and that row goes too, got \(sidebar.drawnRows().joined(separator: ", "))")
     }
 
     /// More than one row at a time.

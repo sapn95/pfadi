@@ -8,6 +8,8 @@ final class SidebarViewController: NSViewController {
     var onConnect: ((URL?) -> Void)?
     /// Files dropped onto a folder row, to be copied or moved into it.
     var onDrop: ((_ sources: [URL], _ destination: URL) -> Void)?
+    /// A volume to unmount, from the menu on its row.
+    var onEject: ((URL) -> Void)?
 
     private let favourites: Favourites
     private let home = FileManager.default.homeDirectoryForCurrentUser
@@ -103,11 +105,10 @@ final class SidebarViewController: NSViewController {
         tableView.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
 
         let menu = NSMenu()
-        menu.addItem(
-            withTitle: "Remove from Favourites",
-            action: #selector(removeClickedRow(_:)),
-            keyEquivalent: ""
-        )
+        // Built per click by the delegate below, because the rows are not
+        // alike: a favourite is removed, a remembered server is forgotten, a
+        // mounted volume is ejected.
+        menu.delegate = self
         tableView.menu = menu
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -293,10 +294,10 @@ final class SidebarViewController: NSViewController {
     }
 
     @objc private func removeClickedRow(_ sender: Any?) {
-        // clickedRow, not selectedRow: a right-click does not move the
-        // selection, so removing the selected row would delete the wrong one.
-        let row = tableView.clickedRow
-        guard rows.indices.contains(row), let url = rows[row].url else { return }
+        // The row the menu was built for, not the selected one: a right-click
+        // does not move the selection, so removing the selected row would
+        // remove a different favourite from the one that was clicked.
+        guard let row = clickedRow(from: sender), let url = rows[row].url else { return }
         // Only a favourites row, and by which section it is in rather than by
         // whether the folder happens to also be a favourite: a cloud folder
         // that was favourited must not be removable from its Cloud row.
@@ -306,6 +307,136 @@ final class SidebarViewController: NSViewController {
         }
         favourites.remove(url)
         reload()
+    }
+
+    /// Takes a remembered server back out of the list.
+    ///
+    /// There was no way to do this from the sidebar. A server typed once with a
+    /// spelling mistake sat under Servers for good, and right-clicking it
+    /// offered "Remove from Favourites", which beeped.
+    @objc private func forgetClickedRow(_ sender: Any?) {
+        guard let row = clickedRow(from: sender), let url = rows[row].url,
+            rows[row].section == .servers
+        else {
+            NSSound.beep()
+            return
+        }
+        favourites.forgetServer(url)
+        reload()
+    }
+
+    @objc private func ejectClickedRow(_ sender: Any?) {
+        guard let row = clickedRow(from: sender),
+            let volume = ejectableVolume(for: rows[row])
+        else {
+            NSSound.beep()
+            return
+        }
+        // The browser does it rather than the sidebar: a window showing the
+        // volume has to come off it first, and the volumes are worth looking for
+        // again once it has gone.
+        onEject?(volume)
+    }
+}
+
+// MARK: - The menu on a row
+
+extension SidebarViewController: NSMenuDelegate {
+    /// Rebuilt for whichever row was clicked.
+    ///
+    /// One fixed menu cannot be right here. "Remove from Favourites" on a share
+    /// is not what anybody wants and, worse, it was the only thing on offer, so
+    /// a mounted filer had no way out and a mistyped server had no way out
+    /// either.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        for item in items(for: tableView.clickedRow) { menu.addItem(item) }
+    }
+
+    /// The menu for a row, as titles. The checks read this; the menu is built
+    /// from the same list, so what is checked is what is on screen.
+    func menuTitles(for row: Int) -> [String] {
+        items(for: row).map(\.title)
+    }
+
+    /// Picks an item out of a row's menu, for the checks.
+    ///
+    /// Through the menu item's own action, so what is checked is the thing a
+    /// right-click runs rather than a method that happens to be next to it.
+    @discardableResult
+    func clickMenuItem(_ title: String, forRow row: Int) -> Bool {
+        guard let item = items(for: row).first(where: { $0.title == title }),
+            let action = item.action
+        else { return false }
+        NSApp.sendAction(action, to: item.target, from: item)
+        return true
+    }
+
+    /// Where the row with this title is, for the checks.
+    func rowIndex(ofTitle title: String) -> Int? {
+        drawnRows().firstIndex(of: title)
+    }
+
+    private func items(for row: Int) -> [NSMenuItem] {
+        guard rows.indices.contains(row) else { return [] }
+        var built: [NSMenuItem] = []
+
+        // A mounted volume can go, whether it is listed as a volume or as the
+        // server it came from.
+        if let volume = ejectableVolume(for: rows[row]) {
+            built.append(
+                item(Eject.title(for: volume), #selector(ejectClickedRow(_:)), row: row))
+        }
+
+        switch rows[row].section {
+        case .favourites:
+            built.append(item("Remove from Favourites", #selector(removeClickedRow(_:)), row: row))
+        case .servers:
+            built.append(item("Forget This Server", #selector(forgetClickedRow(_:)), row: row))
+        case .recents, .cloud, .locations, nil:
+            break
+        }
+        return built
+    }
+
+    private func item(_ title: String, _ action: Selector, row: Int) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        // The row the menu was built for, carried on the item: `clickedRow` is
+        // only true while the menu is up, and it is -1 for an item sent
+        // programmatically, which is how the checks reach these.
+        item.representedObject = row
+        return item
+    }
+
+    /// The row an item from one of these menus was built for.
+    private func clickedRow(from sender: Any?) -> Int? {
+        guard let row = (sender as? NSMenuItem)?.representedObject as? Int,
+            rows.indices.contains(row)
+        else { return nil }
+        return row
+    }
+
+    /// The volume a row could eject, or nil when it has none to offer.
+    ///
+    /// A Locations row is a volume itself. A Servers row is an address, which is
+    /// only ejectable while its share is actually mounted somewhere. A favourite
+    /// that happens to live on a share is neither: ejecting the filer is not
+    /// what "remove this folder" means in any other list.
+    private func ejectableVolume(for row: Row) -> URL? {
+        guard let url = row.url, let section = row.section else { return nil }
+        switch section {
+        case .servers:
+            guard
+                let mount = NetworkShare.existingMount(
+                    for: url, in: NetworkShare.currentMounts())
+            else { return nil }
+            return Volumes.canEject(mount) ? mount : nil
+        case .locations:
+            return Volumes.canEject(url) ? url : nil
+        case .recents, .favourites, .cloud:
+            return nil
+        }
     }
 }
 

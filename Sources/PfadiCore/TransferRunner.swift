@@ -22,6 +22,10 @@ public final class TransferRunner {
         public let emptiedSources: [URL]
         /// Anything already at a destination that was trashed to make room.
         public let displaced: [(original: URL, inTrash: URL)]
+        /// Anything already at a destination that had to be removed outright to
+        /// make room, because its volume has no trash. Nothing can put these
+        /// back, which is why they are counted apart from `displaced`.
+        public let replacedForGood: [URL]
         public let skipped: Int
         public let failed: [(URL, String)]
         public let cancelled: Bool
@@ -49,6 +53,7 @@ public final class TransferRunner {
             var created: [URL] = []
             var moved: [(from: URL, to: URL)] = []
             var displaced: [(original: URL, inTrash: URL)] = []
+            var replacedForGood: [URL] = []
             var failed: [(URL, String)] = []
             var movedDirectories: [URL] = []
             var emptied: [URL] = []
@@ -90,13 +95,20 @@ public final class TransferRunner {
                                 for: item.destination, in: folder, fileManager: fileManager))
 
                     case .replace:
-                        // To the trash, never removeItem. A wrong answer in a
-                        // replace dialog is then still recoverable.
-                        if fileManager.fileExists(atPath: item.destination.path),
-                            let trashed = try? FileOperations.trash(
+                        // The trash first, so a wrong answer in a replace dialog
+                        // is still recoverable. A volume with no trash leaves
+                        // nothing else: the copy below is `copyfile`, which
+                        // refuses a destination that exists, so leaving the old
+                        // one there turned Replace on a share into "File
+                        // exists" and nothing replaced at all.
+                        if fileManager.fileExists(atPath: item.destination.path) {
+                            if let trashed = try? FileOperations.trash(
                                 item.destination, fileManager: fileManager)
-                        {
-                            displaced.append((item.destination, trashed))
+                            {
+                                displaced.append((item.destination, trashed))
+                            } else if (try? fileManager.removeItem(at: item.destination)) != nil {
+                                replacedForGood.append(item.destination)
+                            }
                         }
                     }
                 }
@@ -146,6 +158,7 @@ public final class TransferRunner {
                 moved: moved,
                 emptiedSources: emptied,
                 displaced: displaced,
+                replacedForGood: replacedForGood,
                 skipped: skipped,
                 failed: failed,
                 cancelled: cancelled.isSet

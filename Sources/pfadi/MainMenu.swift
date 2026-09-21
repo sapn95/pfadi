@@ -241,6 +241,16 @@ enum MainMenu {
         )
         connect.keyEquivalentModifierMask = [.command]
 
+        // ⌘E, Finder's key for it, right under the item that mounted the thing.
+        // The title is rewritten to name the volume when the menu opens, and the
+        // item is off on the boot disk, which nobody ejects.
+        let eject = menu.addItem(
+            withTitle: "Eject",
+            action: #selector(BrowserViewController.ejectVolume(_:)),
+            keyEquivalent: "e"
+        )
+        eject.keyEquivalentModifierMask = [.command]
+
         menu.addItem(.separator())
 
         let up = menu.addItem(
