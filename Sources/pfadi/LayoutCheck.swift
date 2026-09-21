@@ -937,6 +937,27 @@ enum LayoutCheck {
         expect(
             manager.fileExists(atPath: file.path), "and the file is still there")
         browser.dismissNotice()
+
+        // The answer belongs to the folder it was taken for. Asked before the
+        // new listing has arrived, which is the whole window this is about: on a
+        // share it lasts as long as the listing does, and the old answer would
+        // have greyed out commands that work where the window is going, or
+        // allowed ones that do not work where it came from.
+        let elsewhere = fixture.appendingPathComponent("somewhere-writable")
+        try? manager.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        browser.writableProbe = { _ in true }
+        browser.navigate(to: elsewhere)
+        let newFolder = NSMenuItem(
+            title: "New Folder", action: #selector(BrowserViewController.newFolder(_:)),
+            keyEquivalent: "")
+        expect(
+            browser.validateMenuItem(newFolder),
+            "and going somewhere else drops the answer instead of keeping it")
+        settle(until: { browser.listedDirectory?.path == elsewhere.path }, seconds: 5)
+        expect(
+            browser.validateMenuItem(newFolder),
+            "which the listing then confirms")
+        try? manager.removeItem(at: elsewhere)
     }
 
     /// ⌘E, which is off for the volume the machine is running from.
