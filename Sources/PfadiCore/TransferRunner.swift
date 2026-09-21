@@ -95,20 +95,23 @@ public final class TransferRunner {
                                 for: item.destination, in: folder, fileManager: fileManager))
 
                     case .replace:
-                        // The trash first, so a wrong answer in a replace dialog
-                        // is still recoverable. A volume with no trash leaves
-                        // nothing else: the copy below is `copyfile`, which
-                        // refuses a destination that exists, so leaving the old
-                        // one there turned Replace on a share into "File
-                        // exists" and nothing replaced at all.
-                        if fileManager.fileExists(atPath: item.destination.path) {
-                            if let trashed = try? FileOperations.trash(
-                                item.destination, fileManager: fileManager)
-                            {
-                                displaced.append((item.destination, trashed))
-                            } else if (try? fileManager.removeItem(at: item.destination)) != nil {
-                                replacedForGood.append(item.destination)
-                            }
+                        switch Self.makeRoom(at: item.destination, fileManager: fileManager) {
+                        case .nothingThere:
+                            break
+                        case .trashed(let landed):
+                            // No landing place means it went and the system did
+                            // not say where, which undo cannot act on either
+                            // way. It is not counted as replaced for good: the
+                            // old one is in a trash somebody can go and look in.
+                            if let landed { displaced.append((item.destination, landed)) }
+                        case .removedForGood:
+                            replacedForGood.append(item.destination)
+                        case .refused(let why):
+                            // Still in the way, so the copy below would fail on
+                            // it anyway, with "File exists" instead of the
+                            // reason.
+                            failed.append((item.source, why))
+                            continue
                         }
                     }
                 }
@@ -164,6 +167,53 @@ public final class TransferRunner {
                 cancelled: cancelled.isSet
             )
             DispatchQueue.main.async { completion(outcome) }
+        }
+    }
+
+    /// What became of something that was in the way of a replacement.
+    private enum Displacement {
+        /// Nothing was there.
+        case nothingThere
+        /// It went to the trash, with where it landed when the system said.
+        case trashed(URL?)
+        /// There is no trash on that volume, so it was removed and nothing can
+        /// put it back.
+        case removedForGood
+        /// It is still there, with the reason it could not be got out of the way.
+        case refused(String)
+    }
+
+    /// Clears a destination so a replacement can be written where it was.
+    ///
+    /// This has to happen for Replace to mean anything: `copyfile` refuses a
+    /// destination that already exists and so does `rename(2)`, so leaving the
+    /// old one there turned Replace on a share into "File exists" with nothing
+    /// replaced at all.
+    ///
+    /// The trash where there is one, because a wrong answer in a replace dialog
+    /// should be recoverable, and removing it outright where there is none,
+    /// which is every share. Which of the two it is gets asked rather than found
+    /// out by failing: a trash that exists and refuses this one item is not a
+    /// reason to destroy what somebody was replacing, so that comes back as a
+    /// refusal and the item is left where it is.
+    private static func makeRoom(at destination: URL, fileManager: FileManager) -> Displacement {
+        guard fileManager.fileExists(atPath: destination.path) else { return .nothingThere }
+
+        if FileOperations.hasTrash(for: destination, fileManager: fileManager) {
+            // The checked call: macOS refuses the folders it keeps in a home
+            // directory by reporting success and doing nothing, and a replace
+            // that believed that would report the old one as recoverable.
+            switch FileOperations.trashChecking(destination, fileManager: fileManager) {
+            case .moved(let landed): return .trashed(landed)
+            case .refused(let why): return .refused(why)
+            }
+        }
+
+        do {
+            try fileManager.removeItem(at: destination)
+            return .removedForGood
+        } catch {
+            return .refused(error.localizedDescription)
         }
     }
 

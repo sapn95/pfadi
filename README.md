@@ -606,6 +606,11 @@ refuses a destination that already exists, and so does `rename(2)`, so leaving
 the old file there turned Replace on a filer into "File exists" with nothing
 replaced at all.
 
+Which of the two it is gets asked rather than found out by failing. A trash that
+is there and refuses one file leaves that file where it is and reports what it
+said, because a refusal that may be gone a second later is no reason to destroy
+what somebody was replacing.
+
 Copies go through `copyfile` with `COPYFILE_CLONE`. On APFS that is a
 constant-time copy sharing blocks until one side is written to, so duplicating
 twenty gigabytes costs no time and no disk, and it carries the extended

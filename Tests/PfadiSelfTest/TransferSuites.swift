@@ -276,6 +276,35 @@ enum TransferSuites {
             }
         }
 
+        Harness.suite("transfer: a trash that refuses does not cost the old file") {
+            try withSandbox(["a.txt", "target"], directories: ["target"]) { root in
+                let target = root.appendingPathComponent("target")
+                let existing = target.appendingPathComponent("a.txt")
+                try Data("old".utf8).write(to: existing)
+                try Data("new".utf8).write(to: root.appendingPathComponent("a.txt"))
+
+                let plan = Transfer.plan(
+                    [root.appendingPathComponent("a.txt")], into: target, kind: .copy)
+                // There is a trash here and it refused this one item, which is
+                // not the same thing as a volume with none. Removing the old file
+                // anyway would destroy what somebody was replacing, for a reason
+                // that may be gone a second later.
+                let outcome = runSynchronously(
+                    plan, resolutions: [existing: .replace],
+                    fileManager: TrashRefusingFileManager())
+
+                Harness.expectEqual(outcome.failed.count, 1, "the item is reported as failed")
+                Harness.expect(
+                    outcome.failed.first?.1.contains("would not take it") == true,
+                    "with the reason the trash gave, got \(outcome.failed.first?.1 ?? "nothing")")
+                Harness.expect(
+                    outcome.replacedForGood.isEmpty, "nothing was replaced for good")
+                Harness.expectEqual(
+                    try? String(contentsOf: existing, encoding: .utf8), "old",
+                    "and the old one is still there, untouched")
+            }
+        }
+
         Harness.suite("transfer: replacing a file with itself keeps both instead") {
             try withSandbox(["only.txt"]) { root in
                 let file = root.appendingPathComponent("only.txt")
