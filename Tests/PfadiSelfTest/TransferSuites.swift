@@ -305,6 +305,44 @@ enum TransferSuites {
             }
         }
 
+        Harness.suite("transfer: a folder that could not be replaced is not merged into") {
+            try withSandbox(["tree", "target"], directories: ["tree", "target"]) { root in
+                let tree = root.appendingPathComponent("tree")
+                try Data("new".utf8).write(to: tree.appendingPathComponent("a.txt"))
+                let target = root.appendingPathComponent("target")
+                let existing = target.appendingPathComponent("tree")
+                try FileManager.default.createDirectory(
+                    at: existing, withIntermediateDirectories: true)
+                try Data("old".utf8).write(to: existing.appendingPathComponent("b.txt"))
+
+                let plan = Transfer.plan([tree], into: target, kind: .copy)
+                // Keyed by the conflict the plan found, which is how the window
+                // asks: a URL for a folder that exists carries a trailing slash
+                // and one written out by hand does not, and the two are not the
+                // same key.
+                guard let collision = plan.conflicts.first else {
+                    Harness.expect(false, "the folder already there is a collision")
+                    return
+                }
+                // Replace was answered once, for the folder. With the folder
+                // still there, copying the files inside it anyway would leave a
+                // folder holding both lots, which is neither answer anybody gave.
+                let outcome = runSynchronously(
+                    plan, resolutions: [collision: .replace],
+                    fileManager: TrashRefusingFileManager())
+
+                Harness.expect(
+                    !FileManager.default.fileExists(
+                        atPath: existing.appendingPathComponent("a.txt").path),
+                    "nothing from the source went into the folder that stayed")
+                Harness.expect(
+                    FileManager.default.fileExists(
+                        atPath: existing.appendingPathComponent("b.txt").path),
+                    "and what was in it is untouched")
+                Harness.expectEqual(outcome.skipped, 1, "the file underneath it is skipped")
+            }
+        }
+
         Harness.suite("transfer: replacing a file with itself keeps both instead") {
             try withSandbox(["only.txt"]) { root in
                 let file = root.appendingPathComponent("only.txt")
