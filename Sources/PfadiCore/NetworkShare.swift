@@ -195,6 +195,11 @@ public enum NetworkShare {
     }
 
     /// Every mounted filesystem, as the kernel sees it.
+    ///
+    /// `MNT_NOWAIT` rather than `MNT_WAIT`: the kernel answers from what it
+    /// already has instead of asking each server for fresh figures, so a share
+    /// whose server has gone away cannot hold this up. That is what makes it
+    /// safe to call while a menu is opening.
     public static func currentMounts() -> [Mount] {
         var buffer: UnsafeMutablePointer<statfs>?
         let count = getmntinfo(&buffer, MNT_NOWAIT)

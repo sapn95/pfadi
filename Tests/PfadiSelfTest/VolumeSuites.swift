@@ -123,6 +123,21 @@ enum VolumeSuites {
     }
 }
 
+/// A FileManager with a trash that will not take anything.
+///
+/// The case that must not be mistaken for a share: there is a trash, so removing
+/// the file outright is not the answer to its refusing one item.
+final class TrashRefusingFileManager: FileManager {
+    override func trashItem(
+        at url: URL,
+        resultingItemURL outResultingURL: AutoreleasingUnsafeMutablePointer<NSURL?>?
+    ) throws {
+        throw CocoaError(
+            .fileWriteNoPermission,
+            userInfo: [NSLocalizedDescriptionKey: "the trash would not take it"])
+    }
+}
+
 /// A FileManager with no trash, which is what a share looks like from here.
 ///
 /// Both halves of it: the question `trashLocation` asks and the attempt

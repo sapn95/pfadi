@@ -1582,7 +1582,8 @@ final class BrowserViewController: NSViewController {
         // open — the watcher opens its folder O_EVTONLY exactly so an unmount is
         // not blocked — but a window left pointing at a path that no longer
         // exists is its own bug.
-        let here = directory.standardizedFileURL.path
+        let was = directory
+        let here = was.standardizedFileURL.path
         let root = volume.standardizedFileURL.path
         let wasShowing = here == root || here.hasPrefix(root + "/")
         if wasShowing {
@@ -1592,9 +1593,10 @@ final class BrowserViewController: NSViewController {
         if let problem = Eject.send(volume) {
             NSSound.beep()
             warn("could not eject \(name): \(problem)")
-            // Back where we were, because the volume is still there and a window
-            // sent home by a failed eject has lost somebody's place for nothing.
-            if wasShowing { navigate(to: volume) }
+            // Back where we were, which is the folder rather than the volume it
+            // is on: the volume is still there, and a window sent home by a
+            // failed eject has lost somebody's place for nothing.
+            if wasShowing { navigate(to: was) }
             return
         }
         announce("ejected \(name)")
